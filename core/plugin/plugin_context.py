@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import inspect
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from core.agent.base_agent_executor import BaseAgentExecutionContext, BaseAgentExecutor
+from core.agent.base_agent_executor import (
+    AgentStepResult,
+    BaseAgentExecutionContext,
+    BaseAgentExecutor,
+)
 from core.agent.config import AgentExecutionConfig
 from core.agent.func_tool_manager import FuncToolManager
-from core.agent.tool import ToolSet
 from core.chat import (
     Group,
     KiraIMMessage,
@@ -27,7 +30,13 @@ from core.utils.path_utils import get_data_path
 from core.workflow.src.im.batching import publish_buffered_messages
 
 from ..adapter import AdapterManager, BaseAdapter, BaseCapability, IMCapability
-from ..provider import EmbeddingModelClient, LLMModelClient, ModelType, ProviderManager
+from ..provider import (
+    EmbeddingModelClient,
+    LLMModelClient,
+    LLMRequest,
+    ModelType,
+    ProviderManager,
+)
 
 if TYPE_CHECKING:
     from core.agent.mcp_mgr import MCPManager
@@ -133,15 +142,17 @@ class PluginContext:
         )
 
     def create_agent_executor(
-        self, tool_set: ToolSet | None = None, *, config: AgentExecutionConfig | None = None,
+        self, model_group: list[LLMModelClient], *,
+        context: BaseAgentExecutionContext,
+        request: LLMRequest | None = None,
+        config: AgentExecutionConfig | None = None,
+        on_result: Callable[[AgentStepResult], Awaitable[None]] | None = None,
     ) -> BaseAgentExecutor[BaseAgentExecutionContext]:
-        """Create an independent agent without inheriting an IM event or its hooks.
-
-        Supply event-free tools explicitly here or on the LLMRequest. Tool
-        registration is independent of execution. Each run needs its own request and
-        message lists; configuration defaults to AgentExecutionConfig.
-        """
-        return BaseAgentExecutor(tool_set, config=config)
+        """Create an independent agent bound to its context and request options."""
+        return BaseAgentExecutor(
+            model_group, context=context, request=request,
+            config=config, on_result=on_result,
+        )
 
     def get_default_llm_client(self) -> LLMModelClient:
         client = self.get_llm_client(llm_type="default")

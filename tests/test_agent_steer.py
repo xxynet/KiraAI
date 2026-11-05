@@ -21,11 +21,11 @@ def _model(callback):
     )
 
 
-def _context(model):
-    return BaseAgentExecutionContext(
-        request=LLMRequest(messages=[{"role": "user", "content": "original task"}]),
-        model_group=[model],
-    )
+def _context(executor, model):
+    executor.model_group = [model]
+    executor.context.messages[:] = [OpenAIMessage(role="user", content="original task")]
+    executor.context.new_messages = []
+    return executor.context
 
 
 def _tool_response():
@@ -36,7 +36,8 @@ def _tool_response():
 
 
 async def _collect(executor, context):
-    return [step async for step in executor.run(context)]
+    assert executor.context is context
+    return [step async for step in executor.run()]
 
 
 @asynccontextmanager
@@ -55,7 +56,7 @@ async def test_steer_waits_for_model_then_records_ordered_copied_instructions():
     started, release = asyncio.Event(), asyncio.Event()
     seen = []
     late_accepted = []
-    executor = BaseAgentExecutor(config=AgentExecutionConfig(max_steps=2))
+    executor = BaseAgentExecutor([], config=AgentExecutionConfig(max_steps=2), context=BaseAgentExecutionContext())
 
     async def chat(request):
         seen.append(deepcopy([message.to_dict() for message in request.messages]))
@@ -66,19 +67,19 @@ async def test_steer_waits_for_model_then_records_ordered_copied_instructions():
         late_accepted.append(executor.steer("too late"))
         return LLMResponse("steered response")
 
-    context = _context(_model(chat))
+    context = _context(executor, _model(chat))
     instruction = OpenAIMessage(role="user", content=[{"type": "text", "text": "second instruction"}])
     async with _running(executor, context, started, release) as task:
         assert executor.steer("first instruction")
         assert executor.steer(instruction)
         instruction.content[0]["text"] = "changed by caller"
-        assert len(context.request.messages) == 1
-        assert context.new_messages == []
+        assert len(context.messages) == 1
+        assert context.messages[1:] == []
         assert not task.done()
 
     steps = task.result()
     assert [step.is_final for step in steps] == [False, True]
-    assert [message.role for message in context.new_messages] == ["assistant", "user", "user", "assistant"]
+    assert [message.role for message in context.messages[1:]] == ["assistant", "user", "user", "assistant"]
     assert seen[0] == [{"role": "user", "content": "original task"}]
     assert seen[1][1:4] == [
         {"role": "assistant", "content": "initial response"},
@@ -86,7 +87,7 @@ async def test_steer_waits_for_model_then_records_ordered_copied_instructions():
         {"role": "user", "content": [{"type": "text", "text": "second instruction"}]},
     ]
     assert "final model call" in seen[1][-1]["content"]
-    assert context.new_messages[1] is context.request.messages[2]
+    assert steps[-1].new_messages[1] is context.messages[2]
     assert late_accepted == [False]
     assert not executor.steer("after completion")
 
@@ -110,16 +111,16 @@ async def test_steer_during_tool_waits_for_paired_tool_result():
         return _tool_response() if len(seen) == 1 else LLMResponse("complete")
 
     model = _model(chat)
-    context = _context(model)
-    executor = BaseAgentExecutor(ToolSet([ProbeTool()]), config=AgentExecutionConfig(max_steps=2))
+    executor = BaseAgentExecutor([], request=LLMRequest(tool_set=ToolSet([ProbeTool()])), config=AgentExecutionConfig(max_steps=2), context=BaseAgentExecutionContext())
+    context = _context(executor, model)
     async with _running(executor, context, started, release) as task:
         assert executor.steer("new direction")
         assert not task.done()
-        assert context.new_messages == []
+        assert context.messages[1:] == []
 
     steps = task.result()
     assert len(steps) == 2
-    assert [message.role for message in context.new_messages] == ["assistant", "tool", "user", "assistant"]
+    assert [message.role for message in context.messages[1:]] == ["assistant", "tool", "user", "assistant"]
     assert seen[1][1]["tool_calls"][0]["id"] == seen[1][2]["tool_call_id"] == "call-1"
     assert seen[1][2]["content"] == "tool result"
     assert seen[1][3] == {"role": "user", "content": "new direction"}
@@ -139,20 +140,19 @@ async def test_steer_is_consumed_by_fallback_model():
         seen.extend(deepcopy([message.to_dict() for message in request.messages]))
         return LLMResponse("complete")
 
-    context = _context(_model(primary))
-    context.model_group.append(_model(fallback))
-    executor = BaseAgentExecutor(config=AgentExecutionConfig(max_steps=2))
+    executor = BaseAgentExecutor([], config=AgentExecutionConfig(max_steps=2), context=BaseAgentExecutionContext())
+    context = _context(executor, _model(primary))
+    executor.model_group.append(_model(fallback))
     async with _running(executor, context, started, release) as task:
         assert executor.steer("use the new direction")
 
     assert len(task.result()) == 1
     assert seen[-1] == {"role": "user", "content": "use the new direction"}
-    assert context.new_messages[0].content == "use the new direction"
+    assert context.messages[1:][0].content == "use the new direction"
 
 
-@pytest.mark.parametrize("same_context", [False, True])
 @pytest.mark.anyio
-async def test_one_executor_rejects_overlapping_runs_and_allows_serial_reuse(same_context):
+async def test_one_executor_rejects_overlapping_runs_and_allows_serial_reuse():
     started, release = asyncio.Event(), asyncio.Event()
 
     async def chat(request):
@@ -160,19 +160,18 @@ async def test_one_executor_rejects_overlapping_runs_and_allows_serial_reuse(sam
         await release.wait()
         return LLMResponse("complete")
 
-    context = _context(_model(chat))
-    executor = BaseAgentExecutor(config=AgentExecutionConfig(max_steps=2))
+    executor = BaseAgentExecutor([], config=AgentExecutionConfig(max_steps=2), context=BaseAgentExecutionContext())
+    context = _context(executor, _model(chat))
     async with _running(executor, context, started, release) as task:
-        other = context if same_context else _context(_model(lambda request: LLMResponse("other")))
         with pytest.raises(RuntimeError, match="already running"):
-            await _collect(executor, other)
+            await _collect(executor, context)
         assert executor.steer("continue original")
 
     assert len(task.result()) == 2
-    fresh = _context(_model(lambda request: LLMResponse("fresh")))
+    fresh = _context(executor, _model(lambda request: LLMResponse("fresh")))
     steps = await _collect(executor, fresh)
     assert len(steps) == 1
-    assert [message.content for message in fresh.new_messages] == ["fresh"]
+    assert [message.content for message in fresh.messages[1:]] == ["fresh"]
 
 
 @pytest.mark.parametrize("failure", ["provider", "programming", "cancel"])
@@ -187,8 +186,8 @@ async def test_steer_state_is_cleared_after_failure_or_cancellation(failure):
             raise ProviderAPIError("provider failed")
         raise TypeError("programming error")
 
-    executor = BaseAgentExecutor(config=AgentExecutionConfig(max_steps=2))
-    context = _context(_model(chat))
+    executor = BaseAgentExecutor([], config=AgentExecutionConfig(max_steps=2), context=BaseAgentExecutionContext())
+    context = _context(executor, _model(chat))
     async with _running(executor, context, started, release) as task:
         assert executor.steer("must not leak")
         if failure == "cancel":
@@ -202,17 +201,17 @@ async def test_steer_state_is_cleared_after_failure_or_cancellation(failure):
     else:
         assert task.cancelled()
     assert not executor.steer("inactive")
-    fresh = _context(_model(lambda request: LLMResponse("fresh")))
+    fresh = _context(executor, _model(lambda request: LLMResponse("fresh")))
     await _collect(executor, fresh)
-    assert [message.content for message in fresh.new_messages] == ["fresh"]
-    assert all(message.content != "must not leak" for message in fresh.request.messages)
+    assert [message.content for message in fresh.messages[1:]] == ["fresh"]
+    assert all(message.content != "must not leak" for message in fresh.messages)
 
 
 @pytest.mark.anyio
 async def test_steer_between_steps_and_generator_close_discard_pending_messages():
-    executor = BaseAgentExecutor(config=AgentExecutionConfig(max_steps=2))
-    context = _context(_model(lambda request: _tool_response()))
-    iterator = executor.run(context)
+    executor = BaseAgentExecutor([], config=AgentExecutionConfig(max_steps=2), context=BaseAgentExecutionContext())
+    _context(executor, _model(lambda request: _tool_response()))
+    iterator = executor.run()
     try:
         first = await anext(iterator)
         assert not first.is_final
@@ -221,17 +220,17 @@ async def test_steer_between_steps_and_generator_close_discard_pending_messages(
         await iterator.aclose()
 
     assert not executor.steer("inactive")
-    fresh = _context(_model(lambda request: LLMResponse("fresh")))
+    fresh = _context(executor, _model(lambda request: LLMResponse("fresh")))
     assert len(await _collect(executor, fresh)) == 1
-    assert all(message.content != "discard when closed" for message in fresh.request.messages)
+    assert all(message.content != "discard when closed" for message in fresh.messages)
 
 
 @pytest.mark.anyio
 async def test_steer_between_steps_is_applied_before_last_step_hint():
     responses = iter([_tool_response(), LLMResponse("complete")])
-    context = _context(_model(lambda request: next(responses)))
-    executor = BaseAgentExecutor(config=AgentExecutionConfig(max_steps=2))
-    iterator = executor.run(context)
+    executor = BaseAgentExecutor([], config=AgentExecutionConfig(max_steps=2), context=BaseAgentExecutionContext())
+    context = _context(executor, _model(lambda request: next(responses)))
+    iterator = executor.run()
     try:
         assert not (await anext(iterator)).is_final
         assert executor.steer("between steps")
@@ -240,9 +239,9 @@ async def test_steer_between_steps_is_applied_before_last_step_hint():
     finally:
         await iterator.aclose()
 
-    contents = [message.content for message in context.request.messages]
-    assert contents[-3] == "between steps"
-    assert "final model call" in contents[-2]
+    contents = [message.content for message in context.messages]
+    assert contents[-2] == "between steps"
+    assert all("final model call" not in str(content) for content in contents)
     assert contents[-1] == "complete"
 
 
@@ -256,13 +255,13 @@ async def test_steer_rejects_final_step_without_extending_budget():
         return LLMResponse("complete")
 
     model = _model(chat)
-    context = _context(model)
-    executor = BaseAgentExecutor(config=AgentExecutionConfig(max_steps=1))
+    executor = BaseAgentExecutor([], config=AgentExecutionConfig(max_steps=1), context=BaseAgentExecutionContext())
+    context = _context(executor, model)
     async with _running(executor, context, started, release) as task:
         assert not executor.steer("no budget left")
 
     assert len(task.result()) == model.chat.await_count == 1
-    assert [message.content for message in context.new_messages] == ["complete"]
+    assert [message.content for message in context.messages[1:]] == ["complete"]
 
 
 @pytest.mark.parametrize("message, error", [
@@ -273,19 +272,19 @@ async def test_steer_rejects_final_step_without_extending_budget():
 ])
 def test_steer_validates_instruction(message, error):
     with pytest.raises(error):
-        BaseAgentExecutor().steer(message)
+        BaseAgentExecutor([], context=BaseAgentExecutionContext()).steer(message)
 
 
 @pytest.mark.anyio
 async def test_steer_does_not_queue_for_idle_or_zero_step_runs():
-    executor = BaseAgentExecutor(config=AgentExecutionConfig(max_steps=0))
+    executor = BaseAgentExecutor([], config=AgentExecutionConfig(max_steps=0), context=BaseAgentExecutionContext())
     model = _model(lambda request: LLMResponse("complete"))
-    context = _context(model)
+    context = _context(executor, model)
     assert not executor.steer("before start")
     assert await _collect(executor, context) == []
     assert not executor.steer("after completion")
     model.chat.assert_not_awaited()
-    assert context.new_messages == []
+    assert context.messages[1:] == []
 
 
 @pytest.mark.anyio
@@ -301,24 +300,24 @@ async def test_stop_hook_discards_pending_steering_and_releases_executor():
         await release.wait()
         return LLMResponse("stop")
 
-    executor = StopOnceExecutor(config=AgentExecutionConfig(max_steps=2))
-    context = _context(_model(chat))
+    executor = StopOnceExecutor([], context=BaseAgentExecutionContext(), config=AgentExecutionConfig(max_steps=2))
+    context = _context(executor, _model(chat))
     async with _running(executor, context, started, release) as task:
         assert executor.steer("discard on stop")
 
     assert task.result()[0].state == "stopped"
-    assert context.new_messages == []
-    fresh = _context(_model(lambda request: LLMResponse("fresh")))
+    assert context.messages[1:] == []
+    fresh = _context(executor, _model(lambda request: LLMResponse("fresh")))
     assert (await _collect(executor, fresh))[0].state == "success"
-    assert [message.content for message in fresh.new_messages] == ["fresh"]
+    assert [message.content for message in fresh.messages[1:]] == ["fresh"]
 
 
 @pytest.mark.anyio
 async def test_invalid_model_group_releases_executor_for_next_run():
-    executor = BaseAgentExecutor()
+    executor = BaseAgentExecutor([], context=BaseAgentExecutionContext())
     with pytest.raises(ValueError, match="model_group"):
-        await _collect(executor, BaseAgentExecutionContext(request=LLMRequest(), model_group=[]))
+        await _collect(executor, executor.context)
 
     assert not executor.steer("inactive")
-    fresh = _context(_model(lambda request: LLMResponse("fresh")))
+    fresh = _context(executor, _model(lambda request: LLMResponse("fresh")))
     assert len(await _collect(executor, fresh)) == 1

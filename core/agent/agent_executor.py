@@ -4,11 +4,10 @@ import traceback
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from core.agent.message import OpenAIMessage
 from core.chat.message_utils import KiraExceptionEvent
 from core.logging_manager import get_logger
 from core.plugin.handlers import EventType, event_handler_reg
-from core.provider import LLMModelClient, LLMRequest, LLMResponse
+from core.provider import LLMResponse
 from core.utils.tool_utils import BaseTool
 
 from .base_agent_executor import (
@@ -28,22 +27,15 @@ __all__ = ["AgentExecutionContext", "AgentExecutor", "AgentStepResult"]
 logger = get_logger("agent_executor", "cyan")
 
 
-@dataclass(init=False)
+@dataclass(kw_only=True)
 class AgentExecutionContext(BaseAgentExecutionContext):
-    """Bind an independent agent run to an IM event."""
+    """Conversation state with the IM event for this foreground turn."""
 
     event: KiraMessageBatchEvent
 
-    def __init__(
-        self, event: KiraMessageBatchEvent, request: LLMRequest,
-        new_messages: list[OpenAIMessage], model_group: list[LLMModelClient],
-    ):
-        super().__init__(request=request, new_messages=new_messages, model_group=model_group)
-        self.event = event
-
 
 class AgentExecutor(BaseAgentExecutor[AgentExecutionContext]):
-    """Integrate the shared agent loop with IM tools and plugin event hooks."""
+    """Integrate agent execution with IM tools and plugin event hooks."""
 
     def _get_log_id(self, ctx: AgentExecutionContext) -> str:
         return ctx.event.sid

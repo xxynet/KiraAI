@@ -8,6 +8,7 @@ import pytest
 from core.agent.agent_executor import AgentExecutionContext, AgentExecutor
 from core.agent.base_agent_executor import BaseAgentExecutionContext, BaseAgentExecutor
 from core.agent.config import AgentExecutionConfig
+from core.agent.message import OpenAIMessage
 from core.agent.tool import ToolSet
 from core.plugin.handlers import EventType, event_handler_reg
 from core.provider import LLMRequest, LLMResponse, ProviderAPIError
@@ -21,15 +22,16 @@ def _model(callback):
     )
 
 
-def _context(model):
-    return BaseAgentExecutionContext(
-        request=LLMRequest(messages=[{"role": "user", "content": "original task"}]),
-        model_group=[model],
-    )
+def _context(executor, model):
+    executor.model_group = [model]
+    executor.context.messages[:] = [OpenAIMessage(role="user", content="original task")]
+    executor.context.new_messages = []
+    return executor.context
 
 
 async def _collect(executor, context):
-    return [step async for step in executor.run(context)]
+    assert executor.context is context
+    return [step async for step in executor.run()]
 
 
 @pytest.mark.anyio
@@ -45,14 +47,15 @@ async def test_start_returns_task_and_accepts_steer_before_first_model_call():
         delivered.append(result)
 
     model = _model(chat)
-    context = _context(model)
-    executor = BaseAgentExecutor(config=AgentExecutionConfig(max_steps=1))
-    task = executor.start(context, on_result=on_result)
+    executor = BaseAgentExecutor([], config=AgentExecutionConfig(max_steps=1), context=BaseAgentExecutionContext())
+    context = _context(executor, model)
+    executor.on_result = on_result
+    task = executor.start()
     try:
         assert isinstance(task, asyncio.Task)
         model.chat.assert_not_awaited()
         assert executor.steer("focus on performance")
-        assert context.new_messages == []
+        assert context.messages[1:] == []
         result = await asyncio.wait_for(task, timeout=2)
     finally:
         task.cancel()
@@ -63,14 +66,14 @@ async def test_start_returns_task_and_accepts_steer_before_first_model_call():
     assert result.is_final and result.state == "success"
     assert seen[1] == {"role": "user", "content": "focus on performance"}
     assert "final model call" in seen[2]["content"]
-    assert [message.content for message in context.new_messages] == ["focus on performance", "complete"]
+    assert [message.content for message in context.messages[1:]] == ["focus on performance", "complete"]
     assert not executor.steer("after completion")
 
 
 @pytest.mark.anyio
 async def test_background_results_are_ordered_and_callback_can_steer_next_step():
     delivered, seen = [], []
-    executor = BaseAgentExecutor(config=AgentExecutionConfig(max_steps=2))
+    executor = BaseAgentExecutor([], config=AgentExecutionConfig(max_steps=2), context=BaseAgentExecutionContext())
 
     async def chat(request):
         seen.append(deepcopy([message.to_dict() for message in request.messages]))
@@ -89,7 +92,9 @@ async def test_background_results_are_ordered_and_callback_can_steer_next_step()
         else:
             assert not executor.steer("already finished")
 
-    result = await executor.start(_context(_model(chat)), on_result=on_result)
+    executor.on_result = on_result
+    _context(executor, _model(chat))
+    result = await executor.start()
 
     assert [step.step_index for step in delivered] == [1, 2]
     assert [step.is_final for step in delivered] == [False, True]
@@ -100,55 +105,57 @@ async def test_background_results_are_ordered_and_callback_can_steer_next_step()
 @pytest.mark.anyio
 async def test_start_reserves_single_run_until_result_callback_finishes():
     callback_started, release = asyncio.Event(), asyncio.Event()
-    executor = BaseAgentExecutor()
-    context = _context(_model(lambda request: LLMResponse("complete")))
+    executor = BaseAgentExecutor([], context=BaseAgentExecutionContext())
+    context = _context(executor, _model(lambda request: LLMResponse("complete")))
 
     async def on_result(result):
         callback_started.set()
         await release.wait()
 
-    task = executor.start(context, on_result=on_result)
+    executor.on_result = on_result
+    task = executor.start()
     try:
         with pytest.raises(RuntimeError, match="already running"):
-            executor.start(context)
+            executor.start()
         with pytest.raises(RuntimeError, match="already running"):
             await _collect(executor, context)
         await asyncio.wait_for(callback_started.wait(), timeout=2)
         assert not task.done()
         with pytest.raises(RuntimeError, match="already running"):
-            executor.start(context)
+            executor.start()
         with pytest.raises(RuntimeError, match="already running"):
             await _collect(executor, context)
     finally:
         release.set()
         await asyncio.wait_for(task, timeout=2)
 
-    fresh = _context(_model(lambda request: LLMResponse("fresh")))
-    assert (await executor.start(fresh)).llm_response.text_response == "fresh"
+    _context(executor, _model(lambda request: LLMResponse("fresh")))
+    assert (await executor.start()).llm_response.text_response == "fresh"
 
 
 @pytest.mark.anyio
 async def test_foreground_run_rejects_background_start():
-    executor = BaseAgentExecutor(config=AgentExecutionConfig(max_steps=2))
-    context = _context(_model(lambda request: LLMResponse("", tool_calls=[{
+    executor = BaseAgentExecutor([], config=AgentExecutionConfig(max_steps=2), context=BaseAgentExecutionContext())
+    _context(executor, _model(lambda request: LLMResponse("", tool_calls=[{
         "id": "call-1", "function": {"name": "missing", "arguments": "{}"},
     }])))
-    iterator = executor.run(context)
+    iterator = executor.run()
     try:
         assert not (await anext(iterator)).is_final
         with pytest.raises(RuntimeError, match="already running"):
-            executor.start(context)
+            executor.start()
     finally:
         await iterator.aclose()
 
-    assert (await executor.start(_context(_model(lambda request: LLMResponse("fresh"))))).is_final
+    _context(executor, _model(lambda request: LLMResponse("fresh")))
+    assert (await executor.start()).is_final
 
 
 @pytest.mark.parametrize("phase", ["before_start", "model", "callback"])
 @pytest.mark.anyio
 async def test_background_cancellation_releases_reservation_and_pending_steering(phase):
     started, release = asyncio.Event(), asyncio.Event()
-    executor = BaseAgentExecutor(config=AgentExecutionConfig(max_steps=2))
+    executor = BaseAgentExecutor([], config=AgentExecutionConfig(max_steps=2), context=BaseAgentExecutionContext())
 
     async def chat(request):
         if phase == "model":
@@ -160,8 +167,9 @@ async def test_background_cancellation_releases_reservation_and_pending_steering
         started.set()
         await release.wait()
 
-    context = _context(_model(chat))
-    task = executor.start(context, on_result=on_result)
+    context = _context(executor, _model(chat))
+    executor.on_result = on_result
+    task = executor.start()
     try:
         assert executor.steer("must not leak")
         if phase != "before_start":
@@ -176,11 +184,11 @@ async def test_background_cancellation_releases_reservation_and_pending_steering
 
     assert not executor.steer("inactive")
     if phase == "before_start":
-        context.model_group[0].chat.assert_not_awaited()
-        assert context.new_messages == []
-    fresh = _context(_model(lambda request: LLMResponse("fresh")))
-    assert (await executor.start(fresh)).llm_response.text_response == "fresh"
-    assert all(message.content != "must not leak" for message in fresh.request.messages)
+        executor.model_group[0].chat.assert_not_awaited()
+        assert context.messages[1:] == []
+    fresh = _context(executor, _model(lambda request: LLMResponse("fresh")))
+    assert (await executor.start()).llm_response.text_response == "fresh"
+    assert all(message.content != "must not leak" for message in fresh.messages)
 
 
 @pytest.mark.parametrize("phase", ["model", "callback"])
@@ -191,7 +199,7 @@ async def test_background_failures_remain_on_task_and_are_logged(monkeypatch, ph
     error = TypeError(f"{phase} failure")
     log = Mock()
     monkeypatch.setattr(base_agent_executor.logger, "error", log)
-    executor = BaseAgentExecutor()
+    executor = BaseAgentExecutor([], context=BaseAgentExecutionContext())
 
     async def chat(request):
         if phase == "model":
@@ -201,7 +209,9 @@ async def test_background_failures_remain_on_task_and_are_logged(monkeypatch, ph
     async def on_result(result):
         raise error
 
-    task = executor.start(_context(_model(chat)), on_result=on_result)
+    executor.on_result = on_result
+    _context(executor, _model(chat))
+    task = executor.start()
     with pytest.raises(TypeError) as captured:
         await task
 
@@ -210,7 +220,7 @@ async def test_background_failures_remain_on_task_and_are_logged(monkeypatch, ph
     assert log.call_args.kwargs["exc_info"][1] is error
     assert log.call_args.kwargs["exc_info"][2] is not None
     assert not executor.steer("inactive")
-    fresh = _context(_model(lambda request: LLMResponse("fresh")))
+    fresh = _context(executor, _model(lambda request: LLMResponse("fresh")))
     assert len(await _collect(executor, fresh)) == 1
 
 
@@ -225,7 +235,10 @@ async def test_provider_error_is_delivered_as_an_agent_step_result():
     async def on_result(result):
         delivered.append(result)
 
-    result = await BaseAgentExecutor().start(_context(_model(chat)), on_result=on_result)
+    executor = BaseAgentExecutor([], context=BaseAgentExecutionContext())
+    executor.on_result = on_result
+    _context(executor, _model(chat))
+    result = await executor.start()
 
     assert delivered == [result]
     assert result.state == "error" and result.is_final
@@ -236,8 +249,10 @@ async def test_provider_error_is_delivered_as_an_agent_step_result():
 async def test_zero_step_background_run_has_no_results_or_callbacks():
     model = _model(lambda request: LLMResponse("complete"))
     callback = AsyncMock()
-    executor = BaseAgentExecutor(config=AgentExecutionConfig(max_steps=0))
-    task = executor.start(_context(model), on_result=callback)
+    executor = BaseAgentExecutor([], config=AgentExecutionConfig(max_steps=0), context=BaseAgentExecutionContext())
+    executor.on_result = callback
+    _context(executor, model)
+    task = executor.start()
     assert not executor.steer("no steps")
     assert await task is None
     model.chat.assert_not_awaited()
@@ -246,35 +261,37 @@ async def test_zero_step_background_run_has_no_results_or_callbacks():
 
 @pytest.mark.anyio
 async def test_start_captures_config_before_task_is_scheduled():
-    executor = BaseAgentExecutor(config=AgentExecutionConfig(max_steps=1))
+    executor = BaseAgentExecutor([], config=AgentExecutionConfig(max_steps=1), context=BaseAgentExecutionContext())
     model = _model(lambda request: LLMResponse("complete"))
-    task = executor.start(_context(model))
+    _context(executor, model)
+    task = executor.start()
     executor.config = AgentExecutionConfig(max_steps=0)
     result = await task
     assert result.is_final
     model.chat.assert_awaited_once()
-    assert await executor.start(_context(model)) is None
+    _context(executor, model)
+    assert await executor.start() is None
 
 
 @pytest.mark.anyio
 async def test_task_creation_failure_rolls_back_run_reservation(monkeypatch):
     loop = asyncio.get_running_loop()
-    executor = BaseAgentExecutor()
-    context = _context(_model(lambda request: LLMResponse("complete")))
+    executor = BaseAgentExecutor([], context=BaseAgentExecutionContext())
+    _context(executor, _model(lambda request: LLMResponse("complete")))
     with monkeypatch.context() as patch:
         patch.setattr(loop, "create_task", Mock(side_effect=RuntimeError("task creation failed")))
         with pytest.raises(RuntimeError, match="task creation failed"):
-            executor.start(context)
+            executor.start()
 
     assert not executor.steer("inactive")
-    assert (await executor.start(context)).is_final
+    assert (await executor.start()).is_final
 
 
 def test_start_requires_running_event_loop_without_reserving_executor():
-    executor = BaseAgentExecutor()
-    context = _context(_model(lambda request: LLMResponse("complete")))
+    executor = BaseAgentExecutor([], context=BaseAgentExecutionContext())
+    _context(executor, _model(lambda request: LLMResponse("complete")))
     with pytest.raises(RuntimeError, match="running event loop"):
-        executor.start(context)
+        executor.start()
     assert not executor.steer("inactive")
 
 
@@ -300,11 +317,12 @@ async def test_background_im_executor_preserves_event_tools_and_hooks(monkeypatc
         "id": "call-1", "function": {"name": "probe", "arguments": "{}"},
     }]), LLMResponse("complete")])
     model = _model(lambda request: next(responses))
-    context = AgentExecutionContext(event, LLMRequest(), [], [model])
-    executor = AgentExecutor(ToolSet([ProbeTool()]), config=AgentExecutionConfig(max_steps=2))
+    context = AgentExecutionContext(event=event)
+    executor = AgentExecutor([model], request=LLMRequest(tool_set=ToolSet([ProbeTool()])), context=context, config=AgentExecutionConfig(max_steps=2))
     on_result = AsyncMock()
 
-    result = await executor.start(context, on_result=on_result)
+    executor.on_result = on_result
+    result = await executor.start()
 
     assert result.llm_response.text_response == "complete"
     assert on_result.await_count == llm_hook.await_count == 2

@@ -36,18 +36,18 @@ class ExecuteAgentStage(BaseStage[IMBatchContext]):
         except (TypeError, ValueError):
             max_tool_loop = 2
 
+        agent_ctx = AgentExecutionContext(
+            event=event,
+            messages=request.messages,
+            new_messages=new_messages,
+        )
         agent_executor = AgentExecutor(
-            request.tool_set,
+            model_group,
+            context=agent_ctx, request=request,
             config=AgentExecutionConfig(
                 max_steps=max(0, max_tool_loop),
                 tool_config=build_tool_execution_config(services.config),
             ),
-        )
-        agent_ctx = AgentExecutionContext(
-            event=event,
-            request=request,
-            new_messages=new_messages,
-            model_group=model_group,
         )
 
         # Accumulates per-step results so ON_FINAL_RESULT can report the whole turn
@@ -127,7 +127,7 @@ class ExecuteAgentStage(BaseStage[IMBatchContext]):
 
         # Iter agent executor to get LLMResponse
         # TODO use llm_semaphore to restrict concurrent LLM requests
-        async for step in agent_executor.run(agent_ctx):
+        async for step in agent_executor.run():
             llm_resp = step.llm_response
             if not llm_resp:
                 break

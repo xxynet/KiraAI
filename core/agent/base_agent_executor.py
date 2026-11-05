@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from asyncio import Task, get_running_loop
+from collections import deque
 from collections.abc import AsyncIterator, Awaitable, Callable
-from copy import deepcopy
+from copy import copy, deepcopy
 from dataclasses import dataclass, field
 from functools import partial
 from typing import Generic, Literal, TypeVar
@@ -23,7 +24,7 @@ from core.provider import (
 from core.utils.media_refs import MEDIA_REF_TYPE
 from core.utils.tool_utils import BaseTool
 
-from .config import AgentExecutionConfig, ToolExecutionConfig
+from .config import AgentExecutionConfig
 from .tool_executor import ToolExecutor
 
 logger = get_logger("agent_executor", "cyan")
@@ -32,15 +33,20 @@ llm_logger = get_logger("llm", "purple")
 
 @dataclass
 class BaseAgentExecutionContext:
-    """Request and message state owned by one independent agent run."""
+    """Canonical conversation messages shared by all turns of one agent session."""
 
-    request: LLMRequest
-    model_group: list[LLMModelClient]
+    messages: list[OpenAIMessage] = field(default_factory=list)
     new_messages: list[OpenAIMessage] = field(default_factory=list)
 
+    def __post_init__(self):
+        self.messages[:] = [
+            message if isinstance(message, OpenAIMessage) else OpenAIMessage(**message)
+            for message in self.messages
+        ]
+
     def append_messages(self, *messages: OpenAIMessage) -> None:
-        """Add shared message objects to the request and this turn's memory."""
-        self.request.messages.extend(messages)
+        """Append the same message objects to session history and turn memory."""
+        self.messages.extend(messages)
         self.new_messages.extend(messages)
 
 
@@ -63,59 +69,99 @@ ContextT = TypeVar("ContextT", bound=BaseAgentExecutionContext)
 @dataclass
 class _AgentRunState:
     config: AgentExecutionConfig
+    model_group: list[LLMModelClient]
+    request: LLMRequest
     pending_messages: list[OpenAIMessage] = field(default_factory=list)
     accepting_steering: bool = True
 
 
 class BaseAgentExecutor(Generic[ContextT]):
-    """Run one model/tool loop at a time without chat events or global plugin hooks."""
+    """Execute agent turns with shared steering and queued follow-ups."""
 
     def __init__(
         self,
-        tool_set: ToolSet | None = None,
+        model_group: list[LLMModelClient],
         *,
+        context: ContextT,
+        request: LLMRequest | None = None,
         config: AgentExecutionConfig | None = None,
+        on_result: Callable[[AgentStepResult], Awaitable[None]] | None = None,
     ):
-        self.tool_executor = ToolExecutor()
-        self.tool_set = tool_set
+        self.model_group = model_group.copy()
+        self.context = context
+        self.request = request
         self.config = config if config is not None else AgentExecutionConfig()
+        self.on_result = on_result
+        self.tool_executor = ToolExecutor()
         self._run_state: _AgentRunState | None = None
         self._background_task: Task[AgentStepResult | None] | None = None
+        self._queued_messages: deque[OpenAIMessage] = deque()
 
-    def start(
-        self,
-        ctx: ContextT,
-        *,
-        on_result: Callable[[AgentStepResult], Awaitable[None]] | None = None,
-    ) -> Task[AgentStepResult | None]:
-        """Schedule a background loop and reserve it before returning the task.
+    def start(self) -> Task[AgentStepResult | None]:
+        """Immediately schedule background execution on the configured context.
 
-        Call inside a running event loop. steer() may be used immediately after
-        start(), including before the first model call. The async on_result
-        callback receives every AgentStepResult, including the final one, and is
-        awaited before the loop continues. The task returns the last result, or
-        None for a zero-step run. Execution and callback exceptions propagate
-        through the task and are also logged; cancellation propagates normally.
-        The executor remains reserved until the task and its callbacks finish.
+        on_result is configured on the executor and receives each step once.
+        The configured request supplies tools and non-history options for each
+        turn; history comes from context.
+        Queued messages start new turns on the same context with fresh budgets.
+        The returned task resolves to the last emitted step, or None if no model
+        calls ran. Task cancellation and exceptions discard pending follow-ups.
+        Execution and callback exceptions remain on the task and are logged.
         """
+        return self._start()
+
+    def _start(
+        self, message: OpenAIMessage | None = None,
+    ) -> Task[AgentStepResult | None]:
         loop = get_running_loop()
+        ctx = self.context
         run_state = self._begin_run()
-        coroutine = self._run_background(ctx, run_state, on_result)
+        previous_new_messages = ctx.new_messages
+        if message is not None:
+            ctx.new_messages = []
+            run_state.pending_messages.append(message)
+        coroutine = self._run_background(ctx, run_state)
         try:
             task = loop.create_task(coroutine, name=f"{type(self).__name__}.run")
         except BaseException:
             coroutine.close()
             self._release_run(run_state)
+            ctx.new_messages = previous_new_messages
             raise
         self._background_task = task
         task.add_done_callback(partial(self._background_done, run_state))
         return task
 
+    def _build_request(
+        self, tool_set: ToolSet | None,
+    ) -> LLMRequest:
+        ctx, request = self.context, self.request
+        if request is None:
+            return LLMRequest(messages=ctx.messages.copy(), tool_set=tool_set)
+        built_request = copy(request)
+        built_request.messages = ctx.messages.copy()
+        built_request.user_prompt = request.user_prompt.copy()
+        built_request.system_prompt = request.system_prompt.copy()
+        built_request.tool_set = tool_set
+        built_request.tools = tool_set.to_list() if tool_set is not None else None
+        if built_request.tool_choice is None:
+            built_request.tool_choice = "auto" if built_request.tools else "none"
+        return built_request
+
+    def _create_run_state(self) -> _AgentRunState:
+        config = self.config
+        tool_set = self.request.tool_set if self.request is not None else None
+        tool_set = ToolSet(tool_set.tools.copy()) if tool_set is not None else None
+        return _AgentRunState(
+            config=config, model_group=self.model_group.copy(),
+            request=self._build_request(tool_set),
+            accepting_steering=config.max_steps > 0,
+        )
+
     def _begin_run(self) -> _AgentRunState:
         if self._run_state is not None:
             raise RuntimeError("This agent executor is already running")
-        config = self.config
-        run_state = _AgentRunState(config=config, accepting_steering=config.max_steps > 0)
+        run_state = self._create_run_state()
         self._run_state = run_state
         return run_state
 
@@ -123,11 +169,12 @@ class BaseAgentExecutor(Generic[ContextT]):
         run_state.accepting_steering = False
         if self._run_state is run_state:
             self._run_state = None
+            self._queued_messages.clear()
 
     def _background_done(
         self, run_state: _AgentRunState, task: Task[AgentStepResult | None],
     ) -> None:
-        # A task cancelled before its coroutine starts still owns its reservation.
+        # Cancellation before coroutine startup still needs to release its slot.
         self._release_run(run_state)
         if self._background_task is task:
             self._background_task = None
@@ -141,15 +188,14 @@ class BaseAgentExecutor(Generic[ContextT]):
 
     async def _run_background(
         self, ctx: ContextT, run_state: _AgentRunState,
-        on_result: Callable[[AgentStepResult], Awaitable[None]] | None,
     ) -> AgentStepResult | None:
         iterator = self._iterate_run(ctx, run_state)
+        last_step = None
         try:
-            last_step = None
             async for step in iterator:
                 last_step = step
-                if on_result is not None:
-                    await on_result(step)
+                if self.on_result is not None:
+                    await self.on_result(step)
             return last_step
         finally:
             try:
@@ -157,37 +203,57 @@ class BaseAgentExecutor(Generic[ContextT]):
             finally:
                 self._release_run(run_state)
 
-    def steer(self, message: str | OpenAIMessage) -> bool:
-        """Queue a user instruction for the next model request of an active run.
+    def queue(self, message: str | OpenAIMessage) -> Task[AgentStepResult | None] | None:
+        """Queue a follow-up turn using the context supplied at initialization.
 
-        Call from the same event loop as run() or start(). One executor supports
-        only one active run. Returns False if it is inactive or has started its final
-        allowed step. Accepted messages are copied and recorded in both the
-        request and new_messages when consumed.
-        In-flight calls are not cancelled, and max_steps is never extended.
-        Pending instructions are discarded if the run stops or fails first.
+        Both drivers consume queued messages with fresh model/tool/config snapshots
+        and step budgets. Once idle, including before the first run, a new task
+        starts automatically on the same context.
+        Returns that task, the active start() task, or None for a caller-driven run.
         """
+        message = self._copy_user_message(message)
+        if self._run_state is not None:
+            self._queued_messages.append(message)
+            task = self._background_task
+            return task if task is not None and not task.done() else None
+        return self._start(message)
+
+    @staticmethod
+    def _copy_user_message(message: str | OpenAIMessage) -> OpenAIMessage:
         if isinstance(message, str):
             message = OpenAIMessage(role="user", content=message)
         elif not isinstance(message, OpenAIMessage):
-            raise TypeError("steer message must be a string or OpenAIMessage")
+            raise TypeError("message must be a string or OpenAIMessage")
         if message.role != "user":
-            raise ValueError("steer message must have the user role")
+            raise ValueError("message must have the user role")
         if not message.content or (isinstance(message.content, str) and not message.content.strip()):
-            raise ValueError("steer message content must not be empty")
+            raise ValueError("message content must not be empty")
+        return deepcopy(message)
 
+    def steer(self, message: str | OpenAIMessage) -> bool:
+        """Apply a user instruction at the next model request of the current turn.
+
+        Call from the executor's event loop. Idle/final-step calls return False.
+        Accepted instructions are copied; in-flight calls are not cancelled and
+        the current step budget is never extended.
+        """
+        message = self._copy_user_message(message)
         run_state = self._run_state
         if run_state is None or not run_state.accepting_steering:
             return False
-        run_state.pending_messages.append(deepcopy(message))
+        run_state.pending_messages.append(message)
         return True
 
     @staticmethod
-    def _apply_steering(ctx: ContextT, run_state: _AgentRunState) -> None:
+    def _append_messages(ctx: ContextT, run_state: _AgentRunState, *messages: OpenAIMessage) -> None:
+        ctx.append_messages(*messages)
+        run_state.request.messages.extend(messages)
+
+    def _apply_steering(self, ctx: ContextT, run_state: _AgentRunState) -> None:
         if run_state.pending_messages:
             messages = run_state.pending_messages
             run_state.pending_messages = []
-            ctx.append_messages(*messages)
+            self._append_messages(ctx, run_state, *messages)
 
     def _get_log_id(self, ctx: ContextT) -> str:
         return "agent"
@@ -202,7 +268,6 @@ class BaseAgentExecutor(Generic[ContextT]):
         )
 
     async def _on_llm_response(self, ctx: ContextT, response: LLMResponse) -> bool:
-        """Return True to stop before adding the response to message history."""
         return False
 
     async def _on_exception(
@@ -211,11 +276,10 @@ class BaseAgentExecutor(Generic[ContextT]):
         """Allow integrations to report failures without coupling the loop to events."""
 
     async def _execute_tools(
-        self, ctx: ContextT, response: LLMResponse, config: ToolExecutionConfig,
+        self, ctx: ContextT, response: LLMResponse, run_state: _AgentRunState,
     ) -> None:
-        tool_set = self.tool_set if self.tool_set is not None else ctx.request.tool_set
         await self.tool_executor.execute_tools(
-            response, tool_set=tool_set, config=config,
+            response, tool_set=run_state.request.tool_set, config=run_state.config.tool_config,
             invoke_tool=partial(self._invoke_tool, ctx),
             on_tool_result=partial(self._on_tool_result, ctx),
         )
@@ -224,7 +288,6 @@ class BaseAgentExecutor(Generic[ContextT]):
         return await tool.execute(**args)
 
     async def _on_tool_result(self, ctx: ContextT, result: ToolResult) -> bool:
-        """Return False to stop the batch before recording this tool result."""
         return True
 
     @staticmethod
@@ -283,11 +346,14 @@ class BaseAgentExecutor(Generic[ContextT]):
             ))
         return messages
 
-    async def run(
-        self,
-        ctx: ContextT,
-    ) -> AsyncIterator[AgentStepResult]:
-        """Run one loop; overlapping calls on this executor raise RuntimeError."""
+    async def run(self) -> AsyncIterator[AgentStepResult]:
+        """Yield the shared agent loop directly, including any queued follow-ups.
+
+        steer() and queue() behave as with start(). The caller consumes results;
+        on_result is reserved for the start() task driver. The context and optional
+        request are supplied when constructing the executor.
+        """
+        ctx = self.context
         run_state = self._begin_run()
         iterator = self._iterate_run(ctx, run_state)
         try:
@@ -302,24 +368,38 @@ class BaseAgentExecutor(Generic[ContextT]):
     async def _iterate_run(
         self, ctx: ContextT, run_state: _AgentRunState,
     ) -> AsyncIterator[AgentStepResult]:
-        iterator = self._run(ctx, run_state)
+        iterator = None
         try:
-            async for result in iterator:
-                if result.is_final:
-                    run_state.accepting_steering = False
-                yield result
+            while True:
+                iterator = self._run(ctx, run_state)
+                last_step = None
+                async for result in iterator:
+                    last_step = result
+                    if result.is_final:
+                        run_state.accepting_steering = False
+                    yield result
+                if (last_step is not None and last_step.state == "stopped") or not self._queued_messages:
+                    return
+                message = self._queued_messages.popleft()
+                run_state = self._create_run_state()
+                ctx.new_messages = []
+                run_state.pending_messages.append(message)
+                self._run_state = run_state
         finally:
             run_state.accepting_steering = False
-            await iterator.aclose()
+            try:
+                if iterator is not None:
+                    await iterator.aclose()
+            finally:
+                self._release_run(run_state)
 
     async def _run(
         self, ctx: ContextT, run_state: _AgentRunState,
     ) -> AsyncIterator[AgentStepResult]:
-        request = ctx.request
-        model_group = ctx.model_group
+        request = run_state.request
+        model_group = run_state.model_group
         config = run_state.config
         max_steps = config.max_steps
-        tool_config = config.tool_config
 
         if not model_group:
             raise ValueError("model_group must be a non-empty list of LLMModelClient")
@@ -332,6 +412,7 @@ class BaseAgentExecutor(Generic[ContextT]):
         model_name = llm_model.model.model_name
         llm_logger.info(f"[{sid}] Running agent using {model_name} ({provider_name})")
 
+        self._apply_steering(ctx, run_state)
         for step in range(max_steps):
             step_index = step + 1
 
@@ -349,10 +430,8 @@ class BaseAgentExecutor(Generic[ContextT]):
                     persist=False,
                     content=self._get_final_step_hint(),
                 )
-                request.messages.append(OpenAIMessage(
-                    role="user",
-                    content=final_step_prompt.to_string(),
-                ))
+                hint_message = OpenAIMessage(role="user", content=final_step_prompt.to_string())
+                request.messages.append(hint_message)
 
             # Try models in order, failover to next on provider/API errors.
             # Only catch provider-level exceptions (network, timeout, API status).
@@ -427,7 +506,7 @@ class BaseAgentExecutor(Generic[ContextT]):
                     content=assistant_content,
                     reasoning_content=reasoning
                 )
-                ctx.append_messages(msg)
+                self._append_messages(ctx, run_state, msg)
                 yield AgentStepResult(
                     state=state,
                     assistant_message=msg,
@@ -447,7 +526,7 @@ class BaseAgentExecutor(Generic[ContextT]):
             reasoning = llm_resp.reasoning_content or ""
 
             try:
-                await self._execute_tools(ctx, llm_resp, tool_config)
+                await self._execute_tools(ctx, llm_resp, run_state)
             except Exception as e:
                 logger.error(f"[{sid}] Tool execution failed: {e}")
                 await self._on_exception(ctx, e, source="tool", comp_id=None)
@@ -467,7 +546,7 @@ class BaseAgentExecutor(Generic[ContextT]):
                 reasoning_content=reasoning
             )
             tool_msgs = self._build_tool_messages(llm_resp.tool_results)
-            ctx.append_messages(msg, *tool_msgs)
+            self._append_messages(ctx, run_state, msg, *tool_msgs)
 
             yield AgentStepResult(
                 state=state,

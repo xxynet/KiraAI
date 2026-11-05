@@ -37,33 +37,36 @@ def _model(*responses):
     return model
 
 
-def test_default_new_messages_are_isolated_between_contexts():
-    first = BaseAgentExecutionContext(request=LLMRequest(), model_group=[])
-    second = BaseAgentExecutionContext(request=LLMRequest(), model_group=[])
+def test_default_session_messages_are_isolated_between_contexts():
+    first = BaseAgentExecutionContext()
+    second = BaseAgentExecutionContext()
     message = OpenAIMessage(role="assistant", content="first run")
-
     first.append_messages(message)
-
+    assert first.messages == [message]
+    assert first.messages[0] is message
     assert first.new_messages == [message]
-    assert first.request.messages[0] is message
     assert first.new_messages[0] is message
+    assert second.messages == []
     assert second.new_messages == []
-    assert second.request.messages == []
+    assert first.messages is not second.messages
     assert first.new_messages is not second.new_messages
+    assert first.messages is not first.new_messages
 
 
 @pytest.mark.parametrize("context_type", [BaseAgentExecutionContext, AgentExecutionContext])
-def test_context_preserves_explicit_shared_message_list(context_type):
-    messages = []
+def test_context_preserves_explicit_session_message_list(context_type):
+    existing = OpenAIMessage(role="user", content="incoming")
+    messages = [OpenAIMessage(role="assistant", content="history"), existing]
+    new_messages = [existing]
     kwargs = {"event": SimpleNamespace()} if context_type is AgentExecutionContext else {}
-    context = context_type(request=LLMRequest(), model_group=[], new_messages=messages, **kwargs)
+    context = context_type(messages=messages, new_messages=new_messages, **kwargs)
     message = OpenAIMessage(role="assistant", content="shared")
-
     context.append_messages(message)
-
-    assert context.new_messages is messages
-    assert messages == [message]
-    assert context.request.messages[0] is message
+    assert context.messages is messages
+    assert context.new_messages is new_messages
+    assert messages[-1] is new_messages[-1] is message
+    assert [item.content for item in messages] == ["history", "incoming", "shared"]
+    assert [item.content for item in new_messages] == ["incoming", "shared"]
 
 
 def _tool_response(name="probe", arguments='{"value": "input"}', call_id="call-1"):
@@ -97,10 +100,21 @@ def test_plugin_agent_factory_uses_explicit_tools_without_main_manager():
 
     tools = ToolSet([ProbeTool()])
     config = AgentExecutionConfig(max_steps=2)
-    executor = PluginContext.create_agent_executor(Context(), tools, config=config)
+    models = [_model(LLMResponse("complete"))]
+    callback = AsyncMock()
+    context = BaseAgentExecutionContext()
+    request = LLMRequest(tool_set=tools)
+    executor = PluginContext.create_agent_executor(
+        Context(), models, context=context, request=request, config=config, on_result=callback,
+    )
 
-    assert executor.tool_set is tools
+    assert executor.request.tool_set is tools
+    assert not hasattr(executor, "tool_set")
     assert executor.config is config
+    assert executor.model_group == models
+    assert executor.on_result is callback
+    assert executor.context is context
+    assert executor.request is request
 
 
 @pytest.mark.anyio
@@ -112,15 +126,14 @@ async def test_plugin_agent_runs_tools_and_fallback_without_event(no_event_hooks
     plugin_ctx = SimpleNamespace(tool_mgr=manager)
     tools = ToolSet([ProbeTool()])
     config = AgentExecutionConfig(max_steps=2)
-    executor = PluginContext.create_agent_executor(plugin_ctx, tools, config=config)
     primary = _model(ProviderAPIError("primary offline"), ProviderAPIError("primary offline"))
     fallback = _model(_tool_response(), LLMResponse("complete"))
     context = BaseAgentExecutionContext(
-        request=LLMRequest(messages=[{"role": "user", "content": "task"}], tool_set=tools),
-        model_group=[primary, fallback],
+        messages=[OpenAIMessage(role="user", content="task")],
     )
 
-    steps = [step async for step in executor.run(context)]
+    executor = PluginContext.create_agent_executor(plugin_ctx, [primary, fallback], request=LLMRequest(tool_set=tools), context=context, config=config)
+    steps = [step async for step in executor.run()]
 
     assert isinstance(executor, BaseAgentExecutor)
     assert executor.config is config
@@ -128,13 +141,15 @@ async def test_plugin_agent_runs_tools_and_fallback_without_event(no_event_hooks
     assert [step.is_final for step in steps] == [False, True]
     assert all(isinstance(step, AgentStepResult) for step in steps)
     assert all(step.model is fallback.model for step in steps)
-    assert [message.role for message in context.new_messages] == ["assistant", "tool", "assistant"]
-    assert context.new_messages[1].content == "result: input"
-    assert context.new_messages[-1].content == "complete"
-    assert all(any(message is stored for stored in context.request.messages)
-               for message in context.new_messages)
-    assert "final model call for this run" in context.request.messages[-2].content
-    assert "<msg/>" not in context.request.messages[-2].content
+    assert [message.role for message in steps[-1].new_messages] == ["assistant", "tool", "assistant"]
+    assert steps[-1].new_messages[1].content == "result: input"
+    assert steps[-1].new_messages[-1].content == "complete"
+    assert all(any(message is stored for stored in context.messages)
+               for message in steps[-1].new_messages)
+    final_request = fallback.chat.await_args.args[0]
+    assert "final model call for this run" in final_request.messages[-2].content
+    assert "<msg/>" not in final_request.messages[-2].content
+    assert all("final model call" not in str(message.content) for message in context.messages)
     assert manager.config == ToolExecutionConfig(max_tool_calls_per_step=0)
     assert "probe" in manager.tool_set
     manager.execute_tools.assert_not_awaited()
@@ -147,13 +162,11 @@ async def test_independent_agent_does_not_inherit_registered_im_tools(no_event_h
     manager = FuncToolManager()
     im_tool = AsyncMock(return_value="must not run")
     manager.register_tool("probe", "", {}, im_tool)
-    executor = PluginContext.create_agent_executor(SimpleNamespace(tool_mgr=manager))
-    context = BaseAgentExecutionContext(
-        request=LLMRequest(),
-        model_group=[_model(_tool_response(), LLMResponse("complete"))],
-    )
+    model = _model(_tool_response(), LLMResponse("complete"))
+    context = BaseAgentExecutionContext()
+    executor = PluginContext.create_agent_executor(SimpleNamespace(tool_mgr=manager), [model], context=context)
 
-    steps = [step async for step in executor.run(context)]
+    steps = [step async for step in executor.run()]
 
     im_tool.assert_not_awaited()
     assert "not implemented" in steps[0].new_messages[1].content
@@ -163,9 +176,9 @@ async def test_independent_agent_does_not_inherit_registered_im_tools(no_event_h
 @pytest.mark.anyio
 async def test_independent_agent_reports_provider_failure_without_im_exception_hook(no_event_hooks):
     model = _model(ProviderAPIError("provider unavailable"))
-    context = BaseAgentExecutionContext(request=LLMRequest(), model_group=[model])
+    context = BaseAgentExecutionContext()
 
-    steps = [step async for step in BaseAgentExecutor().run(context)]
+    steps = [step async for step in BaseAgentExecutor([model], context=context).run()]
 
     assert len(steps) == 1
     assert steps[0].state == "error"
@@ -178,12 +191,13 @@ async def test_independent_agent_reports_provider_failure_without_im_exception_h
 @pytest.mark.parametrize("error", [TypeError("programming error"), asyncio.CancelledError()])
 @pytest.mark.anyio
 async def test_independent_agent_propagates_programming_errors_and_cancellation(no_event_hooks, error):
-    context = BaseAgentExecutionContext(request=LLMRequest(), model_group=[_model(error)])
+    model = _model(error)
+    context = BaseAgentExecutionContext()
 
     with pytest.raises(type(error)):
-        _ = [step async for step in BaseAgentExecutor().run(context)]
+        _ = [step async for step in BaseAgentExecutor([model], context=context).run()]
 
-    assert context.new_messages == []
+    assert context.messages == []
     no_event_hooks.assert_not_called()
 
 
@@ -195,19 +209,20 @@ async def test_independent_tools_obey_limits_without_event(no_event_hooks):
 
     response = _tool_response()
     response.tool_calls += _tool_response(call_id="call-2").tool_calls
-    context = BaseAgentExecutionContext(request=LLMRequest(), model_group=[_model(response)])
+    model = _model(response)
+    context = BaseAgentExecutionContext()
     config = AgentExecutionConfig(max_steps=1, tool_config=ToolExecutionConfig(
         max_tool_calls_per_step=1, tool_call_timeout=0.01, max_tool_output_tokens=32,
     ))
-    executor = BaseAgentExecutor(ToolSet([SlowTool()]), config=config)
+    executor = BaseAgentExecutor([model], request=LLMRequest(tool_set=ToolSet([SlowTool()])), context=context, config=config)
 
-    steps = [step async for step in executor.run(context)]
+    steps = [step async for step in executor.run()]
 
     results = steps[0].llm_response.tool_results
     assert "timed out" in results[0]["content"]
     assert "limit exceeded" in results[1]["content"]
     assert all(len(result["content"].encode("utf-8")) <= 32 * 4 for result in results)
-    assert len(context.new_messages[0].tool_calls) == 2
+    assert len(steps[-1].new_messages[0].tool_calls) == 2
     no_event_hooks.assert_not_called()
 
 
@@ -224,7 +239,7 @@ async def test_parent_im_tool_can_run_child_agent_with_separate_history(monkeypa
     plugin_ctx = SimpleNamespace(tool_mgr=manager)
     child_tools = ToolSet([ProbeTool()])
     child_model = _model(_tool_response(), LLMResponse("child complete"))
-    child_context = BaseAgentExecutionContext(request=LLMRequest(tool_set=child_tools), model_group=[child_model])
+    child_context = BaseAgentExecutionContext()
     event = SimpleNamespace(sid="test:dm:parent", is_stopped=False)
 
     class DelegateTool(ProbeTool):
@@ -233,27 +248,27 @@ async def test_parent_im_tool_can_run_child_agent_with_separate_history(monkeypa
         async def execute(self, current_event, *, value):
             assert current_event is event
             child = PluginContext.create_agent_executor(
-                plugin_ctx, config=AgentExecutionConfig(max_steps=2),
+                plugin_ctx, [child_model], request=LLMRequest(tool_set=child_tools), config=AgentExecutionConfig(max_steps=2),
+                context=child_context,
             )
             result = None
-            async for result in child.run(child_context):
+            async for result in child.run():
                 pass
             return result.llm_response.text_response
 
     parent_tools = ToolSet([DelegateTool()])
     parent_model = _model(_tool_response(name="delegate"), LLMResponse("parent complete"))
-    parent_context = AgentExecutionContext(event, LLMRequest(tool_set=parent_tools), [], [parent_model])
-    parent = AgentExecutor(parent_tools, config=AgentExecutionConfig(max_steps=2))
+    parent_context = AgentExecutionContext(event=event)
+    parent = AgentExecutor([parent_model], request=LLMRequest(tool_set=parent_tools), context=parent_context, config=AgentExecutionConfig(max_steps=2))
 
-    steps = [step async for step in parent.run(parent_context)]
+    steps = [step async for step in parent.run()]
 
     assert len(steps) == 2
-    assert parent_context.new_messages[1].content == "child complete"
-    assert parent_context.new_messages[-1].content == "parent complete"
-    assert child_context.new_messages[1].content == "result: input"
-    assert child_context.new_messages[-1].content == "child complete"
-    assert parent_context.request is not child_context.request
-    assert parent_context.new_messages is not child_context.new_messages
+    assert parent_context.messages[1].content == "child complete"
+    assert parent_context.messages[-1].content == "parent complete"
+    assert child_context.messages[1].content == "result: input"
+    assert child_context.messages[-1].content == "child complete"
+    assert parent_context.messages is not child_context.messages
     assert llm_hook.await_count == 2
     assert tool_hook.await_count == 1
     assert all(call.args[0] is event for call in llm_hook.await_args_list + tool_hook.await_args_list)
@@ -275,21 +290,20 @@ async def test_independent_executors_run_concurrently_without_sharing_history(no
 
     model.chat.side_effect = respond
     contexts = [BaseAgentExecutionContext(
-        request=LLMRequest(messages=[{"role": "user", "content": task}]), model_group=[model],
+        messages=[OpenAIMessage(role="user", content=task)],
     ) for task in ("task A", "task B")]
-    executors = [BaseAgentExecutor(config=AgentExecutionConfig(max_steps=1)) for _ in contexts]
+    executors = [BaseAgentExecutor([model], context=context, config=AgentExecutionConfig(max_steps=1)) for context in contexts]
 
-    async def run(executor, context):
-        return [step async for step in executor.run(context)]
+    async def run(executor):
+        return [step async for step in executor.run()]
 
     results = await asyncio.wait_for(asyncio.gather(*(
-        run(executor, context) for executor, context in zip(executors, contexts, strict=True)
+        run(executor) for executor in executors
     )), timeout=2)
 
     assert [steps[0].llm_response.text_response for steps in results] == ["task A", "task B"]
-    assert contexts[0].request is not contexts[1].request
-    assert contexts[0].new_messages is not contexts[1].new_messages
-    assert [context.new_messages[0].content for context in contexts] == ["task A", "task B"]
+    assert contexts[0].messages is not contexts[1].messages
+    assert [context.messages[1].content for context in contexts] == ["task A", "task B"]
     no_event_hooks.assert_not_called()
 
 
@@ -318,14 +332,136 @@ async def test_im_tool_hook_stops_batch_and_keeps_only_answered_calls(monkeypatc
     response.tool_calls += _tool_response(arguments='{"value": "second"}', call_id="call-2").tool_calls
     response.tool_calls += _tool_response(arguments='{"value": "third"}', call_id="call-3").tool_calls
     tools = ToolSet([EventTool()])
-    context = AgentExecutionContext(event, LLMRequest(tool_set=tools), [], [_model(response)])
-    executor = AgentExecutor(tools, config=AgentExecutionConfig(max_steps=1))
+    context = AgentExecutionContext(event=event)
+    executor = AgentExecutor([_model(response)], request=LLMRequest(tool_set=tools), context=context, config=AgentExecutionConfig(max_steps=1))
 
-    steps = [step async for step in executor.run(context)]
+    steps = [step async for step in executor.run()]
 
     assert event.is_stopped
     assert calls == results == ["first", "second"]
     assert [result["tool_call_id"] for result in response.tool_results] == ["call-1"]
     assert [call["id"] for call in steps[0].assistant_message.tool_calls] == ["call-1"]
-    assert [message.role for message in context.new_messages] == ["assistant", "tool"]
-    assert context.new_messages[1].content == "first"
+    assert [message.role for message in steps[-1].new_messages] == ["assistant", "tool"]
+    assert steps[-1].new_messages[1].content == "first"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("replace_tool_set", [False, True])
+async def test_model_and_tool_snapshots_refresh_only_when_next_background_turn_starts(no_event_hooks, replace_tool_set):
+    tools = ToolSet()
+    seen = []
+    delivered = []
+
+    class VersionTool(ProbeTool):
+        def __init__(self, version):
+            super().__init__()
+            self.version = version
+
+        def get_schema(self):
+            schema = super().get_schema()
+            schema["description"] = self.version
+            return schema
+
+        async def execute(self, *, value):
+            return f"{self.version}:{value}"
+
+    tools.add(VersionTool("old"))
+    original, replacement = _model(), _model()
+    original_calls = replacement_calls = 0
+
+    async def original_chat(request):
+        nonlocal original_calls
+        original_calls += 1
+        seen.append(("original", request.tools[0]["function"]["description"]))
+        if original_calls == 1:
+            executor.model_group = [replacement]
+            if replace_tool_set:
+                executor.request.tool_set = ToolSet([VersionTool("new")])
+            else:
+                tools.add(VersionTool("new"))
+            return _tool_response()
+        return LLMResponse("first complete")
+
+    async def replacement_chat(request):
+        nonlocal replacement_calls
+        replacement_calls += 1
+        seen.append(("replacement", request.tools[0]["function"]["description"]))
+        return _tool_response() if replacement_calls == 1 else LLMResponse("second complete")
+
+    async def on_result(result):
+        delivered.append(result)
+        if len(delivered) == 2:
+            executor.queue("next turn")
+
+    original.chat.side_effect = original_chat
+    replacement.chat.side_effect = replacement_chat
+    context = BaseAgentExecutionContext(messages=[OpenAIMessage(role="user", content="task")])
+    executor = BaseAgentExecutor([original], request=LLMRequest(tool_set=tools), context=context, config=AgentExecutionConfig(max_steps=2), on_result=on_result)
+    history = context.messages
+    final = await executor.start()
+
+    assert final is delivered[-1]
+    assert seen == [("original", "old"), ("original", "old"), ("replacement", "new"), ("replacement", "new")]
+    assert delivered[0].llm_response.tool_results[0]["content"] == "old:input"
+    assert delivered[2].llm_response.tool_results[0]["content"] == "new:input"
+    assert context.messages is history
+    assert all("final model call" not in str(message.content) for message in history)
+    assert not hasattr(context, "request")
+    assert not hasattr(context, "model_group")
+    assert context.new_messages is final.new_messages
+    assert delivered[1].new_messages is not final.new_messages
+    no_event_hooks.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("driver", ["run", "start"])
+async def test_prepared_request_preserves_options_with_one_history_and_tool_source(no_event_hooks, driver):
+    from core.prompt_manager import Prompt
+
+    tools = ToolSet([ProbeTool()])
+    model = _model(_tool_response(), LLMResponse("follow-up complete"))
+    context = BaseAgentExecutionContext(messages=[OpenAIMessage(role="user", content="current history")])
+    request = LLMRequest(
+        messages=[OpenAIMessage(role="user", content="stale request history")],
+        user_prompt=[Prompt("user metadata")], system_prompt=[Prompt("system metadata")],
+        tool_set=tools,
+        tool_choice="required",
+    )
+    request.tools = [{"type": "function", "function": {"name": "unavailable"}}]
+
+    executor = BaseAgentExecutor([model], context=context, request=request, config=AgentExecutionConfig(max_steps=1))
+    steps = [step async for step in executor.run()] if driver == "run" else [await executor.start()]
+
+    sent = model.chat.await_args.args[0]
+    assert sent is not request
+    assert sent.tool_choice == "required"
+    assert sent.user_prompt == request.user_prompt and sent.user_prompt is not request.user_prompt
+    assert sent.system_prompt == request.system_prompt and sent.system_prompt is not request.system_prompt
+    assert sent.tools == tools.to_list()
+    assert sent.tool_set is not request.tool_set
+    assert sent.tool_set.tools == request.tool_set.tools
+    assert request.tools[0]["function"]["name"] == "unavailable"
+    assert sent.messages[0].content == "current history"
+    assert all(message.content != "stale request history" for message in context.messages)
+    assert steps[0].llm_response.tool_results[0]["content"] == "result: input"
+    assert [message.content for message in request.messages] == ["stale request history"]
+    assert all("final model call" not in str(message.content) for message in context.messages)
+
+    request.tool_choice = "auto"
+    request.user_prompt.append(Prompt("updated metadata"))
+    follow_up = await executor.queue("next task")
+    next_request = model.chat.await_args.args[0]
+    assert executor.context is context
+    assert executor.request is request
+    assert next_request is not sent and next_request is not request
+    assert next_request.tool_choice == "auto" and sent.tool_choice == "required"
+    assert next_request.user_prompt == request.user_prompt
+    assert len(sent.user_prompt) == 1
+    assert next_request.system_prompt == request.system_prompt
+    assert next_request.tools == tools.to_list()
+    assert [message.role for message in next_request.messages[:3]] == ["user", "assistant", "tool"]
+    assert follow_up.new_messages is context.new_messages
+    assert [message.content for message in follow_up.new_messages] == ["next task", "follow-up complete"]
+    assert [message.content for message in request.messages] == ["stale request history"]
+    assert all("final model call" not in str(message.content) for message in context.messages)
+    no_event_hooks.assert_not_called()

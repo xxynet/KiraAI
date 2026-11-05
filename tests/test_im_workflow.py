@@ -1204,10 +1204,11 @@ async def test_steered_text_response_continues_im_loop_and_persists_instruction(
     from core.agent.agent_executor import AgentExecutor
 
     instance, model = processor
-    seen = []
+    seen, contexts = [], []
     original_hook = AgentExecutor._on_llm_response
 
     async def on_response(self, ctx, response):
+        contexts.append(ctx)
         if response.agent_step_index == 1:
             assert self.steer("follow the updated instruction")
         return await original_hook(self, ctx, response)
@@ -1225,5 +1226,7 @@ async def test_steered_text_response_continues_im_loop_and_persists_instruction(
     assert instance.im_workflow.ctx.db.add_telemetry_llm_usage.await_count == 2
     assert seen[1][-2] == {"role": "user", "content": "follow the updated instruction"}
     memory = instance.im_workflow.ctx.session_manager.update_memory.call_args.args[1]
+    assert contexts[0] is contexts[1]
+    assert memory is contexts[0].new_messages
     assert [message.role for message in memory] == ["user", "assistant", "user", "assistant"]
     assert memory[2].content == "follow the updated instruction"
