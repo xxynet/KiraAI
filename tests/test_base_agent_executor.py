@@ -13,8 +13,11 @@ from core.agent.agent_executor import (
 from core.agent.base_agent_executor import BaseAgentExecutionContext, BaseAgentExecutor
 from core.agent.config import AgentExecutionConfig, ToolExecutionConfig
 from core.agent.func_tool_manager import FuncToolManager
+from core.agent.hooks import AgentExecutionHooks
+from core.agent.im_tool_executor import IMToolExecutor
 from core.agent.message import OpenAIMessage
 from core.agent.tool import ToolResult, ToolSet
+from core.agent.tool_executor import ToolExecutor
 from core.plugin.handlers import EventType, event_handler_reg
 from core.plugin.plugin_context import PluginContext
 from core.provider import (
@@ -104,8 +107,11 @@ def test_plugin_agent_factory_uses_explicit_tools_without_main_manager():
     callback = AsyncMock()
     context = BaseAgentExecutionContext()
     request = LLMRequest(tool_set=tools)
+    hooks = AgentExecutionHooks()
+    tool_executor = ToolExecutor()
     executor = PluginContext.create_agent_executor(
-        Context(), models, context=context, request=request, config=config, on_result=callback,
+        Context(), models, context=context, request=request, hooks=hooks, config=config, on_result=callback,
+        tool_executor=tool_executor,
     )
 
     assert executor.request.tool_set is tools
@@ -115,6 +121,103 @@ def test_plugin_agent_factory_uses_explicit_tools_without_main_manager():
     assert executor.on_result is callback
     assert executor.context is context
     assert executor.request is request
+    assert executor.hooks is hooks
+    assert executor.tool_executor is tool_executor
+
+
+def test_default_tool_execution_and_lifecycle_hooks_are_separate():
+    context = BaseAgentExecutionContext()
+    independent = BaseAgentExecutor([], context=context)
+    event = SimpleNamespace(sid="test", is_stopped=False)
+    im_executor = AgentExecutor([], context=AgentExecutionContext(event=event))
+
+    assert type(independent.tool_executor) is ToolExecutor
+    assert isinstance(im_executor.tool_executor, IMToolExecutor)
+    assert im_executor.tool_executor.event is event
+    assert not hasattr(independent.hooks, "invoke_tool")
+    assert not hasattr(im_executor.hooks, "invoke_tool")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("driver", ["run", "start"])
+@pytest.mark.parametrize("executor_type", [BaseAgentExecutor, AgentExecutor])
+async def test_injected_hooks_and_tool_executor_follow_execution_order(no_event_hooks, driver, executor_type):
+    events, delivered = [], []
+    context = (AgentExecutionContext(event=SimpleNamespace(sid="test", is_stopped=False))
+               if executor_type is AgentExecutor else BaseAgentExecutionContext())
+    tool = ProbeTool()
+
+    class Hooks(AgentExecutionHooks):
+        async def on_llm_response(self, ctx, response):
+            assert ctx is context
+            events.append("response")
+            return False
+
+        async def on_tool_result(self, ctx, result):
+            assert ctx is context
+            events.append("tool_result")
+            result.text += ":hooked"
+            return True
+
+    class CustomToolExecutor(ToolExecutor):
+        async def invoke_tool(self, current_tool, args):
+            assert current_tool is tool
+            events.append("invoke")
+            return await super().invoke_tool(current_tool, {"value": f"adapted {args['value']}"})
+
+    async def on_result(result):
+        delivered.append(result)
+
+    hooks = Hooks()
+    tool_executor = CustomToolExecutor()
+    model = _model(_tool_response(), LLMResponse("complete"), LLMResponse("follow-up complete"))
+    executor = executor_type(
+        [model], context=context, request=LLMRequest(tool_set=ToolSet([tool])),
+        hooks=hooks, on_result=on_result, config=AgentExecutionConfig(max_steps=2),
+        tool_executor=tool_executor,
+    )
+    if driver == "run":
+        steps = [step async for step in executor.run()]
+        assert delivered == []
+    else:
+        await executor.start()
+        steps = delivered.copy()
+
+    assert executor.hooks is hooks
+    assert executor.tool_executor is tool_executor
+    assert events == ["response", "invoke", "tool_result", "response"]
+    assert steps[0].llm_response.tool_results[0]["content"] == "result: adapted input:hooked"
+    assert steps[-1].is_final
+    follow_up = await executor.queue("next turn")
+    assert delivered[-1] is follow_up
+    assert events == ["response", "invoke", "tool_result", "response", "response"]
+    no_event_hooks.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("source", ["provider", "tool"])
+async def test_injected_exception_hook_receives_original_error_and_source(no_event_hooks, source):
+    error = ProviderAPIError("full provider failure") if source == "provider" else TypeError("full tool failure")
+    model = _model(error if source == "provider" else _tool_response())
+    context = BaseAgentExecutionContext()
+    hooks = AgentExecutionHooks()
+    hooks.on_exception = AsyncMock()
+    executor = BaseAgentExecutor([model], context=context, hooks=hooks)
+    if source == "tool":
+        executor.tool_executor.execute_tools = AsyncMock(side_effect=error)
+        with pytest.raises(TypeError) as captured:
+            _ = [step async for step in executor.run()]
+        assert captured.value is error
+    else:
+        steps = [step async for step in executor.run()]
+        assert steps[-1].state == "error"
+        assert str(error) in steps[-1].err
+
+    hooks.on_exception.assert_awaited_once_with(
+        context, error, source=source, comp_id=model.model.provider_name if source == "provider" else None,
+    )
+    assert not executor.steer("inactive")
+    no_event_hooks.assert_not_called()
 
 
 @pytest.mark.anyio

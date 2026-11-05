@@ -7,6 +7,7 @@ import pytest
 
 from core.agent.base_agent_executor import BaseAgentExecutionContext, BaseAgentExecutor
 from core.agent.config import AgentExecutionConfig
+from core.agent.hooks import AgentExecutionHooks
 from core.agent.message import OpenAIMessage
 from core.provider import LLMRequest, LLMResponse
 
@@ -250,11 +251,11 @@ async def test_aborted_background_task_discards_waiting_followups(monkeypatch, o
 
 @pytest.mark.anyio
 async def test_stopped_turn_discards_followups_queued_by_result_callback():
-    class StoppedExecutor(BaseAgentExecutor):
-        async def _on_llm_response(self, ctx, response):
+    class StopHooks(AgentExecutionHooks):
+        async def on_llm_response(self, ctx, response):
             return True
 
-    executor = StoppedExecutor([], context=BaseAgentExecutionContext())
+    executor = BaseAgentExecutor([], context=BaseAgentExecutionContext(), hooks=StopHooks())
     delivered = []
 
     async def on_result(result):

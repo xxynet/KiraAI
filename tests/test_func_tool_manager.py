@@ -8,6 +8,7 @@ from core.agent.config import ToolExecutionConfig
 from core.agent.func_tool_manager import FuncToolManager
 from core.agent.mcp_mgr import MCPManager
 from core.agent.tool import ToolResult, truncate_tool_output
+from core.agent.tool_executor import ToolExecutor
 from core.config.tool_execution import build_tool_execution_config
 from core.provider import LLMResponse
 from core.utils.media_refs import MEDIA_REF_TYPE
@@ -279,6 +280,61 @@ async def test_concurrent_call_configs_are_isolated(tool_environment):
     assert len(bounded.tool_results[0]["content"].encode()) <= 64
     assert unlimited.tool_results[0]["content"] == "x" * 2000
     assert manager.config is defaults
+
+
+@pytest.mark.anyio
+async def test_concurrent_im_calls_keep_events_isolated(tool_environment):
+    import asyncio
+
+    manager, _, _, _ = tool_environment
+    events = [SimpleNamespace(is_stopped=False, label=label) for label in ("first", "second")]
+    both_started = asyncio.Event()
+    received = []
+
+    async def execute(event):
+        received.append(event)
+        if len(received) == 2:
+            both_started.set()
+        await both_started.wait()
+        return event.label
+
+    manager.register_tool("probe", "", {}, execute)
+    responses = [_response(), _response()]
+    await asyncio.wait_for(asyncio.gather(*(
+        manager.execute_tool(event, response, manager.build_tool_set())
+        for event, response in zip(events, responses)
+    )), timeout=3)
+
+    assert received[0] is events[0] and received[1] is events[1]
+    assert [response.tool_results[0]["content"] for response in responses] == ["first", "second"]
+    assert type(manager.tool_executor) is ToolExecutor
+
+
+@pytest.mark.anyio
+async def test_custom_tool_executor_preserves_limits_and_result_callbacks(tool_environment):
+    import asyncio
+
+    manager, _, _, _ = tool_environment
+    execute = AsyncMock(return_value="must not execute")
+    manager.register_tool("probe", "", {}, execute)
+
+    class WaitingExecutor(ToolExecutor):
+        async def invoke_tool(self, tool, args):
+            await asyncio.Event().wait()
+
+    result_callback = AsyncMock(return_value=True)
+    response = _response()
+    response.tool_calls.append({"id": "call-2", "function": {"name": "probe", "arguments": "{}"}})
+    await manager.execute_tools(
+        response, manager.build_tool_set(), tool_executor=WaitingExecutor(),
+        config=ToolExecutionConfig(max_tool_calls_per_step=1, tool_call_timeout=0.01),
+        on_tool_result=result_callback,
+    )
+
+    execute.assert_not_awaited()
+    result_callback.assert_awaited_once()
+    assert "timed out after 0.01s" in response.tool_results[0]["content"]
+    assert "Tool call limit exceeded" in response.tool_results[1]["content"]
 
 
 @pytest.mark.anyio

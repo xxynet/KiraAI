@@ -13,6 +13,8 @@ from core.agent.base_agent_executor import (
 )
 from core.agent.config import AgentExecutionConfig
 from core.agent.func_tool_manager import FuncToolManager
+from core.agent.hooks import AgentExecutionHooks
+from core.agent.tool_executor import ToolExecutor
 from core.chat import (
     Group,
     KiraIMMessage,
@@ -142,15 +144,23 @@ class PluginContext:
         )
 
     def create_agent_executor(
-        self, model_group: list[LLMModelClient], *,
+        self, model_group: list[LLMModelClient] | None = None, *,
         context: BaseAgentExecutionContext,
         request: LLMRequest | None = None,
+        hooks: AgentExecutionHooks[BaseAgentExecutionContext] | None = None,
+        tool_executor: ToolExecutor | None = None,
         config: AgentExecutionConfig | None = None,
         on_result: Callable[[AgentStepResult], Awaitable[None]] | None = None,
     ) -> BaseAgentExecutor[BaseAgentExecutionContext]:
-        """Create an independent agent bound to its context and request options."""
+        """Create an independent agent, using the default LLM when models are omitted."""
+        if model_group is None:
+            client = self.get_default_llm_client()
+            if client is None:
+                raise ValueError("No default LLM is available for agent execution")
+            model_group = [client]
         return BaseAgentExecutor(
-            model_group, context=context, request=request,
+            model_group, context=context, request=request, hooks=hooks,
+            tool_executor=tool_executor,
             config=config, on_result=on_result,
         )
 

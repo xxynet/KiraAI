@@ -8,6 +8,7 @@ import pytest
 
 from core.agent.base_agent_executor import BaseAgentExecutionContext, BaseAgentExecutor
 from core.agent.config import AgentExecutionConfig
+from core.agent.hooks import AgentExecutionHooks
 from core.agent.message import OpenAIMessage
 from core.agent.tool import ToolSet
 from core.provider import LLMRequest, LLMResponse, ProviderAPIError
@@ -291,8 +292,8 @@ async def test_steer_does_not_queue_for_idle_or_zero_step_runs():
 async def test_stop_hook_discards_pending_steering_and_releases_executor():
     started, release = asyncio.Event(), asyncio.Event()
 
-    class StopOnceExecutor(BaseAgentExecutor):
-        async def _on_llm_response(self, ctx, response):
+    class StopOnceHooks(AgentExecutionHooks):
+        async def on_llm_response(self, ctx, response):
             return response.text_response == "stop"
 
     async def chat(request):
@@ -300,7 +301,7 @@ async def test_stop_hook_discards_pending_steering_and_releases_executor():
         await release.wait()
         return LLMResponse("stop")
 
-    executor = StopOnceExecutor([], context=BaseAgentExecutionContext(), config=AgentExecutionConfig(max_steps=2))
+    executor = BaseAgentExecutor([], context=BaseAgentExecutionContext(), hooks=StopOnceHooks(), config=AgentExecutionConfig(max_steps=2))
     context = _context(executor, _model(chat))
     async with _running(executor, context, started, release) as task:
         assert executor.steer("discard on stop")

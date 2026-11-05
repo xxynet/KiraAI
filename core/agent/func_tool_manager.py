@@ -3,11 +3,14 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
+from deprecated import deprecated
+
 from core.logging_manager import get_logger
 from core.provider import LLMResponse
 from core.utils.tool_utils import BaseTool
 
 from .config import ToolExecutionConfig
+from .im_tool_executor import IMToolExecutor
 from .tool import ToolResult, ToolSet
 from .tool_executor import ToolExecutor
 
@@ -60,6 +63,7 @@ class FuncToolManager:
         """Return a request-local copy of the registered tools."""
         return ToolSet(tools=self.tool_set.tools.copy())
 
+    @deprecated("Use IMToolExecutor(event).execute_tools with an IM result callback instead")
     async def execute_tool(
         self,
         event: KiraMessageBatchEvent,
@@ -71,9 +75,6 @@ class FuncToolManager:
         """Execute IM tools and dispatch the existing event-bound result hooks."""
         from core.plugin.handlers import EventType, event_handler_reg
 
-        async def invoke_tool(tool: BaseTool, args: dict) -> object:
-            return await tool.execute(event, **args)
-
         async def on_tool_result(result: ToolResult) -> bool:
             for handler in event_handler_reg.get_handlers(event_type=EventType.ON_TOOL_RESULT):
                 await handler.exec_handler(event, result)
@@ -83,25 +84,27 @@ class FuncToolManager:
             return True
 
         await self.execute_tools(
-            resp, tool_set, config=config, invoke_tool=invoke_tool, on_tool_result=on_tool_result,
+            resp, tool_set, config=config, tool_executor=IMToolExecutor(event), on_tool_result=on_tool_result,
         )
 
+    @deprecated("Use ToolExecutor.execute_tools instead")
     async def execute_tools(
         self,
         resp: LLMResponse,
         tool_set: ToolSet | None = None,
         *,
         config: ToolExecutionConfig | None = None,
-        invoke_tool: Callable[[BaseTool, dict], Awaitable[object]] | None = None,
+        tool_executor: ToolExecutor | None = None,
         on_tool_result: Callable[[ToolResult], Awaitable[bool]] | None = None,
     ) -> None:
         """Execute an explicit tool set without requiring events or plugin hooks.
 
         By default tools receive only model-supplied keyword arguments. Integrations
-        may supply invocation and result callbacks; returning False from the result
-        callback stops the batch before the current result is recorded.
+        may supply a tool executor and a result callback; returning False from the
+        result callback stops the batch before the current result is recorded.
         """
-        await self.tool_executor.execute_tools(
+        executor = tool_executor if tool_executor is not None else self.tool_executor
+        await executor.execute_tools(
             resp, tool_set, config=config if config is not None else self.config,
-            invoke_tool=invoke_tool, on_tool_result=on_tool_result,
+            on_tool_result=on_tool_result,
         )

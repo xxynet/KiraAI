@@ -1201,23 +1201,30 @@ async def test_tool_config_is_fixed_for_one_agent_loop_and_refreshes_for_the_nex
 
 @pytest.mark.anyio
 async def test_steered_text_response_continues_im_loop_and_persists_instruction(processor, monkeypatch):
-    from core.agent.agent_executor import AgentExecutor
+    from core.agent.agent_executor import AgentExecutor, IMAgentExecutionHooks
 
     instance, model = processor
     seen, contexts = [], []
-    original_hook = AgentExecutor._on_llm_response
+    original_init = AgentExecutor.__init__
 
-    async def on_response(self, ctx, response):
-        contexts.append(ctx)
-        if response.agent_step_index == 1:
-            assert self.steer("follow the updated instruction")
-        return await original_hook(self, ctx, response)
+    class SteeringHooks(IMAgentExecutionHooks):
+        def __init__(self, executor):
+            self.executor = executor
+
+        async def on_llm_response(self, ctx, response):
+            contexts.append(ctx)
+            if response.agent_step_index == 1:
+                assert self.executor.steer("follow the updated instruction")
+            return await super().on_llm_response(ctx, response)
+
+    def initialize_executor(self, *args, **kwargs):
+        original_init(self, *args, hooks=SteeringHooks(self), **kwargs)
 
     async def chat(request):
         seen.append([message.to_dict() for message in request.messages])
         return LLMResponse(f"<msg><text>reply {len(seen)}</text></msg>")
 
-    monkeypatch.setattr(AgentExecutor, "_on_llm_response", on_response)
+    monkeypatch.setattr(AgentExecutor, "__init__", initialize_executor)
     model.chat.side_effect = chat
     await instance.im_workflow.handle_batch_event(batch())
 

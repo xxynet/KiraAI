@@ -8,6 +8,7 @@ import pytest
 from core.agent.agent_executor import AgentExecutionContext, AgentExecutor
 from core.agent.base_agent_executor import BaseAgentExecutionContext, BaseAgentExecutor
 from core.agent.config import AgentExecutionConfig
+from core.agent.hooks import AgentExecutionHooks
 from core.agent.message import OpenAIMessage
 from core.agent.tool import ToolSet
 from core.plugin.handlers import EventType, event_handler_reg
@@ -191,7 +192,7 @@ async def test_background_cancellation_releases_reservation_and_pending_steering
     assert all(message.content != "must not leak" for message in fresh.messages)
 
 
-@pytest.mark.parametrize("phase", ["model", "callback"])
+@pytest.mark.parametrize("phase", ["model", "callback", "hook"])
 @pytest.mark.anyio
 async def test_background_failures_remain_on_task_and_are_logged(monkeypatch, phase):
     from core.agent import base_agent_executor
@@ -200,6 +201,9 @@ async def test_background_failures_remain_on_task_and_are_logged(monkeypatch, ph
     log = Mock()
     monkeypatch.setattr(base_agent_executor.logger, "error", log)
     executor = BaseAgentExecutor([], context=BaseAgentExecutionContext())
+    if phase == "hook":
+        executor.hooks = AgentExecutionHooks()
+        executor.hooks.on_llm_response = AsyncMock(side_effect=error)
 
     async def chat(request):
         if phase == "model":
@@ -220,6 +224,7 @@ async def test_background_failures_remain_on_task_and_are_logged(monkeypatch, ph
     assert log.call_args.kwargs["exc_info"][1] is error
     assert log.call_args.kwargs["exc_info"][2] is not None
     assert not executor.steer("inactive")
+    executor.hooks = AgentExecutionHooks()
     fresh = _context(executor, _model(lambda request: LLMResponse("fresh")))
     assert len(await _collect(executor, fresh)) == 1
 

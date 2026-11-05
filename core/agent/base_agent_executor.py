@@ -11,7 +11,7 @@ from typing import Generic, Literal, TypeVar
 from openai import APIConnectionError, APIStatusError, APITimeoutError
 
 from core.agent.message import OpenAIMessage
-from core.agent.tool import ToolResult, ToolSet
+from core.agent.tool import ToolSet
 from core.logging_manager import get_logger
 from core.prompt_manager import Prompt
 from core.provider import (
@@ -22,9 +22,9 @@ from core.provider import (
     ProviderAPIError,
 )
 from core.utils.media_refs import MEDIA_REF_TYPE
-from core.utils.tool_utils import BaseTool
 
 from .config import AgentExecutionConfig
+from .hooks import AgentExecutionHooks
 from .tool_executor import ToolExecutor
 
 logger = get_logger("agent_executor", "cyan")
@@ -84,15 +84,18 @@ class BaseAgentExecutor(Generic[ContextT]):
         *,
         context: ContextT,
         request: LLMRequest | None = None,
+        hooks: AgentExecutionHooks[ContextT] | None = None,
+        tool_executor: ToolExecutor | None = None,
         config: AgentExecutionConfig | None = None,
         on_result: Callable[[AgentStepResult], Awaitable[None]] | None = None,
     ):
         self.model_group = model_group.copy()
         self.context = context
         self.request = request
+        self.hooks = hooks if hooks is not None else AgentExecutionHooks()
         self.config = config if config is not None else AgentExecutionConfig()
         self.on_result = on_result
-        self.tool_executor = ToolExecutor()
+        self.tool_executor = tool_executor if tool_executor is not None else ToolExecutor()
         self._run_state: _AgentRunState | None = None
         self._background_task: Task[AgentStepResult | None] | None = None
         self._queued_messages: deque[OpenAIMessage] = deque()
@@ -267,28 +270,13 @@ class BaseAgentExecutor(Generic[ContextT]):
             "</system_reminder>"
         )
 
-    async def _on_llm_response(self, ctx: ContextT, response: LLMResponse) -> bool:
-        return False
-
-    async def _on_exception(
-        self, ctx: ContextT, exception: Exception, *, source: str, comp_id: str | None,
-    ) -> None:
-        """Allow integrations to report failures without coupling the loop to events."""
-
     async def _execute_tools(
         self, ctx: ContextT, response: LLMResponse, run_state: _AgentRunState,
     ) -> None:
         await self.tool_executor.execute_tools(
             response, tool_set=run_state.request.tool_set, config=run_state.config.tool_config,
-            invoke_tool=partial(self._invoke_tool, ctx),
-            on_tool_result=partial(self._on_tool_result, ctx),
+            on_tool_result=partial(self.hooks.on_tool_result, ctx),
         )
-
-    async def _invoke_tool(self, ctx: ContextT, tool: BaseTool, args: dict) -> object:
-        return await tool.execute(**args)
-
-    async def _on_tool_result(self, ctx: ContextT, result: ToolResult) -> bool:
-        return True
 
     @staticmethod
     def _build_tool_messages(tool_results: list[dict]) -> list[OpenAIMessage]:
@@ -462,7 +450,7 @@ class BaseAgentExecutor(Generic[ContextT]):
                         llm_resp = LLMResponse(f"[ProviderError] {err}", status="error")
                         state = "error"
                         is_final = True
-                        await self._on_exception(
+                        await self.hooks.on_exception(
                             ctx, last_exc, source="provider", comp_id=model.model.provider_name,
                         )
 
@@ -485,7 +473,7 @@ class BaseAgentExecutor(Generic[ContextT]):
                 f"[{sid}] Time consumed: {llm_resp.time_consumed}s, Input tokens: {llm_resp.input_tokens}, output tokens: {llm_resp.output_tokens}{cached_tokens_info}, step: {step_index}/{max_steps}"
             )
 
-            if await self._on_llm_response(ctx, llm_resp):
+            if await self.hooks.on_llm_response(ctx, llm_resp):
                 yield AgentStepResult(
                     state="stopped",
                     step_index=step_index,
@@ -529,7 +517,7 @@ class BaseAgentExecutor(Generic[ContextT]):
                 await self._execute_tools(ctx, llm_resp, run_state)
             except Exception as e:
                 logger.error(f"[{sid}] Tool execution failed: {e}")
-                await self._on_exception(ctx, e, source="tool", comp_id=None)
+                await self.hooks.on_exception(ctx, e, source="tool", comp_id=None)
                 raise
             # An integration may stop tool execution with partial results. Keep the
             # assistant message's tool_calls consistent with the tool_results actually

@@ -17,7 +17,11 @@ tool_logger = get_logger("tool_use", "orange")
 
 
 class ToolExecutor:
-    """Execute supplied tools with per-call limits and integration callbacks."""
+    """Execute supplied tools with per-call limits and result callbacks."""
+
+    async def invoke_tool(self, tool: BaseTool, args: dict) -> object:
+        """Invoke a tool using model-supplied keyword arguments."""
+        return await tool.execute(**args)
 
     async def execute_tools(
         self,
@@ -25,13 +29,12 @@ class ToolExecutor:
         tool_set: ToolSet | None = None,
         *,
         config: ToolExecutionConfig,
-        invoke_tool: Callable[[BaseTool, dict], Awaitable[object]] | None = None,
         on_tool_result: Callable[[ToolResult], Awaitable[bool]] | None = None,
     ) -> None:
         """Execute an explicit tool set without a registry, events, or shared config.
 
-        Tools receive model-supplied keyword arguments unless an invocation callback
-        is supplied. A result callback may stop the batch by returning False.
+        Override invoke_tool() to adapt tool arguments. A result callback may stop
+        the batch by returning False.
         """
         max_tool_calls = config.max_tool_calls_per_step
         tool_call_timeout = config.tool_call_timeout
@@ -69,7 +72,7 @@ class ToolExecutor:
             if tool_set and name in tool_set:
                 try:
                     tool_inst = tool_set.get(name)
-                    coro = invoke_tool(tool_inst, args) if invoke_tool else tool_inst.execute(**args)
+                    coro = self.invoke_tool(tool_inst, args)
                     result = await (wait_for(coro, tool_call_timeout) if tool_call_timeout else coro)
                 except AsyncTimeoutError:
                     result = {"error": f"Tool '{name}' timed out after {tool_call_timeout}s"}
