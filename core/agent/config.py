@@ -27,13 +27,17 @@ class ToolExecutionConfig:
 
 @dataclass(frozen=True)
 class AgentExecutionConfig:
-    """Limits captured for one complete agent loop."""
+    """Settings captured for one complete agent loop."""
 
     max_steps: int = 5
     tool_config: ToolExecutionConfig = field(default_factory=ToolExecutionConfig)
+    # None or an empty string disables the final-step prompt.
+    final_step_hint: str | None = None
 
     def __post_init__(self):
         if not isinstance(self.max_steps, int) or isinstance(self.max_steps, bool) or self.max_steps < 0:
             raise ValueError("max_steps must be a non-negative integer")
         if not isinstance(self.tool_config, ToolExecutionConfig):
             raise TypeError("tool_config must be a ToolExecutionConfig")
+        if self.final_step_hint is not None and not isinstance(self.final_step_hint, str):
+            raise TypeError("final_step_hint must be a string or None")

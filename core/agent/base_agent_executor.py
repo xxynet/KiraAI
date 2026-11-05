@@ -258,18 +258,6 @@ class BaseAgentExecutor(Generic[ContextT]):
             run_state.pending_messages = []
             self._append_messages(ctx, run_state, *messages)
 
-    def _get_log_id(self, ctx: ContextT) -> str:
-        return "agent"
-
-    def _get_final_step_hint(self) -> str:
-        return (
-            "<system_reminder>This is the final model call for this run. "
-            "Conclude the task using the information already available. "
-            "Any tool result will not invoke you again during this run. "
-            "If information is insufficient, clearly state what is missing."
-            "</system_reminder>"
-        )
-
     async def _execute_tools(
         self, ctx: ContextT, response: LLMResponse, run_state: _AgentRunState,
     ) -> None:
@@ -394,7 +382,7 @@ class BaseAgentExecutor(Generic[ContextT]):
 
         llm_model = model_group[0]
 
-        sid = self._get_log_id(ctx)
+        sid = getattr(getattr(ctx, "event", None), "sid", "agent")
 
         provider_name = llm_model.model.provider_name
         model_name = llm_model.model.model_name
@@ -411,12 +399,12 @@ class BaseAgentExecutor(Generic[ContextT]):
             self._apply_steering(ctx, run_state)
 
             # Inject last-step hint so the LLM knows to wrap up
-            if is_final:
+            if is_final and config.final_step_hint:
                 final_step_prompt = Prompt(
                     name="final_step_hint",
                     source="system",
                     persist=False,
-                    content=self._get_final_step_hint(),
+                    content=config.final_step_hint,
                 )
                 hint_message = OpenAIMessage(role="user", content=final_step_prompt.to_string())
                 request.messages.append(hint_message)

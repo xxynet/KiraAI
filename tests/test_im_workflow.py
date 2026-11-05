@@ -718,7 +718,7 @@ async def test_stopped_response_does_not_overwrite_previous_assistant(processor,
     assert "stopped reply" not in memory[1].content
     request = model.chat.await_args.args[0]
     assert next(message for message in request.messages if message.role == "assistant") is memory[1]
-    assert "final model call" in request.messages[-1].content
+    assert request.messages[-1].role == "tool"
 
 
 @pytest.mark.anyio
@@ -1231,7 +1231,7 @@ async def test_steered_text_response_continues_im_loop_and_persists_instruction(
     assert model.chat.await_count == 2
     assert instance.message_delivery.send_message_chain.await_count == 2
     assert instance.im_workflow.ctx.db.add_telemetry_llm_usage.await_count == 2
-    assert seen[1][-2] == {"role": "user", "content": "follow the updated instruction"}
+    assert seen[1][-1] == {"role": "user", "content": "follow the updated instruction"}
     memory = instance.im_workflow.ctx.session_manager.update_memory.call_args.args[1]
     assert contexts[0] is contexts[1]
     assert memory is contexts[0].new_messages

@@ -66,7 +66,7 @@ async def test_start_returns_task_and_accepts_steer_before_first_model_call():
     assert delivered[0] is result
     assert result.is_final and result.state == "success"
     assert seen[1] == {"role": "user", "content": "focus on performance"}
-    assert "final model call" in seen[2]["content"]
+    assert len(seen) == 2
     assert [message.content for message in context.messages[1:]] == ["focus on performance", "complete"]
     assert not executor.steer("after completion")
 
@@ -100,7 +100,7 @@ async def test_background_results_are_ordered_and_callback_can_steer_next_step()
     assert [step.step_index for step in delivered] == [1, 2]
     assert [step.is_final for step in delivered] == [False, True]
     assert result is delivered[-1]
-    assert seen[1][-2] == {"role": "user", "content": "direction from callback"}
+    assert seen[1][-1] == {"role": "user", "content": "direction from callback"}
 
 
 @pytest.mark.anyio

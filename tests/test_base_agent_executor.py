@@ -102,7 +102,7 @@ def test_plugin_agent_factory_uses_explicit_tools_without_main_manager():
             raise AssertionError("Independent agents must not access the main agent tool manager")
 
     tools = ToolSet([ProbeTool()])
-    config = AgentExecutionConfig(max_steps=2)
+    config = AgentExecutionConfig(max_steps=2, final_step_hint="Plugin-specific final hint")
     models = [_model(LLMResponse("complete"))]
     callback = AsyncMock()
     context = BaseAgentExecutionContext()
@@ -123,6 +123,7 @@ def test_plugin_agent_factory_uses_explicit_tools_without_main_manager():
     assert executor.request is request
     assert executor.hooks is hooks
     assert executor.tool_executor is tool_executor
+    assert executor.config.final_step_hint == "Plugin-specific final hint"
 
 
 def test_default_tool_execution_and_lifecycle_hooks_are_separate():
@@ -136,6 +137,79 @@ def test_default_tool_execution_and_lifecycle_hooks_are_separate():
     assert im_executor.tool_executor.event is event
     assert not hasattr(independent.hooks, "invoke_tool")
     assert not hasattr(im_executor.hooks, "invoke_tool")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("executor_type", [BaseAgentExecutor, AgentExecutor])
+@pytest.mark.parametrize("hint", [None, "", "Finish this task now."])
+async def test_logging_and_final_hint_use_context_and_initialization_options(monkeypatch, executor_type, hint):
+    from core.agent import base_agent_executor
+
+    seen = []
+    info = Mock()
+    monkeypatch.setattr(base_agent_executor.llm_logger, "info", info)
+    event = SimpleNamespace(sid="test:dm:agent", is_stopped=False)
+    context = (AgentExecutionContext(event=event) if executor_type is AgentExecutor
+               else BaseAgentExecutionContext())
+
+    async def chat(request):
+        seen.append([message.to_dict() for message in request.messages])
+        return LLMResponse("complete")
+
+    model = _model()
+    model.chat.side_effect = chat
+    executor = executor_type(
+        [model], context=context, hooks=AgentExecutionHooks(),
+        config=AgentExecutionConfig(max_steps=1, final_step_hint=hint),
+    )
+    _ = [step async for step in executor.run()]
+    await executor.queue("next task")
+
+    assert executor.config.final_step_hint == hint
+    if hint:
+        for messages in seen:
+            assert sum(message["content"] == hint + "\n" for message in messages) == 1
+        assert all(message.content != hint + "\n" for message in context.messages)
+        assert all(message.content != hint + "\n" for message in context.new_messages)
+    else:
+        assert seen[0] == []
+        assert seen[1] == [{"role": "assistant", "content": "complete"}, {"role": "user", "content": "next task"}]
+    prefix = f"[{event.sid}]" if executor_type is AgentExecutor else "[agent]"
+    assert info.call_count == 4
+    assert all(call.args[0].startswith(prefix) for call in info.call_args_list)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("executor_type", [BaseAgentExecutor, AgentExecutor])
+@pytest.mark.parametrize("next_hint", [None, "Next turn hint"])
+async def test_final_hint_config_is_fixed_for_a_turn_and_refreshed_for_queue(executor_type, next_hint):
+    seen = []
+    context = (AgentExecutionContext(event=SimpleNamespace(sid="test", is_stopped=False))
+               if executor_type is AgentExecutor else BaseAgentExecutionContext())
+    original = AgentExecutionConfig(max_steps=2, final_step_hint="Current turn hint")
+    replacement = AgentExecutionConfig(max_steps=1, final_step_hint=next_hint)
+
+    async def chat(request):
+        seen.append([message.to_dict() for message in request.messages])
+        if len(seen) == 1:
+            executor.config = replacement
+            return _tool_response()
+        return LLMResponse("complete")
+
+    model = _model()
+    model.chat.side_effect = chat
+    executor = executor_type([model], context=context, hooks=AgentExecutionHooks(), config=original)
+    first = await executor.start()
+    second = await executor.queue("next task")
+
+    assert first.step_index == 2 and second.step_index == 1
+    assert executor.config is replacement
+    assert all(message["content"] != original.final_step_hint + "\n" for message in seen[0])
+    assert seen[1][-1]["content"] == original.final_step_hint + "\n"
+    assert seen[2][-1]["content"] == (next_hint + "\n" if next_hint else "next task")
+    assert all(message["content"] != original.final_step_hint + "\n" for message in seen[2])
+    assert all(message.content not in {original.final_step_hint + "\n", (next_hint or "") + "\n"}
+               for message in context.messages)
 
 
 @pytest.mark.anyio
@@ -250,8 +324,7 @@ async def test_plugin_agent_runs_tools_and_fallback_without_event(no_event_hooks
     assert all(any(message is stored for stored in context.messages)
                for message in steps[-1].new_messages)
     final_request = fallback.chat.await_args.args[0]
-    assert "final model call for this run" in final_request.messages[-2].content
-    assert "<msg/>" not in final_request.messages[-2].content
+    assert final_request.messages == context.messages
     assert all("final model call" not in str(message.content) for message in context.messages)
     assert manager.config == ToolExecutionConfig(max_tool_calls_per_step=0)
     assert "probe" in manager.tool_set

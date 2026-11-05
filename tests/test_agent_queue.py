@@ -41,8 +41,9 @@ def _tool_response():
 @pytest.mark.anyio
 async def test_idle_queue_resumes_clean_history_and_callback_with_new_turn_messages(literal_hint):
     seen, delivered = [], []
-    executor = BaseAgentExecutor([], config=AgentExecutionConfig(max_steps=1), context=BaseAgentExecutionContext())
-    hint = executor._get_final_step_hint() + "\n"
+    hint_text = "<system_reminder>Use the configured final-step hint.</system_reminder>"
+    executor = BaseAgentExecutor([], config=AgentExecutionConfig(max_steps=1, final_step_hint=hint_text), context=BaseAgentExecutionContext())
+    hint = hint_text + "\n"
 
     async def chat(request):
         seen.append(deepcopy([message.to_dict() for message in request.messages]))
@@ -126,9 +127,9 @@ async def test_active_queue_waits_fifo_and_refreshes_budget_without_changing_cur
     assert [message.content for message in delivered[1].new_messages if message.role == "user"] == [
         "steer current turn",
     ]
-    for index, messages in enumerate(seen):
+    for messages in seen:
         hints = [message for message in messages if "final model call" in str(message["content"])]
-        assert len(hints) == (1 if index in (1, 4, 7) else 0)
+        assert hints == []
 
 
 @pytest.mark.anyio
@@ -413,7 +414,7 @@ async def test_queue_during_final_model_call_runs_next_turn_with_fresh_budget():
     assert len(delivered) == 2
     assert all(step.is_final and step.step_index == 1 for step in delivered)
     assert all(message["content"] != "next turn" for message in seen[0])
-    assert seen[1][-2] == {"role": "user", "content": "next turn"}
+    assert seen[1][-1] == {"role": "user", "content": "next turn"}
 
 
 @pytest.mark.anyio

@@ -96,9 +96,3 @@ class AgentExecutor(BaseAgentExecutor[AgentExecutionContext]):
             tool_executor=tool_executor if tool_executor is not None else IMToolExecutor(context.event),
             config=config, on_result=on_result,
         )
-
-    def _get_log_id(self, ctx: AgentExecutionContext) -> str:
-        return ctx.event.sid
-
-    def _get_final_step_hint(self) -> str:
-        return "<system_reminder>This is the final model call for this turn. Conclude this turn now; do not start further work that depends on tool results. Any tool result will not invoke you again this turn and will only be available the next time you are invoked. If you need to communicate anything to the user, provide it in this response, using the information already available. If a user-facing answer is needed but information is insufficient, clearly state what is missing and give the user a concise next step. You may end silently with <msg/> when no user-facing response is needed.</system_reminder>"

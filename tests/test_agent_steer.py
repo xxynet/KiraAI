@@ -87,7 +87,7 @@ async def test_steer_waits_for_model_then_records_ordered_copied_instructions():
         {"role": "user", "content": "first instruction"},
         {"role": "user", "content": [{"type": "text", "text": "second instruction"}]},
     ]
-    assert "final model call" in seen[1][-1]["content"]
+    assert len(seen[1]) == 4
     assert steps[-1].new_messages[1] is context.messages[2]
     assert late_accepted == [False]
     assert not executor.steer("after completion")
@@ -229,7 +229,7 @@ async def test_steer_between_steps_and_generator_close_discard_pending_messages(
 @pytest.mark.anyio
 async def test_steer_between_steps_is_applied_before_last_step_hint():
     responses = iter([_tool_response(), LLMResponse("complete")])
-    executor = BaseAgentExecutor([], config=AgentExecutionConfig(max_steps=2), context=BaseAgentExecutionContext())
+    executor = BaseAgentExecutor([], config=AgentExecutionConfig(max_steps=2, final_step_hint="final model call"), context=BaseAgentExecutionContext())
     context = _context(executor, _model(lambda request: next(responses)))
     iterator = executor.run()
     try:
@@ -244,6 +244,9 @@ async def test_steer_between_steps_is_applied_before_last_step_hint():
     assert contents[-2] == "between steps"
     assert all("final model call" not in str(content) for content in contents)
     assert contents[-1] == "complete"
+    request = executor.model_group[0].chat.await_args.args[0]
+    assert request.messages[-3].content == "between steps"
+    assert request.messages[-2].content == "final model call\n"
 
 
 @pytest.mark.anyio

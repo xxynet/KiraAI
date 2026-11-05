@@ -180,7 +180,7 @@ async def test_agent_step_carries_model_info(monkeypatch, use_fallback, result_p
     assert steps[0].model.model_id == f"internal-{expected_name}"
     assert steps[0].model.model_name == expected_name
     request = models[1 if use_fallback else 0].chat.await_args.args[0]
-    assert "final model call" in request.messages[0].content
+    assert request.messages == context.messages
     if result_path == "stopped":
         assert steps[0].new_messages == []
         assert steps[0].assistant_message is None
@@ -253,6 +253,12 @@ def test_agent_config_is_immutable_with_independent_tool_defaults():
         first.max_steps = 1
     with pytest.raises(TypeError, match="tool_config"):
         AgentExecutionConfig(tool_config=None)
+
+
+@pytest.mark.parametrize("hint", [True, 123, []])
+def test_agent_config_rejects_non_text_final_hint(hint):
+    with pytest.raises(TypeError, match="final_step_hint"):
+        AgentExecutionConfig(final_step_hint=hint)
 
 
 @pytest.mark.anyio
