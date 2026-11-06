@@ -30,17 +30,21 @@ class ToolExecutor:
         *,
         config: ToolExecutionConfig,
         on_tool_result: Callable[[ToolResult], Awaitable[bool]] | None = None,
+        should_stop: Callable[[], bool] | None = None,
     ) -> None:
         """Execute an explicit tool set without a registry, events, or shared config.
 
         Override invoke_tool() to adapt tool arguments. A result callback may stop
         the batch by returning False.
+        should_stop is checked before each tool; completed results are retained.
         """
         max_tool_calls = config.max_tool_calls_per_step
         tool_call_timeout = config.tool_call_timeout
         max_tool_output_tokens = config.max_tool_output_tokens
 
         for idx, tool_call in enumerate(resp.tool_calls):
+            if should_stop is not None and should_stop():
+                return
             tool_call_id = tool_call.get("id")
             name = tool_call.get("function", {}).get("name")
 
