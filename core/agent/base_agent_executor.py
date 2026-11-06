@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from asyncio import Task, get_running_loop
+from asyncio import Event, Task, get_running_loop
 from collections import deque
 from collections.abc import AsyncIterator, Awaitable, Callable
 from copy import copy, deepcopy
@@ -64,6 +64,7 @@ class AgentStepResult:
 
 
 ContextT = TypeVar("ContextT", bound=BaseAgentExecutionContext)
+AgentExecutorState = Literal["idle", "running", "stopping", "done"]
 
 
 @dataclass
@@ -73,6 +74,9 @@ class _AgentRunState:
     request: LLMRequest
     pending_messages: list[OpenAIMessage] = field(default_factory=list)
     accepting_steering: bool = True
+    abort_requested: Event = field(default_factory=Event)
+    step_index: int = 0
+    model: ModelInfo | None = None
 
 
 class BaseAgentExecutor(Generic[ContextT]):
@@ -101,6 +105,12 @@ class BaseAgentExecutor(Generic[ContextT]):
         self._queued_messages: deque[OpenAIMessage] = deque()
         self._last_turn_messages: list[OpenAIMessage] | None = None
         self._last_turn_message_count = 0
+        self._state: AgentExecutorState = "idle"
+
+    @property
+    def state(self) -> AgentExecutorState:
+        """Lifecycle across all queued turns; done includes stopped and failed runs."""
+        return self._state
 
     def start(self) -> Task[AgentStepResult | None]:
         """Immediately schedule background execution on the configured context.
@@ -112,6 +122,8 @@ class BaseAgentExecutor(Generic[ContextT]):
         The returned task resolves to the last emitted step, or None if no model
         calls ran. Task cancellation and exceptions discard pending follow-ups.
         Execution and callback exceptions remain on the task and are logged.
+        abort() waits for the current call and delivers a final stopped result
+        with no response text to send.
         """
         return self._start()
 
@@ -120,6 +132,7 @@ class BaseAgentExecutor(Generic[ContextT]):
     ) -> Task[AgentStepResult | None]:
         loop = get_running_loop()
         ctx = self.context
+        previous_state = self._state
         run_state = self._begin_run()
         previous_new_messages = ctx.new_messages
         if message is not None:
@@ -131,6 +144,7 @@ class BaseAgentExecutor(Generic[ContextT]):
         except BaseException:
             coroutine.close()
             self._release_run(run_state)
+            self._state = previous_state
             ctx.new_messages = previous_new_messages
             raise
         self._background_task = task
@@ -168,6 +182,7 @@ class BaseAgentExecutor(Generic[ContextT]):
             raise RuntimeError("This agent executor is already running")
         run_state = self._create_run_state()
         self._run_state = run_state
+        self._state = "running"
         return run_state
 
     def _release_run(self, run_state: _AgentRunState) -> None:
@@ -175,6 +190,7 @@ class BaseAgentExecutor(Generic[ContextT]):
         if self._run_state is run_state:
             self._run_state = None
             self._queued_messages.clear()
+            self._state = "done"
 
     def _background_done(
         self, run_state: _AgentRunState, task: Task[AgentStepResult | None],
@@ -215,13 +231,34 @@ class BaseAgentExecutor(Generic[ContextT]):
         and step budgets. Once idle, including before the first run, a new task
         starts automatically on the same context.
         Returns that task, the active start() task, or None for a caller-driven run.
+        Raise RuntimeError while an abort request is awaiting completion.
         """
         message = self._copy_user_message(message)
         if self._run_state is not None:
+            if self._run_state.abort_requested.is_set():
+                raise RuntimeError("This agent executor is stopping")
             self._queued_messages.append(message)
             task = self._background_task
             return task if task is not None and not task.done() else None
         return self._start(message)
+
+    def abort(self) -> bool:
+        """Stop after the current call completes, without cancelling it.
+
+        Call from the executor's event loop. Pending steering and queued turns
+        are discarded. Both run() and start() emit a final stopped result once
+        execution reaches a call boundary. Result callbacks finish normally.
+        Return False when idle or when a stop has already been requested.
+        """
+        run_state = self._run_state
+        if run_state is None or run_state.abort_requested.is_set():
+            return False
+        run_state.abort_requested.set()
+        self._state = "stopping"
+        run_state.accepting_steering = False
+        run_state.pending_messages.clear()
+        self._queued_messages.clear()
+        return True
 
     @staticmethod
     def _copy_user_message(message: str | OpenAIMessage) -> OpenAIMessage:
@@ -266,6 +303,7 @@ class BaseAgentExecutor(Generic[ContextT]):
         await self.tool_executor.execute_tools(
             response, tool_set=run_state.request.tool_set, config=run_state.config.tool_config,
             on_tool_result=partial(self.hooks.on_tool_result, ctx),
+            should_stop=run_state.abort_requested.is_set,
         )
 
     @staticmethod
@@ -327,7 +365,7 @@ class BaseAgentExecutor(Generic[ContextT]):
     async def run(self) -> AsyncIterator[AgentStepResult]:
         """Yield the shared agent loop directly, including any queued follow-ups.
 
-        steer() and queue() behave as with start(). The caller consumes results;
+        steer(), queue(), and abort() behave as with start(). The caller consumes results;
         on_result is reserved for the start() task driver. The context and optional
         request are supplied when constructing the executor.
         """
@@ -359,6 +397,15 @@ class BaseAgentExecutor(Generic[ContextT]):
                     if result.is_final:
                         run_state.accepting_steering = False
                     yield result
+                if run_state.abort_requested.is_set():
+                    model = run_state.model or (run_state.model_group[0].model if run_state.model_group else None)
+                    if model is not None:
+                        yield AgentStepResult(
+                            state="stopped", step_index=run_state.step_index,
+                            llm_response=None, new_messages=ctx.new_messages,
+                            is_final=True, has_tool_calls=False, model=model,
+                        )
+                    return
                 if (last_step is not None and last_step.state == "stopped") or not self._queued_messages:
                     return
                 message = self._queued_messages.popleft()
@@ -395,9 +442,14 @@ class BaseAgentExecutor(Generic[ContextT]):
         model_name = llm_model.model.model_name
         llm_logger.info(f"[{sid}] Running agent using {model_name} ({provider_name})")
 
+        if run_state.abort_requested.is_set():
+            return
         self._apply_steering(ctx, run_state)
         for step in range(max_steps):
+            if run_state.abort_requested.is_set():
+                return
             step_index = step + 1
+            run_state.step_index = step_index
 
             state: Literal["success", "stopped", "error"] = "success"
             err = ""
@@ -422,6 +474,9 @@ class BaseAgentExecutor(Generic[ContextT]):
             llm_resp = None
             last_exc: Exception | None = None
             for model_idx, model in enumerate(model_group):
+                if run_state.abort_requested.is_set():
+                    return
+                run_state.model = model.model
                 provider_name = model.model.provider_name
                 model_name = model.model.model_name
                 try:
@@ -433,6 +488,8 @@ class BaseAgentExecutor(Generic[ContextT]):
                 except (APIStatusError, APITimeoutError, APIConnectionError, ProviderAPIError) as e:
                     last_exc = e
                     logger.error(f"[{sid}] Model {model.model.model_name} failed: {type(e).__name__}: {e}")
+                    if run_state.abort_requested.is_set():
+                        return
                     if model_idx < len(model_group) - 1:
                         next_model = model_group[model_idx + 1]
                         llm_logger.warning(f"[{sid}] Falling back to next model: {next_model.model.model_name} ({next_model.model.provider_name})")
@@ -449,6 +506,8 @@ class BaseAgentExecutor(Generic[ContextT]):
                             ctx, last_exc, source="provider", comp_id=model.model.provider_name,
                         )
 
+            if run_state.abort_requested.is_set():
+                return
             if llm_resp.status == "error":
                 state = "error"
                 err = err or llm_resp.text_response
@@ -468,7 +527,10 @@ class BaseAgentExecutor(Generic[ContextT]):
                 f"[{sid}] Time consumed: {llm_resp.time_consumed}s, Input tokens: {llm_resp.input_tokens}, output tokens: {llm_resp.output_tokens}{cached_tokens_info}, step: {step_index}/{max_steps}"
             )
 
-            if await self.hooks.on_llm_response(ctx, llm_resp):
+            stopped_by_hook = await self.hooks.on_llm_response(ctx, llm_resp)
+            if run_state.abort_requested.is_set():
+                return
+            if stopped_by_hook:
                 yield AgentStepResult(
                     state="stopped",
                     step_index=step_index,
@@ -531,6 +593,8 @@ class BaseAgentExecutor(Generic[ContextT]):
             tool_msgs = self._build_tool_messages(llm_resp.tool_results)
             self._append_messages(ctx, run_state, msg, *tool_msgs)
 
+            if run_state.abort_requested.is_set():
+                return
             yield AgentStepResult(
                 state=state,
                 assistant_message=msg,
