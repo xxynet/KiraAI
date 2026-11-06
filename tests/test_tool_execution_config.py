@@ -61,9 +61,11 @@ def test_direct_config_rejects_invalid_limits(field, value):
      ToolExecutionConfig()),
 ])
 def test_application_settings_are_normalized_without_mutation(raw, expected):
+    original = deepcopy(raw)
     config = AppConfig(bot_config={"agent": raw})
     assert build_tool_execution_config(config) == expected
     assert config["bot_config"]["agent"] is raw
+    assert raw == original
 
 
 @pytest.mark.anyio
