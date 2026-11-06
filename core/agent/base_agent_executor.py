@@ -64,6 +64,7 @@ class AgentStepResult:
 
 
 ContextT = TypeVar("ContextT", bound=BaseAgentExecutionContext)
+AgentExecutorState = Literal["idle", "running", "stopping", "done"]
 
 
 @dataclass
@@ -104,6 +105,12 @@ class BaseAgentExecutor(Generic[ContextT]):
         self._queued_messages: deque[OpenAIMessage] = deque()
         self._last_turn_messages: list[OpenAIMessage] | None = None
         self._last_turn_message_count = 0
+        self._state: AgentExecutorState = "idle"
+
+    @property
+    def state(self) -> AgentExecutorState:
+        """Lifecycle across all queued turns; done includes stopped and failed runs."""
+        return self._state
 
     def start(self) -> Task[AgentStepResult | None]:
         """Immediately schedule background execution on the configured context.
@@ -125,6 +132,7 @@ class BaseAgentExecutor(Generic[ContextT]):
     ) -> Task[AgentStepResult | None]:
         loop = get_running_loop()
         ctx = self.context
+        previous_state = self._state
         run_state = self._begin_run()
         previous_new_messages = ctx.new_messages
         if message is not None:
@@ -136,6 +144,7 @@ class BaseAgentExecutor(Generic[ContextT]):
         except BaseException:
             coroutine.close()
             self._release_run(run_state)
+            self._state = previous_state
             ctx.new_messages = previous_new_messages
             raise
         self._background_task = task
@@ -173,6 +182,7 @@ class BaseAgentExecutor(Generic[ContextT]):
             raise RuntimeError("This agent executor is already running")
         run_state = self._create_run_state()
         self._run_state = run_state
+        self._state = "running"
         return run_state
 
     def _release_run(self, run_state: _AgentRunState) -> None:
@@ -180,6 +190,7 @@ class BaseAgentExecutor(Generic[ContextT]):
         if self._run_state is run_state:
             self._run_state = None
             self._queued_messages.clear()
+            self._state = "done"
 
     def _background_done(
         self, run_state: _AgentRunState, task: Task[AgentStepResult | None],
@@ -243,6 +254,7 @@ class BaseAgentExecutor(Generic[ContextT]):
         if run_state is None or run_state.abort_requested.is_set():
             return False
         run_state.abort_requested.set()
+        self._state = "stopping"
         run_state.accepting_steering = False
         run_state.pending_messages.clear()
         self._queued_messages.clear()
