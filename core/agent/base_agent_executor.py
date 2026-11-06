@@ -1,6 +1,14 @@
 from __future__ import annotations
 
-from asyncio import Event, Task, get_running_loop
+from asyncio import (
+    FIRST_COMPLETED,
+    Event,
+    Task,
+    create_task,
+    gather,
+    get_running_loop,
+    wait,
+)
 from collections import deque
 from collections.abc import AsyncIterator, Awaitable, Callable
 from copy import copy, deepcopy
@@ -24,6 +32,7 @@ from core.provider import (
 from core.utils.media_refs import MEDIA_REF_TYPE
 
 from .config import AgentExecutionConfig
+from .hook_context import ToolCallContext
 from .hooks import AgentExecutionHooks
 from .tool_executor import ToolExecutor
 
@@ -302,9 +311,26 @@ class BaseAgentExecutor(Generic[ContextT]):
     ) -> None:
         await self.tool_executor.execute_tools(
             response, tool_set=run_state.request.tool_set, config=run_state.config.tool_config,
+            on_tool_call=partial(self._await_tool_call_hook, ctx, run_state),
             on_tool_result=partial(self.hooks.on_tool_result, ctx),
             should_stop=run_state.abort_requested.is_set,
         )
+
+    async def _await_tool_call_hook(
+        self, ctx: ContextT, run_state: _AgentRunState, call_ctx: ToolCallContext,
+    ) -> None:
+        """Let abort cancel an approval wait before any tool starts executing."""
+        call_ctx.agent_context = ctx
+        hook_task = create_task(self.hooks.on_tool_call(call_ctx))
+        abort_task = create_task(run_state.abort_requested.wait())
+        try:
+            await wait({hook_task, abort_task}, return_when=FIRST_COMPLETED)
+            if not run_state.abort_requested.is_set():
+                await hook_task
+        finally:
+            hook_task.cancel()
+            abort_task.cancel()
+            await gather(hook_task, abort_task, return_exceptions=True)
 
     @staticmethod
     def _build_tool_messages(tool_results: list[dict]) -> list[OpenAIMessage]:

@@ -178,6 +178,13 @@ class OnEventDeco:
             return func
         return decorator
 
+    def tool_call(self, priority: Priority | int = Priority.MEDIUM):
+        """Receive ToolCallContext; call ctx.set_result() to skip tool invocation."""
+        def decorator(func: Callable):
+            self._register_hook(func, priority, EventType.ON_TOOL_CALL)
+            return func
+        return decorator
+
     def tool_result(self, priority: Priority | int = Priority.MEDIUM):
         def decorator(func: Callable):
             self._register_hook(func, priority, EventType.ON_TOOL_RESULT)

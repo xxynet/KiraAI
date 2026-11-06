@@ -16,6 +16,7 @@ from .base_agent_executor import (
     BaseAgentExecutor,
 )
 from .config import AgentExecutionConfig
+from .hook_context import ToolCallContext
 from .hooks import AgentExecutionHooks
 from .im_tool_executor import IMToolExecutor
 from .tool import ToolResult
@@ -40,6 +41,12 @@ class AgentExecutionContext(BaseAgentExecutionContext):
 
 class IMAgentExecutionHooks(AgentExecutionHooks[AgentExecutionContext]):
     """Dispatch IM plugin events during agent execution."""
+
+    async def on_tool_call(self, ctx: ToolCallContext) -> None:
+        for handler in event_handler_reg.get_handlers(event_type=EventType.ON_TOOL_CALL):
+            await handler.exec_handler(ctx)
+            if ctx.result is not None:
+                return
 
     async def on_llm_response(self, ctx: AgentExecutionContext, response: LLMResponse) -> bool:
         for handler in event_handler_reg.get_handlers(event_type=EventType.ON_LLM_RESPONSE):
