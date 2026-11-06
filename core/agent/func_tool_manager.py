@@ -1,19 +1,20 @@
 from __future__ import annotations
 
-import json
-from asyncio import TimeoutError as AsyncTimeoutError
-from asyncio import wait_for
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
-from core.config import KiraConfig
+from deprecated import deprecated
+
 from core.logging_manager import get_logger
 from core.provider import LLMResponse
 from core.utils.tool_utils import BaseTool
 
-from .tool import ToolResult, ToolSet, truncate_tool_output
+from .config import ToolExecutionConfig
+from .im_tool_executor import IMToolExecutor
+from .tool import ToolResult, ToolSet
+from .tool_executor import ToolExecutor
 
 logger = get_logger("llm", "purple")
-tool_logger = get_logger("tool_use", "orange")
 
 if TYPE_CHECKING:
     from core.chat import KiraMessageBatchEvent
@@ -40,10 +41,20 @@ class _LegacyFuncTool(BaseTool):
 
 
 class FuncToolManager:
-    def __init__(self, kira_config: KiraConfig):
-        self.kira_config = kira_config
+    def __init__(self, config: ToolExecutionConfig | Callable[[], ToolExecutionConfig] | None = None):
+        self.config = config if config is not None else ToolExecutionConfig()
 
         self.tool_set = ToolSet()
+        self.tool_executor = ToolExecutor()
+
+    @property
+    def config(self) -> ToolExecutionConfig:
+        """Resolve current settings without coupling the registry to app config."""
+        return self._config() if callable(self._config) else self._config
+
+    @config.setter
+    def config(self, config: ToolExecutionConfig | Callable[[], ToolExecutionConfig]) -> None:
+        self._config = config
 
     def register_tool(self, name, description, parameters, func):
         """Register a tool"""
@@ -61,99 +72,48 @@ class FuncToolManager:
         """Return a request-local copy of the registered tools."""
         return ToolSet(tools=self.tool_set.tools.copy())
 
-    async def execute_tool(self, event: KiraMessageBatchEvent, resp: LLMResponse, tool_set: ToolSet | None = None):
-        max_tool_calls_per_turn = self.kira_config.get_config("bot_config.agent.max_tool_calls_per_turn")
-        try:
-            max_tool_calls_per_turn = int(max_tool_calls_per_turn)
-        except (TypeError, ValueError):
-            max_tool_calls_per_turn = 5
+    @deprecated("Use IMToolExecutor(event).execute_tools with an IM result callback instead")
+    async def execute_tool(
+        self,
+        event: KiraMessageBatchEvent,
+        resp: LLMResponse,
+        tool_set: ToolSet | None = None,
+        *,
+        config: ToolExecutionConfig | None = None,
+    ):
+        """Execute IM tools and dispatch the existing event-bound result hooks."""
+        from core.plugin.handlers import EventType, event_handler_reg
 
-        tool_call_timeout = self.kira_config.get_config("bot_config.agent.tool_call_timeout")
-        try:
-            tool_call_timeout = float(tool_call_timeout)
-            if tool_call_timeout <= 0:
-                tool_call_timeout = None
-        except (TypeError, ValueError):
-            tool_call_timeout = 60
-
-        default_output_tokens = 10000
-        max_tool_output_tokens = self.kira_config.get_config(
-            "bot_config.agent.max_tool_output_tokens", default_output_tokens
-        )
-        if (
-            not isinstance(max_tool_output_tokens, int)
-            or isinstance(max_tool_output_tokens, bool)
-            or max_tool_output_tokens < 0
-        ):
-            max_tool_output_tokens = default_output_tokens
-
-        for idx, tool_call in enumerate(resp.tool_calls):
-            tool_call_id = tool_call.get("id")
-            name = tool_call.get("function", {}).get("name")
-
-            # Exceeds per-turn tool call limit
-            if idx >= max_tool_calls_per_turn:
-                warn_msg = f"Tool call limit exceeded: maximum {max_tool_calls_per_turn} tool calls per turn, skipping tool '{name}'."
-                tool_logger.warning(warn_msg)
-                resp.tool_results.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call_id,
-                    "name": name,
-                    "content": truncate_tool_output(warn_msg, max_tool_output_tokens)
-                })
-                continue
-
-            raw_args = tool_call.get("function", {}).get("arguments")
-            try:
-                if not raw_args.strip():
-                    args = {}
-                else:
-                    args = json.loads(raw_args)
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse function calling arguments: {e}")
-                logger.error(f"Raw args: {raw_args}")
-                args = {}
-            tool_logger.info(f"{name} args: {args}")
-
-            # Call corresponding Python function(s)
-            if tool_set and name in tool_set:
-                try:
-                    tool_inst = tool_set.get(name)
-                    coro = tool_inst.execute(event, **args)
-                    result = await (wait_for(coro, tool_call_timeout) if tool_call_timeout else coro)
-                except AsyncTimeoutError:
-                    result = {"error": f"Tool '{name}' timed out after {tool_call_timeout}s"}
-                    tool_logger.error(f"Tool '{name}' timed out after {tool_call_timeout}s")
-                except Exception as e:
-                    result = {"error": f"Failed to call tool '{name}': {e}"}
-                    tool_logger.error(f"Failed to call tool '{name}': {e}")
-            else:
-                result = {"error": f"Tool {name} not implemented"}
-                tool_logger.error(f"Tool {name} not implemented")
-
-            if isinstance(result, ToolResult):
-                tool_result_obj = result
-            else:
-                tool_result_obj = ToolResult(str(result))
-
-            from core.plugin.handlers import EventType, event_handler_reg
-
-            # EventType.ON_TOOL_RESULT
-            llm_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_TOOL_RESULT)
-            for handler in llm_handlers:
-                await handler.exec_handler(event, tool_result_obj)
+        async def on_tool_result(result: ToolResult) -> bool:
+            for handler in event_handler_reg.get_handlers(event_type=EventType.ON_TOOL_RESULT):
+                await handler.exec_handler(event, result)
                 if event.is_stopped:
                     logger.info("Event stopped while ON_TOOL_RESULT stage")
-                    return
+                    return False
+            return True
 
-            # Save tool results
-            content = await tool_result_obj.assemble_result()
-            content = truncate_tool_output(content, max_tool_output_tokens)
-            content = tool_result_obj.build_content(content)
-            tool_logger.info(f"tool_result: {content}")
-            resp.tool_results.append({
-                "role": "tool",
-                "tool_call_id": tool_call_id,
-                "name": name,
-                "content": content
-            })
+        await self.execute_tools(
+            resp, tool_set, config=config, tool_executor=IMToolExecutor(event), on_tool_result=on_tool_result,
+        )
+
+    @deprecated("Use ToolExecutor.execute_tools instead")
+    async def execute_tools(
+        self,
+        resp: LLMResponse,
+        tool_set: ToolSet | None = None,
+        *,
+        config: ToolExecutionConfig | None = None,
+        tool_executor: ToolExecutor | None = None,
+        on_tool_result: Callable[[ToolResult], Awaitable[bool]] | None = None,
+    ) -> None:
+        """Execute an explicit tool set without requiring events or plugin hooks.
+
+        By default tools receive only model-supplied keyword arguments. Integrations
+        may supply a tool executor and a result callback; returning False from the
+        result callback stops the batch before the current result is recorded.
+        """
+        executor = tool_executor if tool_executor is not None else self.tool_executor
+        await executor.execute_tools(
+            resp, tool_set, config=config if config is not None else self.config,
+            on_tool_result=on_tool_result,
+        )

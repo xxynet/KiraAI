@@ -2,11 +2,19 @@ from __future__ import annotations
 
 import inspect
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from core.agent.base_agent_executor import (
+    AgentStepResult,
+    BaseAgentExecutionContext,
+    BaseAgentExecutor,
+)
+from core.agent.config import AgentExecutionConfig
 from core.agent.func_tool_manager import FuncToolManager
+from core.agent.hooks import AgentExecutionHooks
+from core.agent.tool_executor import ToolExecutor
 from core.chat import (
     Group,
     KiraIMMessage,
@@ -24,7 +32,13 @@ from core.utils.path_utils import get_data_path
 from core.workflow.src.im.batching import publish_buffered_messages
 
 from ..adapter import AdapterManager, BaseAdapter, BaseCapability, IMCapability
-from ..provider import EmbeddingModelClient, LLMModelClient, ModelType, ProviderManager
+from ..provider import (
+    EmbeddingModelClient,
+    LLMModelClient,
+    LLMRequest,
+    ModelType,
+    ProviderManager,
+)
 
 if TYPE_CHECKING:
     from core.agent.mcp_mgr import MCPManager
@@ -127,6 +141,27 @@ class PluginContext:
         """
         return await publish_buffered_messages(
             self.session_buffer_mgr, self.event_bus, sid, filter_fn=filter_fn,
+        )
+
+    def create_agent_executor(
+        self, model_group: list[LLMModelClient] | None = None, *,
+        context: BaseAgentExecutionContext,
+        request: LLMRequest | None = None,
+        hooks: AgentExecutionHooks[BaseAgentExecutionContext] | None = None,
+        tool_executor: ToolExecutor | None = None,
+        config: AgentExecutionConfig | None = None,
+        on_result: Callable[[AgentStepResult], Awaitable[None]] | None = None,
+    ) -> BaseAgentExecutor[BaseAgentExecutionContext]:
+        """Create an independent agent, using the default LLM when models are omitted."""
+        if model_group is None:
+            client = self.get_default_llm_client()
+            if client is None:
+                raise ValueError("No default LLM is available for agent execution")
+            model_group = [client]
+        return BaseAgentExecutor(
+            model_group, context=context, request=request, hooks=hooks,
+            tool_executor=tool_executor,
+            config=config, on_result=on_result,
         )
 
     def get_default_llm_client(self) -> LLMModelClient:

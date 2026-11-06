@@ -151,10 +151,10 @@ async def test_tool_loop_config_fallback_preserves_execution_and_finalization(
                      "function": {"name": "check", "arguments": "{}"}}],
     )
 
-    async def execute_tool(event, response, **kwargs):
+    async def execute_tools(self, response, **kwargs):
         response.tool_results = [{"role": "tool", "tool_call_id": "call-1", "content": "result"}]
 
-    instance.im_workflow.ctx.tool_manager.execute_tool = execute_tool
+    monkeypatch.setattr("core.agent.tool_executor.ToolExecutor.execute_tools", execute_tools)
     await instance.im_workflow.handle_batch_event(batch())
 
     assert model.chat.await_count == expected_steps
@@ -698,7 +698,7 @@ async def test_stopped_response_does_not_overwrite_previous_assistant(processor,
         LLMResponse("stopped reply"),
     ]
 
-    async def execute_tool(event, response, **kwargs):
+    async def execute_tools(self, response, **kwargs):
         response.tool_results = [{"role": "tool", "tool_call_id": "call-1", "content": "result"}]
 
     async def stop_second_response(event, response):
@@ -709,7 +709,7 @@ async def test_stopped_response_does_not_overwrite_previous_assistant(processor,
         [SimpleNamespace(exec_handler=stop_second_response)]
         if event_type == EventType.ON_LLM_RESPONSE else []
     ))
-    instance.im_workflow.ctx.tool_manager.execute_tool = execute_tool
+    monkeypatch.setattr("core.agent.tool_executor.ToolExecutor.execute_tools", execute_tools)
     await instance.im_workflow.handle_batch_event(batch())
 
     memory = instance.im_workflow.ctx.session_manager.update_memory.call_args.args[1]
@@ -718,7 +718,7 @@ async def test_stopped_response_does_not_overwrite_previous_assistant(processor,
     assert "stopped reply" not in memory[1].content
     request = model.chat.await_args.args[0]
     assert next(message for message in request.messages if message.role == "assistant") is memory[1]
-    assert "final model call" in request.messages[-1].content
+    assert request.messages[-1].role == "tool"
 
 
 @pytest.mark.anyio
@@ -956,10 +956,10 @@ async def test_provider_error_stays_internal(processor, monkeypatch, error_type,
             "function": {"name": "check", "arguments": "{}"},
         }]), error]
 
-        async def execute_tool(event, response, **kwargs):
+        async def execute_tools(self, response, **kwargs):
             response.tool_results = [{"role": "tool", "tool_call_id": "call-1", "content": "result"}]
 
-        instance.im_workflow.ctx.tool_manager.execute_tool = execute_tool
+        monkeypatch.setattr("core.agent.tool_executor.ToolExecutor.execute_tools", execute_tools)
     else:
         model.chat.side_effect = error
     response_handler = AsyncMock(side_effect=plugin.on_llm_resp)
@@ -1069,8 +1069,8 @@ async def test_error_status_response_is_context_only(processor, monkeypatch, wit
     }] if with_tool_calls else [])
     model.chat.side_effect = None
     model.chat.return_value = response
-    execute_tool = AsyncMock()
-    instance.im_workflow.ctx.tool_manager.execute_tool = execute_tool
+    execute_tools = AsyncMock()
+    monkeypatch.setattr("core.agent.tool_executor.ToolExecutor.execute_tools", execute_tools)
     response_hook, step_hook, final_hook = AsyncMock(), AsyncMock(), AsyncMock()
     callbacks = {
         EventType.ON_LLM_RESPONSE: response_hook,
@@ -1084,7 +1084,7 @@ async def test_error_status_response_is_context_only(processor, monkeypatch, wit
     await instance.im_workflow.handle_batch_event(batch())
 
     model.chat.assert_awaited_once()
-    execute_tool.assert_not_awaited()
+    execute_tools.assert_not_awaited()
     response_hook.assert_awaited_once()
     assert response_hook.await_args.args[1] is response
     assert response_hook.await_args.args[1].status == "error"
@@ -1125,3 +1125,115 @@ async def test_builtin_xml_repair_respects_response_status(status):
     else:
         client.chat.assert_awaited_once()
         assert response.text_response == fixed
+
+
+@pytest.mark.anyio
+async def test_tool_config_is_fixed_for_one_agent_loop_and_refreshes_for_the_next(processor, monkeypatch):
+    from unittest.mock import create_autospec
+
+    from core.agent.config import ToolExecutionConfig
+    from core.agent.func_tool_manager import FuncToolManager
+    from core.agent.tool_executor import ToolExecutor
+
+    instance, model = processor
+    services = instance.im_workflow.ctx
+    values = {
+        "bot_config.agent.max_tool_loop": 3,
+        "bot_config.agent.max_tool_calls_per_turn": 2,
+        "bot_config.agent.tool_call_timeout": 60,
+        "bot_config.agent.max_tool_output_tokens": 4,
+    }
+    services.config = SimpleNamespace(get_config=lambda key, default=None: values.get(key, default))
+    manager = FuncToolManager(ToolExecutionConfig(max_tool_output_tokens=256))
+    services.tool_manager = manager
+    defaults = manager.config
+    probe = AsyncMock(return_value="x" * 100)
+    manager.register_tool("probe", "", {}, probe)
+    execute_tools = create_autospec(ToolExecutor.execute_tools, side_effect=ToolExecutor.execute_tools)
+    monkeypatch.setattr(ToolExecutor, "execute_tools", execute_tools)
+    responses = []
+
+    async def chat(request):
+        if not responses:
+            # Even a change during the first model call waits until the next agent loop.
+            values["bot_config.agent.max_tool_loop"] = 2
+            values["bot_config.agent.max_tool_calls_per_turn"] = 1
+            values["bot_config.agent.tool_call_timeout"] = 0
+            values["bot_config.agent.max_tool_output_tokens"] = 0
+        response = LLMResponse("")
+        if len(responses) % 3 < 2:
+            response.tool_calls = [
+                {"id": f"call-{index}", "type": "function",
+                 "function": {"name": "probe", "arguments": "{}"}}
+                for index in range(2)
+            ]
+        responses.append(response)
+        return response
+
+    model.chat.side_effect = chat
+    await instance.im_workflow.handle_batch_event(batch())
+
+    assert probe.await_count == 4
+    assert model.chat.await_count == 3
+    for response in responses[:2]:
+        assert len(response.tool_results) == 2
+        assert all(len(result["content"].encode()) <= 16 for result in response.tool_results)
+    configs = [call.kwargs["config"] for call in execute_tools.await_args_list]
+    assert configs == [ToolExecutionConfig(max_tool_calls_per_step=2, max_tool_output_tokens=4)] * 2
+    assert configs[0] is configs[1]
+    assert manager.config is defaults
+
+    await instance.im_workflow.handle_batch_event(batch())
+
+    assert probe.await_count == 6
+    assert model.chat.await_count == 5
+    for response in responses[3:5]:
+        assert response.tool_results[0]["content"] == "x" * 100
+        assert "Tool call limit exceeded" in response.tool_results[1]["content"]
+    configs = [call.kwargs["config"] for call in execute_tools.await_args_list]
+    assert configs[2:] == [ToolExecutionConfig(
+        max_tool_calls_per_step=1, tool_call_timeout=None, max_tool_output_tokens=0,
+    )] * 2
+    assert configs[2] is configs[3]
+    assert manager.config is defaults
+    assert services.session_manager.update_memory.await_count == 2
+
+
+@pytest.mark.anyio
+async def test_steered_text_response_continues_im_loop_and_persists_instruction(processor, monkeypatch):
+    from core.agent.agent_executor import AgentExecutor, IMAgentExecutionHooks
+
+    instance, model = processor
+    seen, contexts = [], []
+    original_init = AgentExecutor.__init__
+
+    class SteeringHooks(IMAgentExecutionHooks):
+        def __init__(self, executor):
+            self.executor = executor
+
+        async def on_llm_response(self, ctx, response):
+            contexts.append(ctx)
+            if response.agent_step_index == 1:
+                assert self.executor.steer("follow the updated instruction")
+            return await super().on_llm_response(ctx, response)
+
+    def initialize_executor(self, *args, **kwargs):
+        original_init(self, *args, hooks=SteeringHooks(self), **kwargs)
+
+    async def chat(request):
+        seen.append([message.to_dict() for message in request.messages])
+        return LLMResponse(f"<msg><text>reply {len(seen)}</text></msg>")
+
+    monkeypatch.setattr(AgentExecutor, "__init__", initialize_executor)
+    model.chat.side_effect = chat
+    await instance.im_workflow.handle_batch_event(batch())
+
+    assert model.chat.await_count == 2
+    assert instance.message_delivery.send_message_chain.await_count == 2
+    assert instance.im_workflow.ctx.db.add_telemetry_llm_usage.await_count == 2
+    assert seen[1][-1] == {"role": "user", "content": "follow the updated instruction"}
+    memory = instance.im_workflow.ctx.session_manager.update_memory.call_args.args[1]
+    assert contexts[0] is contexts[1]
+    assert memory is contexts[0].new_messages
+    assert [message.role for message in memory] == ["user", "assistant", "user", "assistant"]
+    assert memory[2].content == "follow the updated instruction"

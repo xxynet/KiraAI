@@ -251,18 +251,13 @@ async def test_cross_session_read_also_respects_adapter_policy(session_plugin, f
 @pytest.mark.anyio
 async def test_request_local_history_tools_log_arguments_and_results(session_plugin, monkeypatch):
     """Request-local tools preserve the existing argument and result logging behavior."""
-    from core.agent import func_tool_manager
+    from core.agent import tool_executor
     from core.agent.func_tool_manager import FuncToolManager
     from core.plugin.handlers import event_handler_reg
     from core.plugin.manager import PluginManager
     from core.provider import LLMRequest, LLMResponse
 
-    config = {
-        "bot_config.agent.max_tool_calls_per_turn": 5,
-        "bot_config.agent.tool_call_timeout": 60,
-        "bot_config.agent.max_tool_output_tokens": 10000,
-    }
-    manager = FuncToolManager(SimpleNamespace(get_config=config.get))
+    manager = FuncToolManager()
     owner = SimpleNamespace(
         ctx=SimpleNamespace(tool_mgr=manager),
         plugin_instances={"kira_session_plugin": session_plugin},
@@ -274,7 +269,7 @@ async def test_request_local_history_tools_log_arguments_and_results(session_plu
     assert "session_view" in tools and "get_message_history" in tools and "session_send" in tools
     monkeypatch.setattr(event_handler_reg, "get_handlers", lambda **kwargs: [])
     log = Mock()
-    monkeypatch.setattr(func_tool_manager.tool_logger, "info", log)
+    monkeypatch.setattr(tool_executor.tool_logger, "info", log)
     await archive_text(session_plugin.ctx.message_history, "history-keyword", "one")
     response = LLMResponse("")
     response.tool_calls = [{"id": "query", "function": {
@@ -733,7 +728,7 @@ async def test_read_tool_switches_inject_request_local_schemas_and_instructions(
     from core.provider import LLMRequest
 
     session_plugin.plugin_cfg = config
-    manager = FuncToolManager(SimpleNamespace(get_config=lambda key, default=None: default))
+    manager = FuncToolManager()
     owner = SimpleNamespace(
         ctx=SimpleNamespace(tool_mgr=manager),
         plugin_instances={"kira_session_plugin": session_plugin},

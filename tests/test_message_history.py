@@ -320,7 +320,7 @@ async def test_full_batch_and_tool_loop_link_each_assistant_separately(history, 
     model = SimpleNamespace(model=SimpleNamespace(provider_name="test", model_id="model", model_name="test"),
                             chat=AsyncMock(side_effect=[first, second]))
 
-    async def execute_tool(event, response, tool_set):
+    async def execute_tools(self, response, tool_set, *, config=None, **kwargs):
         response.tool_results = [{"role": "tool", "tool_call_id": "call-1", "content": "result"}]
 
     async def parse(text, tag_set):
@@ -332,7 +332,8 @@ async def test_full_batch_and_tool_loop_link_each_assistant_separately(history, 
     instance.im_workflow.ctx.prompt_manager = SimpleNamespace(get_agent_prompt=AsyncMock(return_value=[]))
     instance.im_workflow.ctx.skills_manager = SimpleNamespace(skills_info=[])
     instance.im_workflow.ctx.mcp_manager = SimpleNamespace(get_tool_server_map=dict)
-    instance.im_workflow.ctx.tool_manager = SimpleNamespace(build_tool_set=ToolSet, execute_tool=execute_tool)
+    instance.im_workflow.ctx.tool_manager = SimpleNamespace(build_tool_set=ToolSet)
+    monkeypatch.setattr("core.agent.tool_executor.ToolExecutor.execute_tools", execute_tools)
     instance.im_workflow.ctx.db = SimpleNamespace(add_telemetry_llm_usage=AsyncMock())
     instance.message_delivery.session_locks = {}
     instance.message_delivery.kira_config = instance.im_workflow.ctx.config

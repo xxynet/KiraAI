@@ -3,8 +3,10 @@ import random
 import time
 
 from core.agent.agent_executor import AgentExecutionContext, AgentExecutor
+from core.agent.config import AgentExecutionConfig
 from core.agent.message import OpenAIMessage
 from core.chat.message_utils import KiraIMSentResult, KiraStepResult, MessageChain
+from core.config.tool_execution import build_tool_execution_config
 from core.logging_manager import get_logger
 from core.plugin.handlers import EventType, event_handler_reg
 from core.provider import LLMResponse
@@ -34,14 +36,18 @@ class ExecuteAgentStage(BaseStage[IMBatchContext]):
         except (TypeError, ValueError):
             max_tool_loop = 2
 
-        max_agent_steps = max_tool_loop
-
-        agent_executor = AgentExecutor(services.tool_manager, request.tool_set)
         agent_ctx = AgentExecutionContext(
             event=event,
-            request=request,
+            messages=request.messages,
             new_messages=new_messages,
-            model_group=model_group,
+        )
+        agent_executor = AgentExecutor(
+            model_group,
+            context=agent_ctx, request=request,
+            config=AgentExecutionConfig(
+                max_steps=max(0, max_tool_loop),
+                tool_config=build_tool_execution_config(services.config),
+            ),
         )
 
         # Accumulates per-step results so ON_FINAL_RESULT can report the whole turn
@@ -121,7 +127,7 @@ class ExecuteAgentStage(BaseStage[IMBatchContext]):
 
         # Iter agent executor to get LLMResponse
         # TODO use llm_semaphore to restrict concurrent LLM requests
-        async for step in agent_executor.run(agent_ctx, max_steps=max_agent_steps):
+        async for step in agent_executor.run():
             llm_resp = step.llm_response
             if not llm_resp:
                 break
@@ -130,7 +136,7 @@ class ExecuteAgentStage(BaseStage[IMBatchContext]):
             try:
                 await services.db.add_telemetry_llm_usage(
                     timestamp=int(time.time()),
-                    model=step.model_name,
+                    model=step.model.model_name,
                     input_tokens=llm_resp.input_tokens or 0,
                     output_tokens=llm_resp.output_tokens or 0,
                     cached_tokens=llm_resp.cached_tokens,
@@ -143,7 +149,7 @@ class ExecuteAgentStage(BaseStage[IMBatchContext]):
             if not await send_llm_text(llm_resp, step.assistant_message):
                 break
 
-            if not step.has_tool_calls or step.is_final:
+            if step.is_final:
                 break
 
             # Process tool calls if existed
