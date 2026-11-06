@@ -37,6 +37,62 @@ def _tool_response():
     }])
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize("first_driver", ["run", "start", "queue"])
+@pytest.mark.parametrize("next_driver", ["run", "start"])
+@pytest.mark.parametrize("replace_messages", [False, True])
+async def test_serial_runs_keep_only_current_turn_messages(first_driver, next_driver, replace_messages):
+    incoming = OpenAIMessage(role="user", content="initial input")
+    shared = [incoming]
+    context = BaseAgentExecutionContext(messages=[incoming], new_messages=shared)
+    model = _model(lambda request: LLMResponse("reply"))
+    executor = BaseAgentExecutor([model], context=context)
+
+    if first_driver == "run":
+        first = [step async for step in executor.run()][-1]
+    elif first_driver == "start":
+        first = await executor.start()
+    else:
+        first = await executor.queue("queued input")
+    if first_driver != "queue":
+        assert first.new_messages is shared
+        assert first.new_messages[0] is incoming
+    previous_entries = first.new_messages.copy()
+
+    if replace_messages:
+        context.new_messages = []
+    question = OpenAIMessage(role="user", content="next input")
+    context.append_messages(question)
+    before_second_run = first.new_messages.copy()
+    if next_driver == "run":
+        second = [step async for step in executor.run()][-1]
+    else:
+        second = await executor.start()
+
+    assert second.new_messages == [question, second.assistant_message]
+    assert second.new_messages is context.new_messages
+    assert second.new_messages is not first.new_messages
+    assert first.new_messages == before_second_run
+    assert all(message in context.messages for message in previous_entries)
+    sent_history = model.chat.await_args.args[0].messages
+    assert question in sent_history
+    assert first.assistant_message in sent_history
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("driver", ["run", "start"])
+async def test_serial_runs_without_new_input_do_not_repeat_previous_turn_messages(driver):
+    context = BaseAgentExecutionContext()
+    executor = BaseAgentExecutor([_model(lambda request: LLMResponse("reply"))], context=context)
+    first = await executor.start()
+    second = ([step async for step in executor.run()][-1]
+              if driver == "run" else await executor.start())
+    assert first.new_messages == [first.assistant_message]
+    assert second.new_messages == [second.assistant_message]
+    assert first.new_messages is not second.new_messages
+    assert context.messages == [first.assistant_message, second.assistant_message]
+
+
 @pytest.mark.parametrize("literal_hint", [False, True])
 @pytest.mark.anyio
 async def test_idle_queue_resumes_clean_history_and_callback_with_new_turn_messages(literal_hint):
@@ -371,7 +427,7 @@ async def test_im_foreground_context_retains_event_and_prepared_request_options(
     second = [step async for step in executor.run()]
 
     assert len(first) == len(second) == 1
-    assert second[0].new_messages[0].content == "complete"
+    assert [message.content for message in second[0].new_messages] == ["next task", "complete"]
     assert requests[0] is not request and requests[1] is not requests[0]
     assert requests[1].tool_set.tools == tools.tools
     assert requests[1].tool_choice == "none"

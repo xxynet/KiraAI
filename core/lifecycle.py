@@ -181,7 +181,7 @@ class KiraLifecycle:
         self.provider_manager = ProviderManager(self.db_service, self.kira_config)
 
         # ====== init function tool manager ======
-        self.tool_manager = FuncToolManager(build_tool_execution_config(self.kira_config))
+        self.tool_manager = FuncToolManager(lambda: build_tool_execution_config(self.kira_config))
         # ====== init adapter manager ======
         self.adapter_manager = AdapterManager(self.kira_config, event_queue)
         webchat_adapter = None

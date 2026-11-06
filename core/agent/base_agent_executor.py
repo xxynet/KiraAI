@@ -99,6 +99,8 @@ class BaseAgentExecutor(Generic[ContextT]):
         self._run_state: _AgentRunState | None = None
         self._background_task: Task[AgentStepResult | None] | None = None
         self._queued_messages: deque[OpenAIMessage] = deque()
+        self._last_turn_messages: list[OpenAIMessage] | None = None
+        self._last_turn_message_count = 0
 
     def start(self) -> Task[AgentStepResult | None]:
         """Immediately schedule background execution on the configured context.
@@ -345,6 +347,9 @@ class BaseAgentExecutor(Generic[ContextT]):
         self, ctx: ContextT, run_state: _AgentRunState,
     ) -> AsyncIterator[AgentStepResult]:
         iterator = None
+        if ctx.new_messages is self._last_turn_messages:
+            # Keep caller-added inputs while leaving previous results intact.
+            ctx.new_messages = ctx.new_messages[self._last_turn_message_count:]
         try:
             while True:
                 iterator = self._run(ctx, run_state)
@@ -367,6 +372,8 @@ class BaseAgentExecutor(Generic[ContextT]):
                 if iterator is not None:
                     await iterator.aclose()
             finally:
+                self._last_turn_messages = ctx.new_messages
+                self._last_turn_message_count = len(ctx.new_messages)
                 self._release_run(run_state)
 
     async def _run(

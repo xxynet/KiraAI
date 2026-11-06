@@ -1,6 +1,7 @@
 from copy import deepcopy
 from dataclasses import FrozenInstanceError
-from unittest.mock import Mock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from fastapi import FastAPI
@@ -9,6 +10,7 @@ from core.agent.config import ToolExecutionConfig
 from core.agent.func_tool_manager import FuncToolManager
 from core.config.default import DEFAULT_CONFIG
 from core.config.tool_execution import build_tool_execution_config
+from core.provider import LLMResponse
 from webui.routes.config import ConfigRoutes
 
 
@@ -85,3 +87,70 @@ async def test_configuration_api_does_not_access_tool_manager():
 
     await routes.update_configuration({"locale": {"lang": "en"}})
     assert config["bot_config"] == payload
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("method", ["execute_tool", "execute_tools"])
+async def test_deprecated_execution_refreshes_config_between_calls(monkeypatch, method):
+    from core.plugin.handlers import event_handler_reg
+
+    monkeypatch.setattr(event_handler_reg, "get_handlers", lambda *args, **kwargs: [])
+    config = AppConfig(bot_config={"agent": {"max_tool_calls_per_turn": 2}})
+    resolve = Mock(side_effect=lambda: build_tool_execution_config(config))
+    manager = FuncToolManager(config=resolve)
+    tool = AsyncMock(return_value="done")
+    manager.register_tool("probe", "", {}, tool)
+
+    async def execute(override=None):
+        response = LLMResponse("", tool_calls=[{
+            "id": "call-1", "function": {"name": "probe", "arguments": "{}"},
+        }])
+        args = (SimpleNamespace(is_stopped=False), response) if method == "execute_tool" else (response,)
+        with pytest.warns(DeprecationWarning):
+            await getattr(manager, method)(*args, tool_set=manager.build_tool_set(), config=override)
+        return response
+
+    await execute()
+    assert tool.await_count == 1
+    assert resolve.call_count == 1
+    config["bot_config"]["agent"].update({
+        "max_tool_calls_per_turn": 0, "tool_call_timeout": 3, "max_tool_output_tokens": 8,
+    })
+    response = await execute()
+    assert tool.await_count == 1
+    assert response.tool_results
+    assert resolve.call_count == 2
+
+    await execute(ToolExecutionConfig(max_tool_calls_per_step=1))
+    assert tool.await_count == 2
+    assert resolve.call_count == 2
+    assert manager.config == ToolExecutionConfig(
+        max_tool_calls_per_step=0, tool_call_timeout=3, max_tool_output_tokens=8,
+    )
+
+    manager.config = ToolExecutionConfig(max_tool_calls_per_step=1)
+    await execute()
+    assert tool.await_count == 3
+
+
+@pytest.mark.anyio
+async def test_deprecated_execution_keeps_one_config_snapshot_per_batch():
+    config = AppConfig(bot_config={"agent": {"max_tool_calls_per_turn": 2}})
+    resolve = Mock(side_effect=lambda: build_tool_execution_config(config))
+    manager = FuncToolManager(resolve)
+
+    async def change_settings():
+        config["bot_config"]["agent"]["max_tool_calls_per_turn"] = 0
+        return "done"
+
+    tool = AsyncMock(side_effect=change_settings)
+    manager.register_tool("probe", "", {}, tool)
+    response = LLMResponse("", tool_calls=[
+        {"id": f"call-{index}", "function": {"name": "probe", "arguments": "{}"}}
+        for index in range(2)
+    ])
+    with pytest.warns(DeprecationWarning):
+        await manager.execute_tools(response, manager.build_tool_set())
+    assert tool.await_count == 2
+    assert resolve.call_count == 1
+    assert len(response.tool_results) == 2

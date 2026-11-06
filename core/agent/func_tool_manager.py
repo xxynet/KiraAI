@@ -41,11 +41,20 @@ class _LegacyFuncTool(BaseTool):
 
 
 class FuncToolManager:
-    def __init__(self, config: ToolExecutionConfig | None = None):
+    def __init__(self, config: ToolExecutionConfig | Callable[[], ToolExecutionConfig] | None = None):
         self.config = config if config is not None else ToolExecutionConfig()
 
         self.tool_set = ToolSet()
         self.tool_executor = ToolExecutor()
+
+    @property
+    def config(self) -> ToolExecutionConfig:
+        """Resolve current settings without coupling the registry to app config."""
+        return self._config() if callable(self._config) else self._config
+
+    @config.setter
+    def config(self, config: ToolExecutionConfig | Callable[[], ToolExecutionConfig]) -> None:
+        self._config = config
 
     def register_tool(self, name, description, parameters, func):
         """Register a tool"""
