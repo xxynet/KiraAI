@@ -262,3 +262,43 @@ async def test_abort_during_result_callback_waits_for_callback_completion():
     assert [item.state for item in delivered] == ["success", "stopped"]
     assert result is delivered[-1]
     assert executor.context.messages[0].content == "done"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("driver", ["run", "start"])
+@pytest.mark.parametrize("request_abort", [False, True])
+async def test_abort_after_hook_stopped_result_emits_response_free_terminal_result(driver, request_abort):
+    class StopHooks(AgentExecutionHooks):
+        async def on_llm_response(self, ctx, response):
+            return True
+
+    response = _tool_response()
+    model = _model(lambda request: response)
+    delivered = []
+
+    async def on_result(result):
+        delivered.append(result)
+        if len(delivered) == 1 and request_abort:
+            assert executor.abort()
+            assert executor.state == "stopping"
+
+    executor = BaseAgentExecutor(
+        [model], context=BaseAgentExecutionContext(), hooks=StopHooks(), on_result=on_result,
+    )
+    if driver == "start":
+        final = await executor.start()
+    else:
+        async for final in executor.run():
+            await on_result(final)
+
+    assert delivered[0].state == "stopped"
+    assert delivered[0].llm_response is response
+    assert len(delivered) == (2 if request_abort else 1)
+    assert final is delivered[-1]
+    assert final.llm_response is (None if request_abort else response)
+    assert final.state == "stopped" and final.is_final
+    assert final.model is model.model and final.step_index == 1
+    assert executor.context.messages == []
+    assert response.tool_results == []
+    assert executor.state == "done"
+    model.chat.assert_awaited_once()

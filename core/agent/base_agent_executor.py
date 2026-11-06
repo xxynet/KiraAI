@@ -399,7 +399,7 @@ class BaseAgentExecutor(Generic[ContextT]):
                     yield result
                 if run_state.abort_requested.is_set():
                     model = run_state.model or (run_state.model_group[0].model if run_state.model_group else None)
-                    if model is not None and (last_step is None or last_step.state != "stopped"):
+                    if model is not None:
                         yield AgentStepResult(
                             state="stopped", step_index=run_state.step_index,
                             llm_response=None, new_messages=ctx.new_messages,
