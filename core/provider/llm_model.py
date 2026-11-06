@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal
+from warnings import warn
 
 from core.agent.message import OpenAIMessage
 from core.agent.tool import ToolSet
@@ -30,10 +31,10 @@ class LLMRequest:
     """System prompt"""
     system_prompt: list[Prompt] = field(default_factory=list)
 
-    """optional: tool definitions for llm to call"""
+    """Deprecated constructor input: use tool_set; providers still read generated schemas here."""
     tools: list[dict] | None = None
 
-    """optional: tool functions"""
+    """Deprecated: register executable tools through tool_set instead."""
     tool_funcs: dict[str, Callable] | None = None
 
     """tool set object"""
@@ -43,6 +44,10 @@ class LLMRequest:
     tool_choice: Literal["auto", "none", "required"] | None = None
 
     def __post_init__(self):
+        if self.tools is not None:
+            warn("LLMRequest.tools is deprecated as an input; use tool_set instead", DeprecationWarning, stacklevel=3)
+        if self.tool_funcs is not None:
+            warn("LLMRequest.tool_funcs is deprecated; use tool_set instead", DeprecationWarning, stacklevel=3)
         self.messages = [
             m if isinstance(m, OpenAIMessage) else OpenAIMessage(**m)
             for m in self.messages

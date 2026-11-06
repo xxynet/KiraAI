@@ -62,7 +62,7 @@ class ToolExecutor:
                     args = {}
                 else:
                     args = json.loads(raw_args)
-            except json.JSONDecodeError as e:
+            except (json.JSONDecodeError, AttributeError) as e:
                 logger.error(f"Failed to parse function calling arguments: {e}")
                 logger.error(f"Raw args: {raw_args}")
                 args = {}

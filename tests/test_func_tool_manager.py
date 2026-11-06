@@ -73,6 +73,25 @@ def tool_environment(monkeypatch):
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("kind", ["missing", "null", "object"])
+async def test_non_string_arguments_follow_existing_empty_argument_fallback(tool_environment, kind):
+    manager, event, _, _ = tool_environment
+    tool = AsyncMock(return_value="done")
+    manager.register_tool("probe", "", {}, tool)
+    response = _response()
+    function = response.tool_calls[0]["function"]
+    if kind == "missing":
+        del function["arguments"]
+    else:
+        function["arguments"] = None if kind == "null" else {"value": "input"}
+
+    await manager.execute_tool(event, response, manager.build_tool_set())
+
+    tool.assert_awaited_once_with(event)
+    assert response.tool_results[0]["content"] == "done"
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("result_kind", ["string", "tool_result", "mcp"])
 async def test_all_tool_text_is_truncated_before_logging_and_context(tool_environment, result_kind):
     manager, event, _, log = tool_environment

@@ -1,5 +1,11 @@
+import warnings
+from types import SimpleNamespace
+from unittest.mock import Mock
+
+import pytest
 from jinja2 import UndefinedError
 
+from core.agent.tool import ToolSet
 from core.prompt_manager import Prompt
 from core.prompts.agent_tmpl import get_agent_templates
 from core.provider.llm_model import LLMRequest
@@ -7,6 +13,24 @@ from core.provider.llm_model import LLMRequest
 DYNAMIC_BLOCKS = ("SESSIONS", "CHATENV", "TIME")
 MEMORY_BLOCK = "MEMORY"
 STATIC_BLOCKS = ("ROLE", "TOOLS")
+
+
+@pytest.mark.parametrize("name,value", [("tools", []), ("tool_funcs", {})])
+def test_legacy_tool_inputs_warn_and_preserve_values(name, value):
+    with pytest.warns(DeprecationWarning, match=f"LLMRequest.{name}.*deprecated"):
+        request = LLMRequest(**{name: value})
+    assert getattr(request, name) is value
+
+
+def test_tool_set_generates_provider_schemas_without_deprecation_warning():
+    schema = {"name": "probe", "description": "", "parameters": {}}
+    tools = ToolSet([SimpleNamespace(name="probe", get_schema=Mock(return_value=schema))])
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", DeprecationWarning)
+        request = LLMRequest(tool_set=tools)
+    assert not caught
+    assert request.tools == tools.to_list()
+    assert request.tool_choice == "auto"
 
 
 def test_prompt_renders_jinja2_placeholders():
