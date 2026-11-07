@@ -305,3 +305,34 @@ def test_status_save_failure_rolls_back_without_resetting_provider(
     assert response.json()['status'] == requested_status
     stored = json.loads(config_loader.CONFIG_PATH.read_text(encoding='utf-8'))
     assert stored['providers']['provider']['status'] == requested_status
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('kind', list(ModelType))
+async def test_health_check_preserves_supported_capabilities(manager, kind):
+    result = await manager.health_check('provider', kind.value, 'model')
+    supported = kind not in {ModelType.STT, ModelType.IMAGE, ModelType.VIDEO}
+    assert result['success'] is supported
+    if supported:
+        assert result['latency'] >= 0
+        assert result['error'] is None
+    else:
+        assert result['latency'] is None
+        assert result['error'] == f'Health check not supported for {kind.value} models'
+
+
+@pytest.mark.anyio
+async def test_health_check_delegates_to_provider_client_override(manager, monkeypatch):
+    calls = []
+
+    async def custom_probe(self):
+        calls.append(self.model.model_name)
+        raise ProviderAPIError('Custom probe failure')
+
+    client_class = StubProvider.models[ModelType.IMAGE]
+    monkeypatch.setattr(client_class, 'health_check', custom_probe)
+    result = await manager.health_check('provider', 'image', 'model')
+    assert calls == ['model']
+    assert result == {
+        'success': False, 'latency': None, 'error': 'Custom probe failure',
+    }

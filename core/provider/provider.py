@@ -79,12 +79,27 @@ class BaseModelClient:
     def __init__(self, model: ModelInfo):
         self.model = model
 
+    async def health_check(self) -> None:
+        """Probe model availability; raise when unsupported or unavailable."""
+        raise NotImplementedError(
+            f"Health check not supported for {self.type.value} models"
+        )
+
 
 class LLMModelClient(BaseModelClient):
     type = ModelType.LLM
 
     def __init__(self, model: ModelInfo):
         super().__init__(model)
+
+    async def health_check(self) -> None:
+        from core.agent.message import OpenAIMessage
+
+        await self.chat(LLMRequest(
+            messages=[OpenAIMessage(role="user", content="Say 'pong'")],
+            tools=None,
+            tool_choice="none",
+        ))
 
     async def chat(self, request: LLMRequest, **kwargs) -> LLMResponse:
         pass
@@ -114,6 +129,9 @@ class TTSModelClient(BaseModelClient):
 
     def __init__(self, model: ModelInfo):
         super().__init__(model)
+
+    async def health_check(self) -> None:
+        await self.text_to_speech("ping")
 
     async def text_to_speech(self, text: str, **kwargs) -> Record:
         pass
@@ -173,6 +191,9 @@ class EmbeddingModelClient(BaseModelClient):
     def __init__(self, model: ModelInfo):
         super().__init__(model)
 
+    async def health_check(self) -> None:
+        await self.embed(["ping"])
+
     @abstractmethod
     async def embed(self, texts: list[str]) -> list[list[float]]:
         pass
@@ -183,6 +204,9 @@ class RerankModelClient(BaseModelClient):
 
     def __init__(self, model: ModelInfo):
         super().__init__(model)
+
+    async def health_check(self) -> None:
+        await self.rerank("ping", ["ping"])
 
     @abstractmethod
     async def rerank(
@@ -203,6 +227,9 @@ class RerankModelClient(BaseModelClient):
 
 class DecisionModelClient(BaseModelClient):
     type = ModelType.DECISION
+
+    async def health_check(self) -> None:
+        await self.noul("ping", "Is the state ping?")
 
     @abstractmethod
     async def noul(
