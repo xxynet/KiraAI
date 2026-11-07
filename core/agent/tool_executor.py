@@ -10,6 +10,7 @@ from core.provider import LLMResponse
 from core.utils.tool_utils import BaseTool
 
 from .config import ToolExecutionConfig
+from .hook_context import ToolCallContext
 from .tool import ToolResult, ToolSet, truncate_tool_output
 
 logger = get_logger("llm", "purple")
@@ -29,6 +30,7 @@ class ToolExecutor:
         tool_set: ToolSet | None = None,
         *,
         config: ToolExecutionConfig,
+        on_tool_call: Callable[[ToolCallContext], Awaitable[None]] | None = None,
         on_tool_result: Callable[[ToolResult], Awaitable[bool]] | None = None,
         should_stop: Callable[[], bool] | None = None,
     ) -> None:
@@ -36,6 +38,8 @@ class ToolExecutor:
 
         Override invoke_tool() to adapt tool arguments. A result callback may stop
         the batch by returning False.
+        The call hook runs outside the execution timeout and may supply a result.
+        A failed call hook produces an error result without executing the tool.
         should_stop is checked before each tool; completed results are retained.
         """
         max_tool_calls = config.max_tool_calls_per_step
@@ -74,16 +78,29 @@ class ToolExecutor:
 
             # Call corresponding Python function(s)
             if tool_set and name in tool_set:
+                tool_inst = tool_set.get(name)
+                call_ctx = ToolCallContext(tool_call_id=tool_call_id, tool=tool_inst, arguments=args)
                 try:
-                    tool_inst = tool_set.get(name)
-                    coro = self.invoke_tool(tool_inst, args)
-                    result = await (wait_for(coro, tool_call_timeout) if tool_call_timeout else coro)
-                except AsyncTimeoutError:
-                    result = {"error": f"Tool '{name}' timed out after {tool_call_timeout}s"}
-                    tool_logger.error(f"Tool '{name}' timed out after {tool_call_timeout}s")
+                    if on_tool_call is not None:
+                        await on_tool_call(call_ctx)
                 except Exception as e:
-                    result = {"error": f"Failed to call tool '{name}': {e}"}
-                    tool_logger.error(f"Failed to call tool '{name}': {e}")
+                    tool_logger.exception(f"Tool call hook failed for '{name}'")
+                    call_ctx.set_result(ToolResult(text=f"Tool call hook failed for '{name}': {e}"))
+
+                if should_stop is not None and should_stop():
+                    return
+                if call_ctx.result is not None:
+                    result = call_ctx.result
+                else:
+                    try:
+                        coro = self.invoke_tool(tool_inst, call_ctx.arguments)
+                        result = await (wait_for(coro, tool_call_timeout) if tool_call_timeout else coro)
+                    except AsyncTimeoutError:
+                        result = {"error": f"Tool '{name}' timed out after {tool_call_timeout}s"}
+                        tool_logger.error(f"Tool '{name}' timed out after {tool_call_timeout}s")
+                    except Exception as e:
+                        result = {"error": f"Failed to call tool '{name}': {e}"}
+                        tool_logger.error(f"Failed to call tool '{name}': {e}")
             else:
                 result = {"error": f"Tool {name} not implemented"}
                 tool_logger.error(f"Tool {name} not implemented")

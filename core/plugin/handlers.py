@@ -26,6 +26,7 @@ class EventType(Enum):
     ON_LLM_REQUEST = "on_llm_request"  # LLM请求前
     ON_LLM_RESPONSE = "on_llm_response"  # LLM 原始输出
     AFTER_XML_PARSE = "after_xml_parse"  # XML 解析后 (list[MessageChain | RootTagAction])
+    ON_TOOL_CALL = "on_tool_call"  # Before executing a resolved tool call
     ON_TOOL_RESULT = "on_tool_result"  # 工具调用结果
     ON_MESSAGE_SENT = "on_message_sent"  # 单条消息发送后
     ON_STEP_RESULT = "on_step_result"  # Agent 步骤结果
@@ -56,6 +57,8 @@ class EventHandler:
 
     async def exec_handler(self, *args, **kwargs):
         event = args[0] if args else None
+        if self.event_type == EventType.ON_TOOL_CALL:
+            event = getattr(event, "event", None)
         try:
             await self.handler(*args, **kwargs)
         except Exception as e:
@@ -78,6 +81,8 @@ class EventHandler:
                         await h.handler(event, exc_event)
                     except Exception:
                         logger.error(tb.format_exc())
+            if self.event_type == EventType.ON_TOOL_CALL:
+                raise
 
 
 class EventHandlerRegistry:

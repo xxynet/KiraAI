@@ -1,3 +1,4 @@
+from core.agent.hook_context import ToolCallContext
 from core.logging_manager import get_logger
 
 from .base import BasePlugin
@@ -20,6 +21,7 @@ __all__ = [
     'PluginManager',
     'PluginPage',
     "Priority",
+    "ToolCallContext",
     'logger',
     "on",
     "register",

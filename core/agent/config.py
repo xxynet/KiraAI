@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from math import isfinite
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -33,6 +34,7 @@ class AgentExecutionConfig:
     tool_config: ToolExecutionConfig = field(default_factory=ToolExecutionConfig)
     # None or an empty string disables the final-step prompt.
     final_step_hint: str | None = None
+    extra: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         if not isinstance(self.max_steps, int) or isinstance(self.max_steps, bool) or self.max_steps < 0:
