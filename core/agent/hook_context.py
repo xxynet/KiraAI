@@ -37,10 +37,14 @@ class ToolCallContext:
         """Return the supplied result, or None when the tool should execute."""
         return self._result
 
-    def set_result(self, result: ToolResult) -> None:
+    def set_result(self, result: ToolResult | str) -> None:
         """Supply a tool result and skip the actual tool invocation."""
         from .tool import ToolResult
 
-        if not isinstance(result, ToolResult):
-            raise TypeError("ToolCallContext.set_result() requires a ToolResult")
-        self._result = result
+        if not isinstance(result, (ToolResult, str)):
+            raise TypeError("ToolCallContext.set_result() requires a ToolResult or str")
+
+        if isinstance(result, str):
+            self._result = ToolResult(text=result)
+        else:
+            self._result = result

@@ -94,7 +94,7 @@ def test_tool_call_context_exposes_original_event_without_a_second_copy():
     assert ctx.event is replacement
 
 
-@pytest.mark.parametrize("invalid", [None, "invalid", {}])
+@pytest.mark.parametrize("invalid", [None, 123, {}])
 def test_result_is_read_only_and_set_result_rejects_invalid_values(invalid):
     ctx = ToolCallContext("call-1", ProbeTool(), {})
     assert ctx.result is None
@@ -107,6 +107,56 @@ def test_result_is_read_only_and_set_result_rejects_invalid_values(invalid):
     with pytest.raises(TypeError, match="requires a ToolResult"):
         ctx.set_result(invalid)
     assert ctx.result is result
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("text", ["denied", ""])
+@pytest.mark.parametrize("driver", ["standalone", "agent", "im"])
+async def test_string_result_skips_execution_and_passes_through_result_hooks(
+    isolated_handlers, text, driver,
+):
+    tool = ProbeTool()
+    tool.execute = AsyncMock(return_value="executed")
+    observed = []
+
+    async def intercept(ctx):
+        ctx.set_result(text)
+        assert isinstance(ctx.result, ToolResult)
+        assert ctx.result.text == text
+        observed.append(ctx.result)
+
+    async def process_result(result):
+        assert result is observed[0]
+        result.text += ":observed"
+        return True
+
+    class Hooks(AgentExecutionHooks):
+        async def on_tool_call(self, ctx):
+            await intercept(ctx)
+
+        async def on_tool_result(self, ctx, result):
+            return await process_result(result)
+
+    if driver == "standalone":
+        response = _response()
+        await ToolExecutor().execute_tools(
+            response, ToolSet([tool]), config=ToolExecutionConfig(),
+            on_tool_call=intercept, on_tool_result=process_result,
+        )
+    else:
+        if driver == "im":
+            async def result_hook(event, result):
+                await process_result(result)
+
+            event_handler_reg.register(EventHandler(EventType.ON_TOOL_CALL, Priority.MEDIUM, intercept))
+            event_handler_reg.register(EventHandler(EventType.ON_TOOL_RESULT, Priority.MEDIUM, result_hook))
+        executor = _executor(tool, im=driver == "im", hooks=Hooks() if driver == "agent" else None)
+        steps = await _collect(executor)
+        response = steps[0].llm_response
+
+    tool.execute.assert_not_awaited()
+    assert len(observed) == 1
+    assert response.tool_results[0]["content"] == text + ":observed"
 
 
 @pytest.mark.anyio
@@ -226,7 +276,7 @@ async def test_hook_failure_never_executes_tool_and_returns_a_paired_result(
         if ctx.tool_call_id != "call-1":
             return
         if failure == "invalid_result":
-            ctx.set_result("invalid")
+            ctx.set_result({"invalid": True})
             return
         if failure == "after_result":
             ctx.set_result(ToolResult(text="must not survive an exception"))
