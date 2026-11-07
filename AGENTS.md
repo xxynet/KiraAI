@@ -45,6 +45,8 @@ docker-compose up
 - Use `core/logging_manager.py` for project logging; obtain loggers through `get_logger(name, color)` to keep console, file, and WebUI log output consistent. Plugins should reuse the existing logger via `from core.plugin import logger` for plugin logging.
 - All new code comments must be written in English.
 - When developing plugins, expose user-invoked capabilities through LLM-native extension points, such as `@register.tool` and `@register.tag` (XML tags), instead of command syntax for better digital life experience. 
+- Plugins must store their runtime data through `ctx.get_plugin_data_dir()` (which resolves to a per-plugin directory under `data/plugin_data/`) instead of writing into the plugin's own source directory.
+- JavaScript in a plugin's own WebUI (the plugin's webui assets, e.g. `web/js/*.js`) must be split into separate files; do not pile all of it into a single file.
 
 ## Architecture
 
