@@ -9,14 +9,12 @@ from contextlib import aclosing
 from functools import wraps
 from pathlib import Path
 
-from core.agent.message import OpenAIMessage
 from core.config import KiraConfig, config_loader
 from core.config.config_field import BaseConfigField, build_fields
 from core.db.service import DatabaseService
 from core.logging_manager import get_logger
 from core.utils.path_utils import resolve_manifest_icon_path
 
-from .llm_model import LLMRequest
 from .model_identity import (
     DEFAULT_MODEL_TYPES,
     MODEL_CONFIG_VERSION,
@@ -511,27 +509,7 @@ class ProviderManager:
         try:
             start = time.time()
 
-            if isinstance(model_client, LLMModelClient):
-                request = LLMRequest(
-                    messages=[OpenAIMessage(role="user", content="Say 'pong'")],
-                    tools=None,
-                    tool_choice="none",
-                )
-                await model_client.chat(request)
-            elif isinstance(model_client, TTSModelClient):
-                await model_client.text_to_speech("ping")
-            elif isinstance(model_client, EmbeddingModelClient):
-                await model_client.embed(["ping"])
-            elif isinstance(model_client, DecisionModelClient):
-                await model_client.noul("ping", "Is the state ping?")
-            elif isinstance(model_client, RerankModelClient):
-                await model_client.rerank("ping", ["ping"])
-            else:
-                return {
-                    "success": False,
-                    "latency": None,
-                    "error": f"Health check not supported for {model_type} models",
-                }
+            await model_client.health_check()
 
             latency = round((time.time() - start) * 1000)
             return {"success": True, "latency": latency, "error": None}
