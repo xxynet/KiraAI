@@ -62,9 +62,6 @@ class ExecuteAgentStage(BaseStage[IMBatchContext]):
                 session_lock = services.message_delivery.get_session_lock(sid)
                 async with session_lock:
                     delivery = services.message_delivery
-                    parts = event.sid.split(":", maxsplit=2)
-                    if len(parts) != 3 or any(not part for part in parts):
-                        raise ValueError("invalid target, must follow the form of <adapter>:<dm|gm>:<id>")
 
                     try:
                         actions = await delivery.parse_xml(text.strip(), tag_set)
@@ -81,8 +78,11 @@ class ExecuteAgentStage(BaseStage[IMBatchContext]):
                     for action in actions:
                         if isinstance(action, MessageChain):
                             if not action.is_empty():
-                                result = await delivery.send_message_chain(
-                                    event.sid, action, memory_message=memory_message,
+                                session = await services.session_manager.resolve_session(event.sid)
+                                result = await services.message_router.send_message_chain(
+                                    session,
+                                    action,
+                                    memory_message=memory_message,
                                     bot=event.bot,
                                 )
                                 if not result.ok and result.err:

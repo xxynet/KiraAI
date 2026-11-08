@@ -45,7 +45,7 @@ from core.utils.media_refs import (
     store_session_media,
 )
 from core.workflow.src.im.workflow import DefaultIMWorkflow
-from tests.im_workflow_helpers import make_workflow_context
+from tests.im_workflow_helpers import make_message_router, make_workflow_context
 from tests.image_samples import PNG_BYTES, PNG_DATA_URL
 from tests.test_session_manager_events import build_session_manager
 from webui.routes.sessions import SessionsRoutes
@@ -87,7 +87,15 @@ def processor(history, result=None, error=None, persona_mgr=None):
         adapter_mgr=SimpleNamespace(get_adapter=lambda _: adapter),
         persona_mgr=persona_mgr,
     )
-    instance = MessageProcessor(DefaultIMWorkflow(services))
+    workflow = DefaultIMWorkflow(services)
+    instance = MessageProcessor(
+        workflow,
+        message_router=make_message_router(
+            adapter_mgr=services.message_delivery.adapter_mgr,
+            message_delivery=services.message_delivery,
+            workflow=workflow,
+        ),
+    )
     return instance, target
 
 
@@ -311,7 +319,7 @@ async def test_full_batch_and_tool_loop_link_each_assistant_separately(history, 
     from core.chat.session import Session
     from core.provider.llm_model import LLMResponse
 
-    monkeypatch.setattr("core.message_manager.event_handler_reg.get_handlers", lambda *a, **kw: [])
+    monkeypatch.setattr("core.plugin.handlers.event_handler_reg.get_handlers", lambda *a, **kw: [])
     instance, target = processor(history, KiraIMSentResult("platform-id"))
     first = LLMResponse('<msg><text>one</text></msg><msg><text>two</text></msg>', tool_calls=[
         {"id": "call-1", "type": "function", "function": {"name": "check", "arguments": "{}"}}
@@ -371,7 +379,7 @@ async def test_stopped_or_discarded_incoming_is_recorded_before_plugin_changes(h
 
     instance, _ = processor(history)
     instance.im_workflow.ctx.session_manager = history.session_manager
-    monkeypatch.setattr("core.message_manager.event_handler_reg.get_handlers", lambda *a, **kw: [StopHandler()])
+    monkeypatch.setattr("core.plugin.handlers.event_handler_reg.get_handlers", lambda *a, **kw: [StopHandler()])
     event = KiraMessageEvent(supported_elements=["text"], timestamp=1, message=incoming(),
                             adapter=AdapterInfo(True, "test", "adapter", "test"))
     await instance.handle_im_message(event)

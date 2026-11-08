@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from core.agent.mcp_mgr import MCPManager
     from core.agent.skills_mgr import SkillsManager
     from core.chat.message_history import MessageHistoryService
+    from core.chat.message_router import MessageRouter
     from core.chat.session_buffer import SessionBufferManager
     from core.chat.session_manager import SessionManager
     from core.config import KiraConfig
@@ -37,6 +38,7 @@ class IMWorkflowContext:
     message_media: MessageMediaService
     message_buffer: SessionBufferManager
     message_delivery: MessageDeliveryService
+    message_router: MessageRouter
     config: KiraConfig
     session_manager: SessionManager
     prompt_manager: PromptManager

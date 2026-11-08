@@ -125,6 +125,31 @@ class SessionManager:
             raise ValueError("Session data must be an object")
         return record
 
+    async def resolve_session(self, target: Session | str) -> Session:
+        """Resolve delivery targets without creating or changing stored sessions.
+
+        Full objects are used as supplied. Stored SID and internal-ID targets
+        load their complete context. Unstored SIDs remain valid for proactive IM
+        delivery, preserving the existing plugin sending contract.
+        """
+        if isinstance(target, Session):
+            return target
+        if not isinstance(target, str) or not target:
+            raise ValueError("Session target must be a Session, SID, or internal ID")
+        if ":" not in target:
+            row = await self.db.get_chat_session_by_id(target)
+            if row is None:
+                raise ValueError(f"Session not found: {target}")
+            record = Session.from_record(row)
+            if not isinstance(record.data, dict):
+                raise ValueError("Session data must be an object")
+            return record
+        parts = target.split(":", maxsplit=2)
+        if len(parts) != 3 or any(not part for part in parts):
+            raise ValueError("Invalid session routing key")
+        record = await self.get_session(target)
+        return record if record is not None else Session(*parts)
+
     async def get_session_message_counts(self, session: str | None = None) -> dict[str, int]:
         """Return chunk counts for one routing SID, or all sessions when omitted."""
         if session is None:

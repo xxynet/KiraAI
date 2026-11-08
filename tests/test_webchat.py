@@ -19,6 +19,7 @@ from core.chat.session import Session
 from core.event_bus import EventBus
 from core.webchat.service import WebChatService
 from core.webchat.store import WebChatStore
+from tests.im_workflow_helpers import make_message_router, make_session_manager
 from tests.test_im_workflow import processor
 from webui.routes.auth import require_auth
 from webui.routes.webchat import WebChatRoutes
@@ -65,12 +66,14 @@ async def test_cross_session_webchat_only_allows_admin_direct_messages(session_t
         adapter_mgr=SimpleNamespace(get_adapter=lambda name: adapter),
         publish_notice=AsyncMock(),
     )
+    ctx.session_mgr = make_session_manager()
+    ctx.message_router = make_message_router(ctx.adapter_mgr)
     target = f"webchat:{session_type}:{recipient}"
     result = await SessionPlugin(ctx, {}).session_send(SimpleNamespace(sid="qq:gm:123"), target, "Send a test message")
     if allowed:
         assert result == "message sent"
         ctx.publish_notice.assert_awaited_once()
-        assert ctx.publish_notice.await_args.args[0] == adapter.SID
+        assert ctx.publish_notice.await_args.args[0].sid == adapter.SID
     else:
         assert result == "Permission denied: target session is not allowed by adapter webchat"
         ctx.publish_notice.assert_not_awaited()
@@ -98,6 +101,8 @@ async def test_cross_session_notice_generates_and_delivers_webchat_reply(store, 
     ctx = object.__new__(PluginContext)
     ctx.adapter_mgr = services.message_delivery.adapter_mgr
     ctx.event_bus = bus
+    ctx.session_mgr = make_session_manager()
+    ctx.message_router = make_message_router(ctx.adapter_mgr, services.message_delivery)
     chat_plugin = DefaultChatPlugin(SimpleNamespace(
         config={"bot_config": {"bot": {"max_buffer_messages": 1}}},
         get_buffer=services.message_buffer.get_buffer,
@@ -111,10 +116,10 @@ async def test_cross_session_notice_generates_and_delivers_webchat_reply(store, 
     notice = adapter.ctx.event_queue.get_nowait()
     assert notice.session.sid == adapter.SID and notice.is_notice
     assert source.sid in notice.message.chain[0].text and description in notice.message.chain[0].text
-    await workflow.handle_event(notice)
+    await services.message_router.handle_event(notice)
     batch = adapter.ctx.event_queue.get_nowait()
     assert isinstance(batch, KiraMessageBatchEvent) and batch.sid == adapter.SID
-    await workflow.handle_batch_event(batch)
+    await services.message_router.handle_event(batch)
     model.chat.assert_awaited_once()
     rows = (await store.list_messages())["messages"]
     assert len(rows) == 1 and rows[0]["direction"] == "outgoing"
@@ -297,12 +302,12 @@ async def test_normal_event_bus_buffers_batches_counts_and_delivers_webchat(stor
     received_events = []
 
     async def receive(event):
-        await workflow.handle_event(event)
+        await services.message_router.handle_event(event)
         received_events.append(event)
         received.set()
 
     async def process_batch(event):
-        await workflow.handle_batch_event(event)
+        await services.message_router.handle_event(event)
         completed.set()
 
     async def chat(request):
@@ -363,7 +368,7 @@ async def test_plugin_can_suppress_webchat_reply(store, processor, monkeypatch, 
         getattr(event, action)()
 
     monkeypatch.setattr(event_handler_reg, "get_handlers", lambda event_type: [SimpleNamespace(exec_handler=suppress)] if event_type == EventType.ON_IM_MESSAGE else [])
-    bus.subscribe(KiraMessageEvent, workflow.handle_event)
+    bus.subscribe(KiraMessageEvent, workflow.ctx.message_router.handle_event)
     service = WebChatService(adapter, Sessions())
     await service.save_profile(PROFILE)
     await service.submit(str(uuid.uuid4()), "hello")

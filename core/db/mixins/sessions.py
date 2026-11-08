@@ -89,6 +89,18 @@ class ChatSessionMixin:
             row = result.mappings().one_or_none()
             return dict(row) if row is not None else None
 
+    async def get_chat_session_by_id(
+        self, internal_id: str, *, include_content: bool = True,
+    ) -> dict | None:
+        """Read a session by its stable identity rather than its routing key."""
+        query = self._chat_session_query(
+            include_content=include_content,
+        ).where(ChatSessionRecord.id == internal_id)
+        async with self.db.get_session() as session:
+            result = await session.execute(query)
+            row = result.mappings().one_or_none()
+            return dict(row) if row is not None else None
+
     async def list_chat_sessions(
         self, *, include_content: bool = True,
     ) -> list[dict]:

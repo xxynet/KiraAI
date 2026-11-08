@@ -8,8 +8,10 @@ from core.adapter.builtin.webchat.webchat import WebChatAdapter
 from core.adapter.context import AdapterContext
 from core.agent.mcp_mgr import MCPManager
 from core.agent.skills_mgr import SkillsManager
+from core.chat.im_message_route import IMMessageRoute
 from core.chat.message_history import MessageHistoryService
 from core.chat.message_history_cleanup import MessageHistoryCleanup
+from core.chat.message_router import MessageRouter
 from core.chat.message_utils import (
     KiraCommentEvent,
     KiraMessageBatchEvent,
@@ -77,6 +79,8 @@ class KiraLifecycle:
         self.prompt_manager: PromptManager | None = None
 
         self.message_processor: MessageProcessor | None = None
+
+        self.message_router: MessageRouter | None = None
 
         self.image_desc_cache: ImageDescCache | None = None
 
@@ -253,6 +257,7 @@ class KiraLifecycle:
         message_delivery = MessageDeliveryService(
             self.kira_config, self.adapter_manager, self.persona_manager, self.message_history,
         )
+        self.message_router = MessageRouter(session_manager=self.session_manager)
         message_formatter = MessageFormatter(
             self.kira_config, self.provider_manager, self.session_manager, self.image_desc_cache,
         )
@@ -261,6 +266,7 @@ class KiraLifecycle:
             message_media=MessageMediaService(),
             message_buffer=message_buffer,
             message_delivery=message_delivery,
+            message_router=self.message_router,
             config=self.kira_config,
             session_manager=self.session_manager,
             prompt_manager=self.prompt_manager,
@@ -272,7 +278,18 @@ class KiraLifecycle:
             message_history=self.message_history,
             event_bus=self.event_bus,
         ))
-        self.message_processor = MessageProcessor(workflow)
+        self.message_router.register_route(
+            IMMessageRoute(
+                delivery=message_delivery,
+                adapter_mgr=self.adapter_manager,
+                workflow=workflow,
+            ),
+            priority=-100,
+        )
+        self.message_processor = MessageProcessor(
+            workflow,
+            message_router=self.message_router,
+        )
         if webchat_adapter is not None:
             self.webchat = WebChatService(webchat_adapter, self.session_manager)
             await self.webchat.initialize()
@@ -288,9 +305,18 @@ class KiraLifecycle:
             self.message_history, self.kira_config
         )
         self.message_history_cleanup.start()
-        self.event_bus.subscribe(KiraMessageEvent, workflow.handle_event)
-        self.event_bus.subscribe(KiraMessageBatchEvent, workflow.handle_batch_event)
-        self.event_bus.subscribe(KiraCommentEvent, self.message_processor.handle_cmt_event)
+        self.event_bus.subscribe(
+            KiraMessageEvent,
+            self.message_router.handle_event,
+        )
+        self.event_bus.subscribe(
+            KiraMessageBatchEvent,
+            self.message_router.handle_event,
+        )
+        self.event_bus.subscribe(
+            KiraCommentEvent,
+            self.message_processor.handle_cmt_event,
+        )
 
         # ====== init plugin system ======
         self.plugin_context = PluginContext(
@@ -311,6 +337,7 @@ class KiraLifecycle:
             message_delivery=message_delivery,
             message_history=self.message_history,
             image_desc_cache=self.image_desc_cache,
+            message_router=self.message_router,
         )
 
         self.plugin_manager = PluginManager(self.plugin_context)

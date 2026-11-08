@@ -261,34 +261,16 @@ class SessionPlugin(BasePlugin):
         }
     )
     async def session_send(self, event: KiraMessageBatchEvent, target: str, description: str):
-        parts = target.split(":", maxsplit=2)
-        if len(parts) != 3 or any(not part for part in parts):
-            raise ValueError("Failed to parse sid")
-        if event.sid == target:
-            return "Do not send messages to current session using this tool, output directly to send messages"
-
-        adapter_name, session_type, session_id = parts
-        if session_type not in {"dm", "gm"}:
-            return "Permission denied: target session type must be dm or gm"
-
-        adapter = self.ctx.adapter_mgr.get_adapter(adapter_name)
-        if not adapter:
-            return f"Permission denied: adapter not found: {adapter_name}"
-
         try:
-            capability = adapter.get_capability(IMCapability)
-        except ValueError:
-            is_allowed = False
-        else:
-            permission = "im.direct.receive" if session_type == "dm" else "im.group.receive"
-            is_allowed = capability.is_allowed(session_id, permission=permission)
-        if not is_allowed:
-            return f"Permission denied: target session is not allowed by adapter {adapter_name}"
-
-        try:
+            session = await self.ctx.session_mgr.resolve_session(target)
+            if event.sid == session.sid:
+                return "Do not send messages to current session using this tool, output directly to send messages"
+            permission_error = await self.ctx.message_router.get_receive_permission_error(session)
+            if permission_error is not None:
+                return permission_error
             cross_session_prompt = CROSS_SESSION_PROMPT.format(session_id=event.sid, description=description)
 
-            await self.ctx.publish_notice(target, MessageChain([Text(cross_session_prompt)]))
+            await self.ctx.publish_notice(session, MessageChain([Text(cross_session_prompt)]))
             return "message sent"
         except Exception as e:
             return f"failed to send: {e}"

@@ -4,13 +4,14 @@ from collections.abc import Callable
 from deprecated import deprecated
 
 from core.agent.message import OpenAIMessage
+from core.chat.message_router import MessageRouter
 from core.chat.message_utils import (
     KiraCommentEvent,
     KiraIMSentResult,
     KiraMessageEvent,
     MessageChain,
 )
-from core.chat.session import User
+from core.chat.session import Session, User
 from core.chat.session_buffer import SessionBufferManager
 from core.logging_manager import get_logger
 from core.plugin.handlers import EventType, event_handler_reg
@@ -22,10 +23,16 @@ logger = get_logger("message", "cyan")
 
 
 class MessageProcessor:
-    """Dispatch messages to an injected workflow and preserve plugin entry points."""
+    """Preserve legacy message entry points and dispatch feed comment hooks."""
 
-    def __init__(self, im_workflow: IMWorkflow):
+    def __init__(
+        self,
+        im_workflow: IMWorkflow,
+        *,
+        message_router: MessageRouter,
+    ):
         self.im_workflow = im_workflow
+        self.message_router = message_router
         self.message_processing_semaphore = im_workflow.message_processing_semaphore
         logger.info("MessageProcessor initialized")
 
@@ -60,13 +67,18 @@ class MessageProcessor:
         )
 
     @deprecated("Use PluginContext.send_message_chain instead")
-    async def send_message_chain(self, session: str, chain: MessageChain, *, memory_message: OpenAIMessage | None = None, bot: User | None = None) -> KiraIMSentResult:
-        return await self.message_delivery.send_message_chain(
-            session, chain, memory_message=memory_message, bot=bot)
+    async def send_message_chain(self, session: Session | str, chain: MessageChain, *, memory_message: OpenAIMessage | None = None, bot: User | None = None) -> KiraIMSentResult:
+        target = await self.im_workflow.ctx.session_manager.resolve_session(session)
+        return await self.message_router.send_message_chain(
+            target,
+            chain,
+            memory_message=memory_message,
+            bot=bot,
+        )
 
     @deprecated("Publish the event with await PluginContext.event_bus.publish(event) instead")
     async def handle_im_message(self, event: KiraMessageEvent):
-        await self.im_workflow.handle_event(event)
+        await self.message_router.handle_event(event)
 
     async def handle_cmt_event(self, event: KiraCommentEvent):
         """Deliver comments to plugins under the shared message concurrency limit."""

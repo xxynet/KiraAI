@@ -18,12 +18,17 @@ from core.chat.message_utils import (
     MessageChain,
 )
 from core.chat.session import Group, Session, User
+from core.chat.session_manager import SessionManager
 from core.message_manager import MessageProcessor
 from core.plugin import manager as manager_module
 from core.plugin import registry
 from core.plugin.plugin_context import PluginContext
 from core.workflow.src.im.workflow import DefaultIMWorkflow
-from tests.im_workflow_helpers import make_workflow_context
+from tests.im_workflow_helpers import (
+    make_message_router,
+    make_session_manager,
+    make_workflow_context,
+)
 from tests.test_adapter_base import ExampleAdapter, make_adapter
 
 
@@ -54,7 +59,16 @@ def processor_for(adapter):
             get_session=AsyncMock(side_effect=lambda sid, *, ensure_session=False, include_content=True: Session(*sid.split(":", 2), session_description=None, internal_id="sess_test")),
         ),
     )
-    processor = MessageProcessor(DefaultIMWorkflow(services))
+    workflow = DefaultIMWorkflow(services)
+    processor = MessageProcessor(
+        workflow,
+        message_router=make_message_router(
+            adapter_mgr=services.message_delivery.adapter_mgr,
+            message_delivery=services.message_delivery,
+            workflow=workflow,
+        ),
+    )
+    services.session_manager.resolve_session = SessionManager.resolve_session.__get__(services.session_manager)
     return processor
 
 
@@ -144,7 +158,7 @@ def test_publishing_preserves_explicit_session_id_without_decoding():
 
 @pytest.mark.asyncio
 async def test_target_survives_trigger_and_buffer_flush(monkeypatch):
-    monkeypatch.setattr("core.message_manager.event_handler_reg.get_handlers", lambda **kw: [])
+    monkeypatch.setattr("core.plugin.handlers.event_handler_reg.get_handlers", lambda **kw: [])
     adapter = routed_adapter()
     event = message_event(adapter, target_id="channel/123")
     adapter.get_capability(IMCapability).publish(event)
@@ -170,6 +184,8 @@ async def test_plugin_notice_preserves_opaque_target_without_capability_name():
     ctx = object.__new__(PluginContext)
     ctx.adapter_mgr = SimpleNamespace(get_adapter=lambda name: adapter)
     ctx.event_bus = SimpleNamespace(publish=AsyncMock())
+    ctx.session_mgr = make_session_manager()
+    ctx.message_router = make_message_router(ctx.adapter_mgr)
     await ctx.publish_notice(
         "example:dm:channel/123", MessageChain([Text("notice")]),
     )
@@ -286,10 +302,12 @@ async def test_cross_session_permission_uses_opaque_id_without_capability_name()
         publish_notice=AsyncMock(),
         config={"bot_config": {"bot": {}}},
     )
+    ctx.session_mgr = make_session_manager()
+    ctx.message_router = make_message_router(ctx.adapter_mgr)
     plugin = SessionPlugin(ctx, {})
     event = SimpleNamespace(sid="source:dm:1")
     assert await plugin.session_send(event, "example:dm:channel/123", "hello") == "message sent"
-    assert ctx.publish_notice.await_args.args[0] == "example:dm:channel/123"
+    assert ctx.publish_notice.await_args.args[0].sid == "example:dm:channel/123"
     assert ctx.publish_notice.await_args.kwargs == {}
     assert "Permission denied" in await plugin.session_send(event, "example:dm:123", "hello")
     assert ctx.publish_notice.await_count == 1
@@ -329,6 +347,8 @@ async def test_cross_session_without_im_returns_denial_without_publishing(sessio
         publish_notice=AsyncMock(),
         config={"bot_config": {"bot": {}}},
     )
+    ctx.session_mgr = make_session_manager()
+    ctx.message_router = make_message_router(ctx.adapter_mgr)
     plugin = SessionPlugin(ctx, {})
     result = await plugin.session_send(
         SimpleNamespace(sid="source:dm:1"), f"example:{session_type}:123", "hello",
@@ -340,14 +360,14 @@ async def test_cross_session_without_im_returns_denial_without_publishing(sessio
 @pytest.mark.asyncio
 @pytest.mark.parametrize("session_type", ["dm", "gm"])
 async def test_notice_without_im_can_enter_message_processing(monkeypatch, session_type):
-    from tests.test_bilibili_adapter import make_adapter as make_bilibili
-
-    monkeypatch.setattr("core.message_manager.event_handler_reg.get_handlers", lambda **kw: [])
-    adapter = make_bilibili(enable_im=False)
+    monkeypatch.setattr("core.plugin.handlers.event_handler_reg.get_handlers", lambda **kw: [])
+    adapter = make_adapter(enable_im=False, enable_qzone=True)
     ctx = object.__new__(PluginContext)
     ctx.adapter_mgr = SimpleNamespace(get_adapter=lambda name: adapter)
     ctx.event_bus = SimpleNamespace(publish=AsyncMock())
-    target = f"bili-test:{session_type}:opaque:123"
+    ctx.session_mgr = make_session_manager()
+    ctx.message_router = make_message_router(ctx.adapter_mgr)
+    target = f"{adapter.info.name}:{session_type}:opaque:123"
     chain = MessageChain([Text("background result")])
     await ctx.publish_notice(target, chain, is_mentioned=False)
     event = ctx.event_bus.publish.await_args.args[0]
@@ -473,7 +493,7 @@ async def test_event_flush_filters_buffered_and_current_events(monkeypatch, sele
         event.flush(filter_fn=None if selected_ids is None else select_event)
 
     monkeypatch.setattr(
-        "core.message_manager.event_handler_reg.get_handlers",
+        "core.plugin.handlers.event_handler_reg.get_handlers",
         lambda **kw: [SimpleNamespace(exec_handler=select_flush)],
     )
     await processor.im_workflow.handle_event(current)

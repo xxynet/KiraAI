@@ -21,8 +21,10 @@ from core.chat import (
     KiraIMSentResult,
     KiraMessageEvent,
     MessageChain,
+    Session,
     User,
 )
+from core.chat.message_router import MessageRouter
 from core.chat.session_manager import SessionManager
 from core.config import KiraConfig
 from core.event_bus import EventBus
@@ -90,6 +92,8 @@ class PluginContext:
     session_buffer_mgr: SessionBufferManager
 
     message_delivery: MessageDeliveryService
+
+    message_router: MessageRouter
 
     plugin_mgr: PluginManager | None = None
 
@@ -323,60 +327,54 @@ class PluginContext:
         await self.event_bus.publish(event)
         return event
 
-    async def publish_notice(self, session: str, chain: MessageChain, is_mentioned: bool = True):
-        """
-        Publish a notice message to the event bus.
-        :param session: session string in the format of "adapter_name:session_type:session_id"
-        :param chain: MessageChain object
-        :param is_mentioned: whether the AI is mentioned
-        """
-        import time
-        cur_time = int(time.time())
-        parts = session.split(":", maxsplit=2)
-        if len(parts) != 3 or any(not part for part in parts):
-            raise ValueError("Failed to parse session string")
-        ada_name, st, sid = parts
-        ada = self.adapter_mgr.get_adapter(ada_name)
-        if not ada:
-            raise ValueError(f"Failed to get adapter: {ada_name}")
+    async def publish_notice(self, session: Session | str, chain: MessageChain, is_mentioned: bool = True):
+        """Build an IM system notice and publish it directly to the event bus."""
+        target = await self.session_mgr.resolve_session(session)
+        adapter = self.adapter_mgr.get_adapter(target.adapter_name)
+        if adapter is None:
+            raise ValueError(f"Failed to get adapter: {target.adapter_name}")
         try:
-            im = ada.get_capability(IMCapability)
+            im = adapter.get_capability(IMCapability)
         except ValueError:
             supported_elements = []
         else:
             supported_elements = list((await im.get_message_metadata()).supported_elements)
-        group = None
-        if st == "gm":
-            group = Group(group_id=sid)
-        message_obj = KiraMessageEvent(
-            adapter=ada.info,
+        now = int(time.time())
+        event = KiraMessageEvent(
+            adapter=adapter.info,
             supported_elements=supported_elements,
             message=KiraIMMessage(
-                timestamp=cur_time,
+                timestamp=now,
                 sender=User(
-                    user_id=sid if st == "dm" else "unknown",
-                    nickname="system"
+                    user_id=target.session_id if target.session_type == "dm" else "unknown",
+                    nickname="system",
                 ),
-                group=group,
+                group=Group(group_id=target.session_id) if target.session_type == "gm" else None,
                 message_id="system_message",
-                self_id=ada.config.get("self_id"),
+                self_id=adapter.config.get("self_id"),
                 is_notice=True,
                 is_mentioned=is_mentioned,
                 chain=chain,
             ),
-            timestamp=cur_time,
+            timestamp=now,
         )
-        await self.event_bus.publish(message_obj)
+        event.session = target
+        await self.event_bus.publish(event)
     
-    async def send_message_chain(self, session: str, chain: MessageChain, *, bot: User | None = None) -> KiraIMSentResult:
+    async def send_message_chain(self, session: Session | str, chain: MessageChain, *, bot: User | None = None) -> KiraIMSentResult:
         """
         Send a message chain to the specified session.
-        :param session: session string in the format of "adapter_name:session_type:session_id"
+        :param session: Full Session object, stored internal ID, or routing SID.
         :param chain: MessageChain object
         :param bot: Bot identity to include in outgoing history.
         :return: KiraIMSentResult object
         """
-        return await self.message_delivery.send_message_chain(session, chain, bot=bot)
+        target = await self.session_mgr.resolve_session(session)
+        return await self.message_router.send_message_chain(
+            target,
+            chain,
+            bot=bot,
+        )
 
     def get_lang(self) -> str:
         """Get the configured backend language code (e.g. 'zh', 'en').
