@@ -61,12 +61,17 @@ class MessageRouter:
 
     async def handle_event(self, event: Any) -> None:
         """Load an incoming event's session context before selecting its receiver."""
-        session = await self.session_manager.get_session(event.session.sid)
+        target = getattr(event, "target_session", event.session)
+        session = await self.session_manager.get_session(target.sid)
         if session is not None:
-            session.session_title = event.session.session_title or session.session_title
-            event.session = session
+            session.session_title = target.session_title or session.session_title
+            target = session
+        if hasattr(event, "target_session"):
+            event.target_session = target
+        else:
+            event.session = target
         await self.receive_message(
-            event.session,
+            target,
             event,
         )
 

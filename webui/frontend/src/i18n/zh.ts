@@ -968,6 +968,8 @@ export default {
     session_id: '会话 ID',
     type_dm: '私聊',
     type_gm: '群聊',
+    expand_children: '展开 {name} 的子会话',
+    collapse_children: '收起 {name} 的子会话',
     session_data: 'LLM 上下文',
     actions: '操作',
     edit: '编辑',

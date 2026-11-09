@@ -968,6 +968,8 @@ export default {
     session_id: 'Session ID',
     type_dm: 'Direct Message',
     type_gm: 'Group Message',
+    expand_children: 'Expand child sessions of {name}',
+    collapse_children: 'Collapse child sessions of {name}',
     session_data: 'LLM Context',
     actions: 'Actions',
     edit: 'Edit',

@@ -265,6 +265,16 @@ class SessionPlugin(BasePlugin):
             session = await self.ctx.session_mgr.resolve_session(target)
             if event.sid == session.sid:
                 return "Do not send messages to current session using this tool, output directly to send messages"
+            if session.kind == "subagent":
+                source = await self.ctx.session_mgr.resolve_session(event.sid)
+                if source.internal_id is None:
+                    raise PermissionError("Source session has no stored identity")
+                await self.ctx.subagent_mgr.followup(
+                    session,
+                    description,
+                    caller_id=source.internal_id,
+                )
+                return "message sent"
             permission_error = await self.ctx.message_router.get_receive_permission_error(session)
             if permission_error is not None:
                 return permission_error

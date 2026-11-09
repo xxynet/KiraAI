@@ -45,6 +45,7 @@ from ..provider import (
 if TYPE_CHECKING:
     from core.agent.mcp_mgr import MCPManager
     from core.agent.skills_mgr import SkillsManager
+    from core.agent.subagent_manager import SubAgentManager
     from core.chat.message_history import MessageHistoryService
     from core.chat.session_buffer import SessionBufferManager
     from core.db.service import DatabaseService
@@ -94,6 +95,8 @@ class PluginContext:
     message_delivery: MessageDeliveryService
 
     message_router: MessageRouter
+
+    subagent_mgr: SubAgentManager
 
     plugin_mgr: PluginManager | None = None
 

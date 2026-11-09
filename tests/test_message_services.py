@@ -82,6 +82,7 @@ async def test_plugin_context_exposes_services_without_processor_dependency():
         session_buffer_mgr=SessionBufferManager(),
         message_delivery=delivery,
         message_router=router,
+        subagent_mgr=Mock(),
     )
 
     assert context.message_router is router

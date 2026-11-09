@@ -37,6 +37,7 @@ from core.chat.message_elements import (
 )
 from core.utils import common_utils
 from tests.adapter_lifecycle import start_adapter
+from tests.im_workflow_helpers import make_message_router, make_session_manager
 
 pytestmark = pytest.mark.asyncio
 
@@ -357,13 +358,15 @@ async def test_cross_session_plugin_uses_qq_permission_policy(group):
         adapter_mgr=SimpleNamespace(get_adapter=lambda name: adapter),
         publish_notice=AsyncMock(), config={"bot_config": {"bot": {}}},
     )
+    ctx.session_mgr = make_session_manager()
+    ctx.message_router = make_message_router(ctx.adapter_mgr)
     plugin = SessionPlugin(ctx, {})
     event = SimpleNamespace(sid="source:dm:1")
     target = f"qq:{'gm' if group else 'dm'}:123"
     assert await plugin.session_send(event, target, "hello") == "message sent"
     assert "Permission denied" in await plugin.session_send(event, target.replace("123", "456"), "hello")
     assert ctx.publish_notice.await_count == 1
-    assert ctx.publish_notice.await_args.args[0] == target
+    assert ctx.publish_notice.await_args.args[0].sid == target
 
 
 async def test_debug_log_contains_only_structural_metadata():
@@ -590,6 +593,7 @@ async def test_plugin_notice_keeps_qq_metadata_and_session_target(group):
     ctx = object.__new__(PluginContext)
     ctx.adapter_mgr = SimpleNamespace(get_adapter=lambda name: adapter)
     ctx.event_bus = SimpleNamespace(publish=AsyncMock())
+    ctx.session_mgr = make_session_manager()
     target = f"qq:{'gm' if group else 'dm'}:123"
     await ctx.publish_notice(target, MessageChain([Text("notice")]))
     event = ctx.event_bus.publish.await_args.args[0]

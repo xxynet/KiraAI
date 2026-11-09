@@ -35,7 +35,8 @@ class IMMessageRoute:
     def matches(self, session: Session) -> bool:
         """Match only sessions belonging to a registered platform adapter."""
         return (
-            session.session_type in {"dm", "gm"}
+            session.kind == "im"
+            and session.session_type in {"dm", "gm"}
             and self.adapter_mgr.get_adapter(session.adapter_name) is not None
         )
 

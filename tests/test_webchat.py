@@ -757,7 +757,7 @@ async def test_startup_preserves_configured_adapter_and_disables_conflicting_web
         "DatabaseManager", "DatabaseService", "TelemetryClient", "ProviderManager",
         "FuncToolManager", "EventBus", "SessionMediaManager", "PersonaManager",
         "StickerManager", "PromptManager", "MCPManager", "SkillsManager",
-        "MessageHistoryService", "ImageDescCache", "MessageHistoryCleanup",
+        "MessageHistoryService", "ImageDescCache", "MessageHistoryCleanup", "SubAgentManager",
         "DefaultIMWorkflow", "MessageProcessor", "PluginContext", "PluginManager", "AsyncTempMonitor",
     ):
         component = MagicMock()

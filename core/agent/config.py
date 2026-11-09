@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from math import isfinite
-from typing import Any
+from typing import Any, Literal
 
 
 @dataclass(frozen=True)
@@ -43,3 +43,27 @@ class AgentExecutionConfig:
             raise TypeError("tool_config must be a ToolExecutionConfig")
         if self.final_step_hint is not None and not isinstance(self.final_step_hint, str):
             raise TypeError("final_step_hint must be a string or None")
+
+
+@dataclass(frozen=True)
+class SubAgentConfig:
+    """Independent execution settings and tool selection for a child session."""
+
+    execution: AgentExecutionConfig = field(default_factory=AgentExecutionConfig)
+    tool_mode: Literal["inherit", "exclude", "custom"] = "inherit"
+    tool_names: tuple[str, ...] = ()
+    excluded_tools: tuple[str, ...] = ()
+    instruction: str = "Complete the delegated task. Return your findings to the delegating agent in plain text."
+
+    def __post_init__(self):
+        if self.tool_mode not in {"inherit", "exclude", "custom"}:
+            raise ValueError("Unknown subagent tool mode")
+        if not isinstance(self.execution, AgentExecutionConfig):
+            raise TypeError("execution must be an AgentExecutionConfig")
+        if not isinstance(self.instruction, str):
+            raise TypeError("instruction must be a string")
+        for names in (self.tool_names, self.excluded_tools):
+            if not isinstance(names, (tuple, list)) or any(not isinstance(name, str) or not name for name in names):
+                raise ValueError("Tool names must be non-empty strings")
+        object.__setattr__(self, "tool_names", tuple(self.tool_names))
+        object.__setattr__(self, "excluded_tools", tuple(self.excluded_tools))

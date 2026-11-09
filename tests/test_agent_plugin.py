@@ -10,6 +10,7 @@ from core.image_desc_cache import ImageDescCache
 from core.plugin.builtin_plugins.agent import main as agent_main
 from core.plugin.builtin_plugins.agent.main import AgentPlugin, BackgroundExecTask
 from core.utils import image_compression, media_refs
+from tests.im_workflow_helpers import make_session_manager
 
 
 @pytest.fixture(autouse=True)
@@ -923,6 +924,7 @@ async def test_background_result_reaches_real_notice_api_without_im(agent_plugin
     ctx = object.__new__(PluginContext)
     ctx.adapter_mgr = SimpleNamespace(get_adapter=lambda name: adapter)
     ctx.event_bus = SimpleNamespace(publish=AsyncMock())
+    ctx.session_mgr = make_session_manager()
     agent_plugin.ctx = ctx
     completed = asyncio.get_running_loop().create_future()
     completed.set_result("finished")

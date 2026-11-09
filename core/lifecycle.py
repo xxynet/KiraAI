@@ -8,6 +8,8 @@ from core.adapter.builtin.webchat.webchat import WebChatAdapter
 from core.adapter.context import AdapterContext
 from core.agent.mcp_mgr import MCPManager
 from core.agent.skills_mgr import SkillsManager
+from core.agent.subagent_event import SubAgentEvent
+from core.agent.subagent_manager import SubAgentManager
 from core.chat.im_message_route import IMMessageRoute
 from core.chat.message_history import MessageHistoryService
 from core.chat.message_history_cleanup import MessageHistoryCleanup
@@ -20,6 +22,7 @@ from core.chat.message_utils import (
 from core.chat.session_buffer import SessionBufferManager
 from core.chat.session_manager import SessionManager
 from core.chat.session_media_manager import SessionMediaManager
+from core.chat.subagent_route import SubAgentRoute
 from core.config import VERSION
 from core.config.tool_execution import build_tool_execution_config
 from core.db.db_mgr import DatabaseManager
@@ -81,6 +84,8 @@ class KiraLifecycle:
         self.message_processor: MessageProcessor | None = None
 
         self.message_router: MessageRouter | None = None
+
+        self.subagent_manager: SubAgentManager | None = None
 
         self.image_desc_cache: ImageDescCache | None = None
 
@@ -245,7 +250,6 @@ class KiraLifecycle:
         # ====== init message history ======
         self.message_history = MessageHistoryService(self.db_service, self.session_manager)
         await self.message_history.initialize()
-        self.event_bus.subscribe("session_deleted", self.message_history.on_session_deleted)
 
         # ====== init image description cache ======
         self.image_desc_cache = ImageDescCache(self.db_service)
@@ -258,6 +262,28 @@ class KiraLifecycle:
             self.kira_config, self.adapter_manager, self.persona_manager, self.message_history,
         )
         self.message_router = MessageRouter(session_manager=self.session_manager)
+        self.subagent_manager = SubAgentManager(
+            session_manager=self.session_manager,
+            provider_manager=self.provider_manager,
+            message_history=self.message_history,
+            event_bus=self.event_bus,
+        )
+        await self.subagent_manager.initialize()
+        self.message_router.register_route(
+            SubAgentRoute(self.subagent_manager),
+        )
+        self.event_bus.subscribe(
+            SubAgentEvent.event_type,
+            self.message_router.handle_event,
+        )
+        self.event_bus.subscribe(
+            "session_deleted",
+            self.subagent_manager.on_session_deleted,
+        )
+        self.event_bus.subscribe(
+            "session_deleted",
+            self.message_history.on_session_deleted,
+        )
         message_formatter = MessageFormatter(
             self.kira_config, self.provider_manager, self.session_manager, self.image_desc_cache,
         )
@@ -338,6 +364,7 @@ class KiraLifecycle:
             message_history=self.message_history,
             image_desc_cache=self.image_desc_cache,
             message_router=self.message_router,
+            subagent_mgr=self.subagent_manager,
         )
 
         self.plugin_manager = PluginManager(self.plugin_context)
@@ -383,6 +410,9 @@ class KiraLifecycle:
         shutdown_handlers = event_handler_reg.get_handlers(EventType.ON_SHUTDOWN)
         for handler in shutdown_handlers:
             await handler.exec_handler()
+
+        if self.subagent_manager is not None:
+            await self.subagent_manager.shutdown()
 
         # shutdown telemetry client
         if self.telemetry_client:

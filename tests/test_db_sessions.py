@@ -31,11 +31,12 @@ async def test_session_columns_and_identity_survive_updates_and_reconnection(ses
         "id": first, "session_key": "adapter:dm:user", "title": "Changed", "description": "Daily chat",
         "content": [[{"role": "user", "content": "hi"}]], "created_at": 1000, "updated_at": 2000,
         "data": {"capabilities": {"tts": {"enabled": False}}},
+        "kind": "im", "parent_id": None,
     }
     async with session_db.db.engine.connect() as connection:
         columns = await connection.run_sync(lambda conn: inspect(conn).get_columns("chat_sessions"))
     assert {column["name"] for column in columns} == {
-        "id", "session_key", "title", "description", "content", "created_at", "updated_at", "data",
+        "id", "session_key", "title", "description", "content", "created_at", "updated_at", "data", "kind", "parent_id",
     }
 
 

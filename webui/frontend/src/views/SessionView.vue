@@ -29,9 +29,25 @@
           </tr>
         </thead>
         <tbody class="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-800">
-          <tr v-for="session in sessions" :key="resolveSessionId(session)" class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+          <tr v-for="{ session, depth, hasChildren, expanded } in sessionRows" :key="resolveSessionId(session)" class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
             <td class="px-6 py-4 whitespace-nowrap">
-              <div class="text-sm font-medium text-theme-high" :title="getDisplayTitleSource(session)">{{ getDisplayTitle(session) }}</div>
+              <div class="flex items-center gap-2" :style="{ paddingLeft: `${depth * 24}px` }">
+                <button
+                  v-if="hasChildren"
+                  type="button"
+                  class="flex h-5 w-5 shrink-0 items-center justify-center rounded text-theme-subtle hover:text-gray-700 dark:hover:text-gray-200 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                  :aria-expanded="expanded"
+                  :aria-label="$t(expanded ? 'sessions.collapse_children' : 'sessions.expand_children', { name: getDisplayTitleSource(session) })"
+                  :title="$t(expanded ? 'sessions.collapse_children' : 'sessions.expand_children', { name: getDisplayTitleSource(session) })"
+                  @click="toggleSession(session)"
+                >
+                  <ArrowRight class="h-4 w-4 transition-transform" :class="{ 'rotate-90': expanded }" aria-hidden="true" />
+                </button>
+                <span v-else class="flex h-5 w-5 shrink-0 items-center justify-center text-theme-subtle" aria-hidden="true">
+                  <ChatLineRound class="h-4 w-4" />
+                </span>
+                <div class="text-sm font-medium text-theme-high" :title="getDisplayTitleSource(session)">{{ getDisplayTitle(session) }}</div>
+              </div>
             </td>
             <td class="px-6 py-4 whitespace-nowrap">
               <div class="text-sm text-theme-subtle">{{ session.adapter_name }}</div>
@@ -177,9 +193,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChatDotRound } from '@element-plus/icons-vue'
+import { ArrowRight, ChatDotRound, ChatLineRound } from '@element-plus/icons-vue'
 import { notify } from '@/composables/useNotification'
 import { getSessions, getSession, updateSession, deleteSession } from '@/api/session'
 import { getConfiguration } from '@/api/config'
@@ -195,6 +211,38 @@ import type { SessionCapabilities, SessionItem } from '@/types'
 
 const { t } = useI18n()
 const sessions = ref<SessionItem[]>([])
+const expandedSessionIds = ref(new Set<string>())
+const sessionRows = computed(() => {
+  const ids = new Set(sessions.value.map(session => session.internal_id).filter(Boolean))
+  const children = new Map<string, SessionItem[]>()
+  const roots: SessionItem[] = []
+  for (const session of sessions.value) {
+    if (session.parent_id && ids.has(session.parent_id) && session.parent_id !== session.internal_id) {
+      const siblings = children.get(session.parent_id) || []
+      siblings.push(session)
+      children.set(session.parent_id, siblings)
+    } else {
+      roots.push(session)
+    }
+  }
+
+  const rows: { session: SessionItem; depth: number; hasChildren: boolean; expanded: boolean }[] = []
+  const visited = new Set<string>()
+  function append(session: SessionItem, depth: number, visible: boolean) {
+    const id = session.internal_id || resolveSessionId(session)
+    if (visited.has(id)) return
+    visited.add(id)
+    const nested = session.internal_id ? children.get(session.internal_id) || [] : []
+    const expanded = expandedSessionIds.value.has(id)
+    if (visible) rows.push({ session, depth, hasChildren: nested.length > 0, expanded })
+    for (const child of nested) append(child, depth + 1, visible && expanded)
+  }
+
+  for (const session of roots) append(session, 0, true)
+  // Keep sessions visible even if stored parent relationships contain a cycle.
+  for (const session of sessions.value) append(session, 0, true)
+  return rows
+})
 const historyVisible = ref(false)
 const historySession = ref<SessionItem | null>(null)
 
@@ -299,6 +347,15 @@ function getDisplayTitle(session: SessionItem): string {
     return source.slice(0, maxLength) + '...'
   }
   return source
+}
+
+function toggleSession(session: SessionItem) {
+  const id = session.internal_id || resolveSessionId(session)
+  if (expandedSessionIds.value.has(id)) {
+    expandedSessionIds.value.delete(id)
+  } else {
+    expandedSessionIds.value.add(id)
+  }
 }
 
 function getSessionTypeLabel(type: string): string {
