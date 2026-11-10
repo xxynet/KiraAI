@@ -479,7 +479,7 @@ export default {
     delete_data: '删除插件数据',
     file_required: '请上传插件文件',
     config_load_failed: '加载插件配置失败',
-    load_failed: '加载插件列表失败',
+    load_failed: '加载插件列表和页面菜单失败',
     mcp_load_failed: '加载 MCP 服务器列表失败',
     mcp_delete_failed: '删除 MCP 服务器失败',
     mcp_toggle_success: 'MCP 服务器状态已更新',

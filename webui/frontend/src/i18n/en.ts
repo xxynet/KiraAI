@@ -479,7 +479,7 @@ export default {
     delete_data: 'Delete plugin data',
     file_required: 'Plugin file is required',
     config_load_failed: 'Failed to load plugin configuration',
-    load_failed: 'Failed to load plugins',
+    load_failed: 'Failed to load plugins and page menus',
     mcp_load_failed: 'Failed to load MCP servers',
     mcp_delete_failed: 'Failed to delete MCP server',
     mcp_toggle_success: 'MCP server status updated',
