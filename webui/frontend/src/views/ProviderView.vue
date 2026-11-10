@@ -313,13 +313,14 @@
               <div
                 v-for="model in filteredRemoteModels"
                 :key="model.id"
-                class="flex items-start px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer transition-colors"
+                class="flex items-start gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer transition-colors"
                 @click="model.selected = !model.selected"
               >
                 <input
                   type="checkbox"
                   :checked="model.selected"
-                  class="mt-0.5 mr-3 h-4 w-4 text-blue-600 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500 cursor-pointer"
+                  :aria-label="$t('provider.select_remote_model', { name: model.name || model.id })"
+                  class="ui-checkbox mt-0.5"
                   @click.stop
                   @change="model.selected = !model.selected"
                 />
