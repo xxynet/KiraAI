@@ -204,6 +204,7 @@ export default {
     fetch_remote_failed: 'Failed to fetch remote model list',
     fetch_remote_error: 'This provider does not support fetching models from remote',
     select_models: 'Select Models',
+    select_remote_model: 'Select model {name}',
     selected_count: '{count} model(s) selected',
     existing_count: '{count} already exist',
     sync_models: 'Sync Models',

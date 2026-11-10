@@ -204,6 +204,7 @@ export default {
     fetch_remote_failed: '获取远端模型列表失败',
     fetch_remote_error: '该提供商不支持从远端获取模型',
     select_models: '选择模型',
+    select_remote_model: '选择模型 {name}',
     selected_count: '已选择 {count} 个模型',
     existing_count: '已存在 {count} 个',
     sync_models: '同步模型',
