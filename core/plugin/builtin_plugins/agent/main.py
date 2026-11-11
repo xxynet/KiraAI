@@ -12,7 +12,6 @@ from time import monotonic
 from uuid import uuid4
 
 from core.adapter.builtin.webchat.webchat import WebChatAdapter
-from core.agent.subagent_event import SubAgentEvent
 from core.agent.tool import ToolResult
 from core.chat import KiraMessageBatchEvent, MessageChain
 from core.chat.message_elements import Image, Record, Text
@@ -656,7 +655,7 @@ class AgentPlugin(BasePlugin):
             "required": ["path"]
         }
     )
-    async def read_file(self, event: KiraMessageBatchEvent | SubAgentEvent, path: str, offset: int = 1, limit: int = 200) -> str | ToolResult:
+    async def read_file(self, event: KiraMessageBatchEvent, path: str, offset: int = 1, limit: int = 200) -> str | ToolResult:
         if not self._is_file_session_allowed(event.sid):
             return "Permission denied: current session not allowed to access local files"
 
@@ -699,7 +698,7 @@ class AgentPlugin(BasePlugin):
         except Exception as e:
             return f"[Failed to read file: {e}]"
 
-    async def _read_image_file(self, event: KiraMessageBatchEvent | SubAgentEvent, path: str) -> str | ToolResult:
+    async def _read_image_file(self, event: KiraMessageBatchEvent, path: str) -> str | ToolResult:
         """Read an image file according to the image processing mode.
 
         Native multimodal mode attaches the (possibly compressed) image data as
@@ -728,12 +727,9 @@ class AgentPlugin(BasePlugin):
 
         try:
             if mode == "native":
-                if isinstance(event, SubAgentEvent):
-                    media_sid = event.agent_session.sid
-                    message_id = event.event_id
-                else:
-                    media_sid = event.sid
-                    message_id = event.messages[-1].message_id if event.messages else "read_file"
+                target_session = getattr(event, "target_session", None)
+                media_sid = target_session.sid if target_session is not None else event.sid
+                message_id = event.messages[-1].message_id if event.messages else "read_file"
                 media_ref = await store_session_media(
                     Image(image=str(image_path), mime=mime),
                     media_sid,

@@ -274,7 +274,7 @@ class KiraLifecycle:
             SubAgentRoute(self.subagent_manager),
         )
         self.event_bus.subscribe(
-            SubAgentEvent.event_type,
+            SubAgentEvent,
             self.message_router.handle_event,
         )
         self.event_bus.subscribe(

@@ -7,7 +7,12 @@ from dataclasses import dataclass, replace
 
 from core.chat.message_elements import Image, Text
 from core.chat.message_history import MessageHistoryService
-from core.chat.message_utils import KiraCustomEvent, KiraIMMessage, MessageChain
+from core.chat.message_utils import (
+    KiraCustomEvent,
+    KiraIMMessage,
+    KiraMessageBatchEvent,
+    MessageChain,
+)
 from core.chat.session import Session, User
 from core.chat.session_manager import SessionManager
 from core.event_bus import EventBus
@@ -167,6 +172,7 @@ class SubAgentManager:
         tools: ToolSet | None = None,
         model_group: list[LLMModelClient] | None = None,
         preset_id: str | None = None,
+        source_event: KiraMessageBatchEvent | None = None,
     ) -> dict:
         async with self._creation_lock:
             return await self._spawn(
@@ -179,6 +185,7 @@ class SubAgentManager:
                 tools=tools,
                 model_group=model_group,
                 preset_id=preset_id,
+                source_event=source_event,
             )
 
     async def _spawn(
@@ -233,6 +240,7 @@ class SubAgentManager:
             custom_tools=custom_tools,
         )
         self._build_executor(agent, scope or agent.session, models)
+        agent.executor.context.event.set_source_batch(options["source_event"])
         self._agents[agent.session.internal_id] = agent
         self._track(agent, agent.executor.queue(task))
         return self._info(agent.session, agent)
@@ -527,6 +535,7 @@ class SubAgentManager:
         parent_tools: ToolSet | None = None,
         tools: ToolSet | None = None,
         steer: bool = False,
+        source_event: KiraMessageBatchEvent | None = None,
     ) -> dict:
         async with self._creation_lock:
             return await self._followup(
@@ -536,9 +545,10 @@ class SubAgentManager:
                 parent_tools=parent_tools,
                 tools=tools,
                 steer=steer,
+                source_event=source_event,
             )
 
-    async def _followup(self, target, message, *, caller_id, parent_tools, tools, steer) -> dict:
+    async def _followup(self, target, message, *, caller_id, parent_tools, tools, steer, source_event) -> dict:
         SubAgentExecutor._copy_user_message(message)
         if self._closing:
             raise RuntimeError("Subagent manager is shutting down")
@@ -572,6 +582,7 @@ class SubAgentManager:
         agent.custom_tools = selection.custom_tools
         agent.executor.request.tool_set = selected
         agent.executor.request.tool_choice = "auto" if selected.tools else "none"
+        agent.executor.context.event.set_source_batch(source_event)
         if steer and agent.executor.steer(message):
             return self._info(session, agent)
         agent.error = ""

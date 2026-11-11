@@ -9,7 +9,6 @@ from core.persona.persona_manager import PersonaManager
 from core.plugin.handlers import EventType, event_handler_reg
 from core.provider import LLMModelClient, LLMRequest
 from core.utils.media_refs import session_media_scope
-from core.utils.tool_utils import BaseTool
 
 from .base_agent_executor import (
     AgentStepResult,
@@ -19,9 +18,9 @@ from .base_agent_executor import (
 from .config import SubAgentConfig
 from .hook_context import ToolCallContext
 from .hooks import AgentExecutionHooks
+from .im_tool_executor import IMToolExecutor
 from .message import OpenAIMessage
 from .subagent_event import SubAgentEvent
-from .tool_executor import ToolExecutor
 
 if TYPE_CHECKING:
     from .base_agent_executor import _AgentRunState
@@ -34,19 +33,14 @@ class SubAgentExecutionContext(BaseAgentExecutionContext):
     event: SubAgentEvent
 
 
-class SubAgentToolExecutor(ToolExecutor):
-    """Supply the dedicated event to tools inherited from a parent request."""
+class SubAgentToolExecutor(IMToolExecutor):
+    """Execute inherited tools with the subagent event and retain its context."""
+
+    event: SubAgentEvent
 
     def __init__(self, context: SubAgentExecutionContext):
+        super().__init__(context.event)
         self.context = context
-        self.event = context.event
-
-    async def invoke_tool(self, tool: BaseTool, args: dict) -> object:
-        for message in reversed(self.context.messages):
-            if message.role == "user":
-                self.event.content = message
-                break
-        return await tool.execute(self.event, **args)
 
 
 class SubAgentExecutionHooks(AgentExecutionHooks[SubAgentExecutionContext]):
@@ -111,6 +105,15 @@ class SubAgentExecutor(BaseAgentExecutor[SubAgentExecutionContext]):
         self.on_turn_start = on_turn_start
         context.event._on_stop = self.abort
 
+    @staticmethod
+    def _append_messages(
+        ctx: SubAgentExecutionContext, run_state: _AgentRunState, *messages: OpenAIMessage,
+    ) -> None:
+        BaseAgentExecutor._append_messages(ctx, run_state, *messages)
+        for message in messages:
+            if message.role == "user":
+                ctx.event.append_input(message)
+
     async def _run(
         self,
         ctx: SubAgentExecutionContext,
@@ -128,11 +131,12 @@ class SubAgentExecutor(BaseAgentExecutor[SubAgentExecutionContext]):
                 slot.result()
                 if run_state.abort_requested.is_set():
                     return
+                ctx.event.begin_turn()
                 models = await self.on_turn_start()
                 if models is not None:
                     run_state.model_group = models
+                ctx.event.model_group = run_state.model_group.copy()
                 run_state.request.messages = ctx.messages.copy()
-                ctx.event._stopped = False
                 iterator = super()._run(ctx, run_state)
                 async for step in iterator:
                     yield step

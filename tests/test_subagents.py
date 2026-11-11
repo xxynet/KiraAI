@@ -6,18 +6,22 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from sqlalchemy import text
 
+from core.adapter.adapter_info import AdapterInfo
 from core.agent.config import AgentExecutionConfig, SubAgentConfig
+from core.agent.message import OpenAIMessage
 from core.agent.subagent_event import SubAgentEvent
+from core.agent.subagent_executor import SubAgentToolExecutor
 from core.agent.subagent_manager import (
     SUBAGENT_COMPLETED_EVENT,
     SUBAGENT_TOOL_NAMES,
     SubAgentManager,
 )
 from core.agent.tool import ToolSet
-from core.chat.message_elements import Text
+from core.chat.message_elements import Image, Text
 from core.chat.message_history import MessageHistoryService
 from core.chat.message_router import MessageRouter
-from core.chat.message_utils import MessageChain
+from core.chat.message_utils import KiraIMMessage, KiraMessageBatchEvent, MessageChain
+from core.chat.session import Session, User
 from core.chat.session_manager import SessionManager
 from core.chat.subagent_route import SubAgentRoute
 from core.persona.persona_manager import PersonaManager
@@ -60,9 +64,31 @@ async def agents(session_db):
         await manager.shutdown(timeout=0)
 
 
+def _source_batch(session, supported_elements):
+    return KiraMessageBatchEvent(
+        supported_elements=supported_elements,
+        timestamp=1,
+        adapter=AdapterInfo(
+            enabled=True,
+            adapter_id="adapter",
+            name=session.adapter_name,
+            platform="test",
+        ),
+        session=session,
+        messages=[KiraIMMessage(
+            message_id="parent-message",
+            self_id="bot",
+            bot=User("bot", "Parent Bot"),
+            chain=MessageChain([Text("original IM input")]),
+            timestamp=1,
+        )],
+    )
+
+
 @pytest.mark.anyio
 async def test_background_agent_has_independent_session_and_parent_tool_permissions(agents):
     manager, sessions, parent, model = agents
+    source_event = _source_batch(parent, ["text", "image"])
     tool = RecordingTool()
     model.chat.side_effect = [
         LLMResponse("", tool_calls=[{"id": "call", "function": {"name": "record", "arguments": "{}"}}]),
@@ -72,6 +98,7 @@ async def test_background_agent_has_independent_session_and_parent_tool_permissi
         "delegated task",
         parent_id=parent.internal_id,
         parent_tools=ToolSet([tool]),
+        source_event=source_event,
     )
     assert info["status"] == "queued"
     result = await manager.wait(info["id"], timeout=2)
@@ -81,12 +108,62 @@ async def test_background_agent_has_independent_session_and_parent_tool_permissi
     assert session.session_id == session.internal_id == info["id"]
     assert session.sid != parent.sid
     event = tool.events[0]
+    executor = manager._agents[info["id"]].executor
+    assert isinstance(executor.tool_executor, SubAgentToolExecutor)
+    assert executor.tool_executor.context is executor.context
     assert isinstance(event, SubAgentEvent)
+    assert isinstance(event, KiraMessageBatchEvent)
     assert event.sid == event.session.sid == parent.sid
     assert event.agent_session.sid == session.sid
+    assert event.messages[-1].message_str == "delegated task"
+    assert event.messages[-1].session.sid == parent.sid
+    assert event.message_str == "delegated task"
+    assert not event.is_group_message()
+    assert event.adapter is source_event.adapter
+    assert event.supported_elements == ["text", "image"]
+    assert event.supported_elements is not source_event.supported_elements
+    assert event.bot.user_id == event.self_id == "bot"
+    assert event.bot.nickname == "Parent Bot"
+    assert event.bot is not source_event.bot
+    assert event.model_group == [model]
+    assert [message.message_id for message in source_event.messages] == ["parent-message"]
     assert len(session.content) == 1
     assert [message["role"] for message in session.content[0]] == ["user", "assistant", "tool", "assistant"]
     assert (await sessions.get_session(parent.sid)).content == []
+
+
+def test_subagent_batch_exposes_group_and_multimodal_task():
+    group = Session("test", "gm", "group")
+    event = SubAgentEvent(
+        session=group,
+        agent_session=Session("subagent", "dm", "child", kind="subagent"),
+        content=OpenAIMessage(
+            role="user",
+            content=[
+                {"type": "text", "text": "inspect this"},
+                {"type": "image_url", "image_url": {"url": "https://example.invalid/image.png"}},
+            ],
+        ),
+    )
+    assert event.is_group_message()
+    assert event.messages[0].group.group_id == group.session_id
+    assert event.messages[0].chain[0].text == "inspect this"
+    assert isinstance(event.messages[0].chain[1], Image)
+    assert event.messages[0].native_content == event.content.content
+
+
+def test_subagent_batch_only_uses_metadata_from_the_permission_session():
+    event = SubAgentEvent(
+        session=Session("test", "dm", "parent"),
+        agent_session=Session("subagent", "dm", "child", kind="subagent"),
+        content="",
+    )
+    event.set_source_batch(_source_batch(Session("test", "dm", "other"), ["image"]))
+    event.begin_turn()
+    event.append_input("task")
+    assert event.adapter is None
+    assert event.supported_elements == []
+    assert event.self_id == ""
 
 
 @pytest.mark.anyio
@@ -263,9 +340,12 @@ async def test_queued_turn_and_steering_use_the_existing_executor_loop(agents):
     manager, sessions, parent, model = agents
     entered, release = asyncio.Event(), asyncio.Event()
     requests = []
+    batches = []
 
     async def chat(request):
         requests.append([message.content for message in request.messages])
+        event = manager._agents[info["id"]].executor.context.event
+        batches.append((event.event_id, [message.message_str for message in event.messages]))
         if len(requests) == 1:
             entered.set()
             await release.wait()
@@ -282,6 +362,10 @@ async def test_queued_turn_and_steering_use_the_existing_executor_loop(agents):
     assert len(requests) == 3
     assert "focus on performance" in requests[1]
     assert "second task" in requests[2]
+    assert [messages for _, messages in batches] == [
+        ["first"], ["first", "focus on performance"], ["second task"],
+    ]
+    assert batches[0][0] == batches[1][0] != batches[2][0]
     saved = await sessions.resolve_session(info["id"])
     assert len(saved.content) == 2
     assert saved.content[0][0]["content"] == "first"
@@ -772,7 +856,7 @@ async def test_native_preset_discovery_and_spawn_use_saved_settings(agents, tmp_
         subagent_mgr=manager,
     )
     plugin = SubAgentsPlugin(ctx, {})
-    event = SimpleNamespace(session=parent)
+    event = _source_batch(parent, ["text"])
     await plugin.inject_tools(event, request)
     await plugin.inject_tools(event, request)
     assert not request.system_prompt
@@ -790,6 +874,7 @@ async def test_native_preset_discovery_and_spawn_use_saved_settings(agents, tmp_
     ))
     await manager.wait(info["id"], timeout=2)
     assert info["title"] == "Reviewer"
+    assert manager._agents[info["id"]].executor.context.event.supported_elements == ["text"]
     used_request = model.chat.await_args.args[0]
     assert used_request.messages[0].content == "Focus only on performance"
     assert not used_request.tool_set.tools
@@ -801,8 +886,15 @@ async def test_native_preset_discovery_and_spawn_use_saved_settings(agents, tmp_
         instruction="new",
         enabled=False,
     ), preset["id"])
-    await manager.followup(info["id"], "again", caller_id=parent.internal_id)
+    manager._agents.clear()
+    followup_event = _source_batch(parent, ["text", "image"])
+    await request.tool_set.get("followup_task").execute(
+        followup_event,
+        agent_id=info["id"],
+        message="again",
+    )
     assert (await manager.wait(info["id"], timeout=2))["status"] == "done"
+    assert manager._agents[info["id"]].executor.context.event.supported_elements == ["text", "image"]
     assert model.chat.await_args.args[0].messages[0].content == "Focus only on performance"
     await manager.presets.delete(preset["id"])
     await manager.followup(info["id"], "after deletion", caller_id=parent.internal_id)
@@ -1074,11 +1166,14 @@ async def test_event_bus_uses_child_target_instead_of_permission_sid(agents):
     router = MessageRouter(sessions)
     router.register_route(SubAgentRoute(manager))
     bus = EventBus(Mock(), asyncio.Queue())
-    bus.subscribe(SubAgentEvent.event_type, router.handle_event)
+    im_handler = AsyncMock()
+    bus.subscribe(KiraMessageBatchEvent, im_handler)
+    bus.subscribe(SubAgentEvent, router.handle_event)
     event = SubAgentEvent(session=parent, agent_session=child, source_session=parent, content="next")
     await bus.publish(event)
     await bus._process_event(bus.event_queue.get_nowait())
     await manager.wait(info["id"], timeout=2)
+    im_handler.assert_not_awaited()
     assert event.sid == parent.sid
     assert len((await sessions.resolve_session(info["id"])).content) == 2
 

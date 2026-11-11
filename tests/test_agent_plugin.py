@@ -696,7 +696,7 @@ async def test_read_file_attaches_raw_image_in_native_mode(agent_plugin, tmp_pat
             agent_session=child,
             content="read image",
         )
-        media_sid, message_id = child.sid, event.event_id
+        media_sid, message_id = child.sid, event.messages[-1].message_id
     else:
         media_sid, message_id = "test:dm:1", "msg-1"
         event = SimpleNamespace(

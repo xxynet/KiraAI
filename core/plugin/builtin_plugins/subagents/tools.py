@@ -34,7 +34,7 @@ class SubAgentTool(BaseTool):
             selected.append(tool)
         return ToolSet(selected)
 
-    async def _followup(self, agent_id: str, message: str, *, steer: bool) -> dict:
+    async def _followup(self, event, agent_id: str, message: str, *, steer: bool) -> dict:
         source = await self._get_source()
         target = await self.ctx.session_mgr.resolve_session(agent_id)
         settings = target.data.get("subagent", {}).get("settings", {})
@@ -47,6 +47,7 @@ class SubAgentTool(BaseTool):
             parent_tools=self.request.tool_set,
             tools=tools,
             steer=steer,
+            source_event=event,
         )
 
 
@@ -84,6 +85,7 @@ class SpawnAgentTool(SubAgentTool):
             parent_tools=self.request.tool_set,
             tools=tools,
             preset_id=preset_id,
+            source_event=event,
         )
         return json.dumps(result, ensure_ascii=False)
 
@@ -117,6 +119,7 @@ class SendMessageTool(SubAgentTool):
 
     async def execute(self, event, **args):
         result = await self._followup(
+            event,
             args["agent_id"],
             args["message"],
             steer=True,
@@ -138,6 +141,7 @@ class FollowupTaskTool(SubAgentTool):
 
     async def execute(self, event, **args):
         result = await self._followup(
+            event,
             args["agent_id"],
             args["message"],
             steer=False,
