@@ -289,33 +289,31 @@ class SubAgentManager:
             source_session=scope if scope.internal_id != agent.session.internal_id else None,
             content="",
         )
-        ctx = SubAgentExecutionContext(
-            event=event,
-            messages=agent.session.flatten_content(),
-        )
+        ctx = SubAgentExecutionContext(event=event)
         request = LLMRequest(tool_set=self._tools(agent.config, agent.parent_tools, agent.custom_tools))
+        instruction = None
         if agent.config.instruction_source == "custom" and agent.config.instruction:
-            request.messages.append(OpenAIMessage(
+            instruction = OpenAIMessage(
                 role="system",
                 content=agent.config.instruction,
-            ))
-            ctx.messages.insert(0, request.messages[0])
+            )
 
         async def begin() -> list[LLMModelClient] | None:
             current_scope = await self.session_manager.get_session(ctx.event.session.sid, include_content=False)
             if current_scope is None:
                 raise PermissionError("The subagent permission session no longer exists")
-            agent.session = await self.session_manager.resolve_session(agent.session.internal_id)
+            stored_session = await self.session_manager.get_session(agent.session.sid, include_content=False)
+            if stored_session is None or stored_session.internal_id != agent.session.internal_id:
+                raise ValueError("The subagent session no longer exists")
             ctx.event.session = current_scope
             if ctx.event.source_session is not None:
                 ctx.event.source_session = current_scope
-            ctx.event.agent_session = agent.session
             agent.status = "running"
             agent.step = None
             agent.result = ""
             agent.error = ""
             agent.turn += 1
-            metadata = dict(agent.session.data["subagent"])
+            metadata = dict(stored_session.data["subagent"])
             metadata.update(
                 status="running",
                 result="",
@@ -332,7 +330,11 @@ class SubAgentManager:
             )
             if not saved:
                 raise ValueError("The subagent session no longer exists")
-            agent.session.data["subagent"] = metadata
+            agent.session = await self.session_manager.resolve_session(agent.session.internal_id)
+            ctx.event.agent_session = agent.session
+            ctx.messages[:] = [OpenAIMessage(**message) for message in agent.session.flatten_content()]
+            if instruction is not None:
+                ctx.messages.insert(0, instruction)
             preset_id = metadata.get("preset_id")
             return self._preset_models(preset_id) if preset_id is not None else None
 

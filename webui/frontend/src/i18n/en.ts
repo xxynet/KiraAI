@@ -440,7 +440,7 @@ export default {
       tools_manual_hint: 'Supports request-level or MCP tool names. Click tags to edit. Tags and checkboxes stay in sync, and duplicate names are merged.',
       tools_confirm: 'Confirm selection',
       enabled: 'Allow the main agent to use this preset',
-      apply_hint: 'Editing or deleting a preset does not affect existing subagents.',
+      apply_hint: 'Existing subagents use the latest model selection on their next turn. Deleting the preset prevents them from continuing.',
       summary: 'Up to {steps} steps · {mode}',
       summary_unlimited: 'Unlimited steps · {mode}',
       saving: 'Saving…',

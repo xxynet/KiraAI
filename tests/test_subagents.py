@@ -135,6 +135,30 @@ async def test_followup_starts_a_fresh_turn_and_persists_each_turn_once(agents):
 
 
 @pytest.mark.anyio
+async def test_followup_reads_replaced_history_and_keeps_instruction(agents):
+    manager, sessions, parent, model = agents
+    info = await manager.spawn(
+        "old input",
+        parent_id=parent.internal_id,
+        config=SubAgentConfig(instruction="Keep this instruction"),
+    )
+    await manager.wait(info["id"], timeout=2)
+    await sessions.update_session(
+        info["sid"],
+        content=[[{"role": "user", "content": "replacement input"}]],
+    )
+
+    await manager.followup(info["id"], "next input")
+    await manager.wait(info["id"], timeout=2)
+
+    request = model.chat.await_args.args[0]
+    assert [message.content for message in request.messages[:3]] == [
+        "Keep this instruction", "replacement input", "next input",
+    ]
+    assert all(message.content != "old input" for message in request.messages)
+
+
+@pytest.mark.anyio
 async def test_followup_persists_running_state_without_an_empty_history_chunk(agents):
     manager, sessions, parent, model = agents
     info = await manager.spawn("first", parent_id=parent.internal_id)

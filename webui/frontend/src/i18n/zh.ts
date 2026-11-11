@@ -440,7 +440,7 @@ export default {
       tools_manual_hint: '支持请求级或 MCP 工具名称。点击标签可编辑，勾选与标签同步，重复名称会自动合并。',
       tools_confirm: '确认选择',
       enabled: '允许主代理使用此预设',
-      apply_hint: '修改或删除预设不会影响已创建的子代理。',
+      apply_hint: '已创建的子代理会在下一轮使用预设当前选择的模型。删除预设后，关联的子代理将无法继续执行。',
       summary: '最多 {steps} 步 · {mode}',
       summary_unlimited: '不限步数 · {mode}',
       saving: '保存中…',

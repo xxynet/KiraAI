@@ -432,3 +432,17 @@ async def test_internal_id_cannot_bypass_the_current_session_send_guard():
     assert "current session" in result
     ctx.adapter_mgr.get_adapter.assert_not_called()
     ctx.publish_notice.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_session_send_redirects_subagent_tasks_to_followup_tool():
+    session = Session("subagent", "dm", "sess_child", kind="subagent")
+    ctx = SimpleNamespace(
+        session_mgr=SimpleNamespace(resolve_session=AsyncMock(return_value=session)),
+        subagent_mgr=SimpleNamespace(followup=AsyncMock()),
+        publish_notice=AsyncMock(),
+    )
+    result = await SessionPlugin(ctx, {}).session_send(SimpleNamespace(sid="source:dm:one"), session.sid, "hello")
+    assert "followup_task" in result
+    ctx.subagent_mgr.followup.assert_not_awaited()
+    ctx.publish_notice.assert_not_awaited()

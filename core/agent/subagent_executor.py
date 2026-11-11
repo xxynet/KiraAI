@@ -131,6 +131,7 @@ class SubAgentExecutor(BaseAgentExecutor[SubAgentExecutionContext]):
                 models = await self.on_turn_start()
                 if models is not None:
                     run_state.model_group = models
+                run_state.request.messages = ctx.messages.copy()
                 ctx.event._stopped = False
                 iterator = super()._run(ctx, run_state)
                 async for step in iterator:

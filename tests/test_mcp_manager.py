@@ -13,8 +13,10 @@ from mcp.types import (
 
 from core.agent import mcp_mgr
 from core.agent.mcp_mgr import MCPManager, MCPServer
+from core.agent.subagent_event import SubAgentEvent
 from core.agent.tool import ToolResult
 from core.chat.message_elements import File, Image, Record
+from core.chat.session import Session
 
 
 class FakeClient:
@@ -131,6 +133,26 @@ async def test_tool_calls_reuse_one_connection(manager):
     assert len(client.calls) == 3
     assert client.connected is True
     assert result.text == 'result:echo'
+
+
+@pytest.mark.anyio
+async def test_cached_tool_rechecks_subagent_permission_on_invocation(manager):
+    server = _make_server(enabled=True)
+    manager.add_server(server)
+    parent = Session("test", "dm", "parent")
+    event = SubAgentEvent(
+        session=parent,
+        agent_session=Session("subagent", "dm", "child", kind="subagent"),
+        content="task",
+    )
+    func = manager._make_mcp_func(server, "echo")
+    await func(event, x=1)
+
+    manager.set_server_scope(server.id, "deny", [parent.sid])
+    with pytest.raises(PermissionError, match="not allowed for the calling session"):
+        await func(event, x=2)
+
+    assert FakeClient.instances[0].calls == [("echo", {"x": 1})]
 
 
 @pytest.mark.anyio

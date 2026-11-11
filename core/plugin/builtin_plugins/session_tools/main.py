@@ -32,6 +32,7 @@ SESSION_SEND_PROMPT = """
 ### session_send 工具说明
 当你需要在其他会话（私聊、群聊等）发送消息时，
 即 当前会话 ≠ 发消息目标会话时，需要调用 `session_send` 工具进行**跨会话发送**。
+向已有子代理交付后续任务时，使用 `followup_task`。
 
 `target` 必须从「当前存在的会话」列表中逐字复制完整会话标识。标识第一段
 `adapter_name` 是用户配置的适配器实例名，可能是任意名称，和 QQ、Telegram 等
@@ -266,15 +267,7 @@ class SessionPlugin(BasePlugin):
             if event.sid == session.sid:
                 return "Do not send messages to current session using this tool, output directly to send messages"
             if session.kind == "subagent":
-                source = await self.ctx.session_mgr.resolve_session(event.sid)
-                if source.internal_id is None:
-                    raise PermissionError("Source session has no stored identity")
-                await self.ctx.subagent_mgr.followup(
-                    session,
-                    description,
-                    caller_id=source.internal_id,
-                )
-                return "message sent"
+                return "Use followup_task to send a task to a subagent session"
             if session.kind != "im":
                 return f"Unsupported target session kind: {session.kind}"
             if session.session_type not in {"dm", "gm"}:

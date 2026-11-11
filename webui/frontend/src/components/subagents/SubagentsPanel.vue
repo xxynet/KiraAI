@@ -106,7 +106,12 @@
     </div>
   </section>
 
-  <Modal v-model="editorVisible" :persistent="saving" content-class="max-w-md">
+  <Modal
+    :model-value="editorVisible"
+    :persistent="saving"
+    content-class="max-w-md"
+    @update:model-value="setEditorVisible"
+  >
     <form class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col max-h-[90vh]" @submit.prevent="savePreset">
       <div class="flex justify-between items-center gap-4 px-6 py-4 border-b border-gray-200 dark:border-gray-700">
         <div class="min-w-0">
@@ -378,6 +383,10 @@ async function loadPresets() {
   } finally {
     loading.value = false
   }
+}
+
+function setEditorVisible(visible: boolean) {
+  if (!saving.value) editorVisible.value = visible
 }
 
 async function savePreset() {
