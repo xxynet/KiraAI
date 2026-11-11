@@ -1,7 +1,6 @@
 import json
 from typing import ClassVar
 
-from core.agent.config import AgentExecutionConfig, SubAgentConfig
 from core.agent.subagent_manager import SUBAGENT_TOOL_NAMES
 from core.agent.tool import ToolSet
 from core.config.tool_execution import build_tool_execution_config
@@ -53,49 +52,38 @@ class SubAgentTool(BaseTool):
 
 class SpawnAgentTool(SubAgentTool):
     name = "spawn_agent"
-    description = "Delegate an independent task to a background agent. Returns immediately; results are delivered to this session as a system notice after each turn."
+    description = "Delegate an independent task to a background agent using an enabled subagent preset. Returns immediately; results are delivered to this session as a system notice after each turn."
     parameters: ClassVar[dict] = {
         "type": "object",
         "properties": {
             "task": {"type": "string", "description": "Complete, self-contained task instructions"},
             "name": {"type": "string", "description": "Short session title"},
-            "max_steps": {"type": "integer", "minimum": 1, "maximum": 50},
-            "tool_mode": {"type": "string", "enum": ["inherit", "exclude", "custom"]},
-            "tools": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "Excluded tools or the custom tool list",
+            "preset_name": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Exact name of an available subagent preset",
             },
         },
-        "required": ["task"],
+        "required": ["task", "preset_name"],
+        "additionalProperties": False,
     }
 
-    async def execute(self, event, **args):
+    async def execute(self, event, *, task: str, preset_name: str, name: str | None = None):
+        if not isinstance(preset_name, str) or not preset_name.strip():
+            raise ValueError("preset_name must be a non-empty string")
+        preset_id, preset = self.ctx.subagent_mgr.presets.get_enabled_by_name(preset_name.strip())
         source = await self._get_source()
-        mode = args.get("tool_mode", "inherit")
-        names = args.get("tools", [])
-        if not isinstance(names, list) or any(not isinstance(name, str) or not name for name in names):
-            raise ValueError("tools must be a list of non-empty tool names")
-        tools = self._custom_tools(names) if mode == "custom" else None
-        max_steps = args.get("max_steps", self.ctx.config.get_config("bot_config.agent.max_tool_loop", 5))
-        if not isinstance(max_steps, int) or isinstance(max_steps, bool) or not 1 <= max_steps <= 50:
-            raise ValueError("max_steps must be an integer between 1 and 50")
+        config = preset.execution_config(build_tool_execution_config(self.ctx.config))
+        tools = self._custom_tools(list(config.tool_names)) if config.tool_mode == "custom" else None
         result = await self.ctx.subagent_mgr.spawn(
-            args["task"],
+            task,
             parent_id=source.internal_id,
             permission_session=source,
-            title=args.get("name", ""),
-            config=SubAgentConfig(
-                execution=AgentExecutionConfig(
-                    max_steps=max_steps,
-                    tool_config=build_tool_execution_config(self.ctx.config),
-                ),
-                tool_mode=mode,
-                tool_names=tuple(names) if mode == "custom" else (),
-                excluded_tools=tuple(names) if mode == "exclude" else (),
-            ),
+            title=preset.name if name is None else name,
+            config=config,
             parent_tools=self.request.tool_set,
             tools=tools,
+            preset_id=preset_id,
         )
         return json.dumps(result, ensure_ascii=False)
 

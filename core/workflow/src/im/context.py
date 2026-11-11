@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from core.agent.func_tool_manager import FuncToolManager
     from core.agent.mcp_mgr import MCPManager
     from core.agent.skills_mgr import SkillsManager
+    from core.agent.subagent_manager import SubAgentManager
     from core.chat.message_history import MessageHistoryService
     from core.chat.message_router import MessageRouter
     from core.chat.session_buffer import SessionBufferManager
@@ -45,6 +46,7 @@ class IMWorkflowContext:
     provider_mgr: ProviderManager
     tool_manager: FuncToolManager
     skills_manager: SkillsManager
+    subagent_manager: SubAgentManager
     mcp_manager: MCPManager
     db: DatabaseService
     event_bus: EventBus

@@ -82,6 +82,14 @@
       <button
         type="button"
         class="px-3 py-2 text-sm font-medium border-b-2 focus:outline-none transition-colors duration-150"
+        :class="activeTab === 'subagents' ? 'border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500' : 'border-transparent text-theme-subtle text-theme-subtle-hover hover:border-gray-300 dark:hover:border-gray-600'"
+        @click="activeTab = 'subagents'"
+      >
+        {{ $t('plugin.tab_subagents') }}
+      </button>
+      <button
+        type="button"
+        class="px-3 py-2 text-sm font-medium border-b-2 focus:outline-none transition-colors duration-150"
         :class="activeTab === 'scope' ? 'border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500' : 'border-transparent text-theme-subtle text-theme-subtle-hover hover:border-gray-300 dark:hover:border-gray-600'"
         @click="activeTab = 'scope'"
       >
@@ -359,6 +367,8 @@
         </div>
       </div>
     </div>
+
+    <SubagentsPanel v-if="activeTab === 'subagents'" />
 
     <!-- Scope Tab Content -->
     <div v-show="activeTab === 'scope'">
@@ -1232,6 +1242,7 @@ import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import ConfigForm from '@/components/common/ConfigForm.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import PluginCard from '@/components/common/PluginCard.vue'
+import SubagentsPanel from '@/components/subagents/SubagentsPanel.vue'
 import {
   IconPuzzle, IconInfoCircle, IconServer, IconUpload, IconRefresh,
   IconLightbulb, IconCog, IconSpinner, IconInfo, IconPackage, IconBox, IconClose, IconSearch, IconDownload, IconTrash,

@@ -275,9 +275,25 @@ class SessionPlugin(BasePlugin):
                     caller_id=source.internal_id,
                 )
                 return "message sent"
-            permission_error = await self.ctx.message_router.get_receive_permission_error(session)
-            if permission_error is not None:
-                return permission_error
+            if session.kind != "im":
+                return f"Unsupported target session kind: {session.kind}"
+            if session.session_type not in {"dm", "gm"}:
+                return "Permission denied: target session type must be dm or gm"
+            adapter = self.ctx.adapter_mgr.get_adapter(session.adapter_name)
+            if adapter is None:
+                return f"Permission denied: adapter not found: {session.adapter_name}"
+            try:
+                capability = adapter.get_capability(IMCapability)
+            except ValueError:
+                is_allowed = False
+            else:
+                permission = "im.direct.receive" if session.session_type == "dm" else "im.group.receive"
+                is_allowed = capability.is_allowed(
+                    session.session_id,
+                    permission=permission,
+                )
+            if not is_allowed:
+                return f"Permission denied: target session is not allowed by adapter {session.adapter_name}"
             cross_session_prompt = CROSS_SESSION_PROMPT.format(session_id=event.sid, description=description)
 
             await self.ctx.publish_notice(session, MessageChain([Text(cross_session_prompt)]))

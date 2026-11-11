@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from core.adapter.access import ListAccessPolicy
+from core.adapter.capabilities import IMCapability
 from core.agent.message import OpenAIMessage
 from core.chat.im_message_route import IMMessageRoute
 from core.chat.message_elements import Image, Text
@@ -32,7 +34,6 @@ def _route(matches=lambda session: True):
         matches=Mock(side_effect=matches),
         receive_message=AsyncMock(),
         send_message_chain=AsyncMock(return_value=KiraIMSentResult("message-1")),
-        get_receive_permission_error=AsyncMock(return_value=None),
     )
 
 
@@ -62,8 +63,6 @@ async def test_route_receives_the_original_complete_session_payload_and_receipt(
     route.receive_message.assert_awaited_once_with(session, message)
     assert route.receive_message.await_args.args[0] is session
     assert route.receive_message.await_args.args[1] is message
-    assert await router.get_receive_permission_error(session) is None
-    route.get_receive_permission_error.assert_awaited_once_with(session)
 
 
 @pytest.mark.anyio
@@ -108,7 +107,7 @@ async def test_priority_then_registration_order_determine_the_first_match():
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("operation", ["receive_message", "send_message_chain", "get_receive_permission_error"])
+@pytest.mark.parametrize("operation", ["receive_message", "send_message_chain"])
 async def test_unmatched_sessions_do_not_fall_back_to_a_transport(operation):
     router = MessageRouter(session_manager=make_session_manager())
     route = _route(lambda s: False)
@@ -117,7 +116,6 @@ async def test_unmatched_sessions_do_not_fall_back_to_a_transport(operation):
     args = {
         "receive_message": (session, object()),
         "send_message_chain": (session, MessageChain([Text("hello")])),
-        "get_receive_permission_error": (session,),
     }[operation]
     with pytest.raises(ValueError, match="No message route matches.*sess_missing"):
         await getattr(router, operation)(*args)
@@ -234,25 +232,27 @@ async def test_plugin_and_legacy_processor_resolve_targets_and_share_the_injecte
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("denied", [False, True])
-async def test_session_send_checks_full_context_permission_before_publishing_to_event_bus(denied):
-    internal = _route()
-    denial = "Permission denied: worker belongs to another session"
-    internal.get_receive_permission_error.return_value = denial if denied else None
-    router = MessageRouter(session_manager=make_session_manager())
-    router.register_route(internal)
+async def test_session_send_checks_adapter_permission_before_publishing_to_event_bus(denied):
     session = _session(internal_id="sess_one", data={"owner": "source:dm:one"})
     manager = make_session_manager()
     manager.resolve_session = AsyncMock(return_value=session)
     ctx = object.__new__(PluginContext)
-    ctx.session_mgr, ctx.message_router = manager, router
+    ctx.session_mgr = manager
     ctx.event_bus = SimpleNamespace(publish=AsyncMock())
     adapter = make_adapter()
+    adapter.access.set_policy(
+        capability_type=IMCapability,
+        permission="im.direct.receive",
+        policy=ListAccessPolicy.from_lists(
+            "allow_list",
+            allow_list=[] if denied else [session.session_id],
+        ),
+    )
     ctx.adapter_mgr = SimpleNamespace(get_adapter=lambda name: adapter)
     plugin = SessionPlugin(ctx, {})
     result = await plugin.session_send(SimpleNamespace(sid="source:dm:one"), "sess_one", "check performance")
-    internal.get_receive_permission_error.assert_awaited_once_with(session)
     if denied:
-        assert result == denial
+        assert result == "Permission denied: target session is not allowed by adapter example"
         ctx.event_bus.publish.assert_not_awaited()
     else:
         assert result == "message sent"
@@ -425,10 +425,10 @@ async def test_internal_id_cannot_bypass_the_current_session_send_guard():
     session = _session(internal_id="sess_self")
     ctx = SimpleNamespace(
         session_mgr=SimpleNamespace(resolve_session=AsyncMock(return_value=session)),
-        message_router=SimpleNamespace(get_receive_permission_error=AsyncMock()),
+        adapter_mgr=SimpleNamespace(get_adapter=Mock()),
         publish_notice=AsyncMock(),
     )
     result = await SessionPlugin(ctx, {}).session_send(SimpleNamespace(sid=session.sid), "sess_self", "hello")
     assert "current session" in result
-    ctx.message_router.get_receive_permission_error.assert_not_awaited()
+    ctx.adapter_mgr.get_adapter.assert_not_called()
     ctx.publish_notice.assert_not_awaited()

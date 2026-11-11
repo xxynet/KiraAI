@@ -12,6 +12,7 @@ from core.chat.session import Session, User
 from core.chat.session_manager import SessionManager
 from core.event_bus import EventBus
 from core.logging_manager import get_logger
+from core.persona.persona_manager import PersonaManager
 from core.provider import LLMModelClient, LLMRequest, ModelType, ProviderManager
 from core.utils.media_refs import MEDIA_REF_TYPE
 from core.utils.path_utils import get_data_path
@@ -20,7 +21,12 @@ from .base_agent_executor import AgentStepResult
 from .config import AgentExecutionConfig, SubAgentConfig, ToolExecutionConfig
 from .message import OpenAIMessage
 from .subagent_event import SubAgentEvent
-from .subagent_executor import SubAgentExecutionContext, SubAgentExecutor
+from .subagent_executor import (
+    SubAgentExecutionContext,
+    SubAgentExecutionHooks,
+    SubAgentExecutor,
+)
+from .subagent_presets import SubAgentPresetStore
 from .tool import ToolSet
 
 logger = get_logger("subagent", "cyan")
@@ -55,6 +61,7 @@ class SubAgentManager:
         *,
         message_history: MessageHistoryService,
         event_bus: EventBus,
+        persona_manager: PersonaManager | None = None,
         max_concurrent: int = 4,
         max_agents: int = 128,
     ):
@@ -64,6 +71,8 @@ class SubAgentManager:
         self.provider_manager = provider_manager
         self.message_history = message_history
         self.event_bus = event_bus
+        self.persona_manager = persona_manager
+        self.presets = SubAgentPresetStore()
         self.semaphore = asyncio.Semaphore(max_concurrent)
         self.max_agents = max_agents
         self._agents: dict[str, _Agent] = {}
@@ -72,6 +81,7 @@ class SubAgentManager:
 
     async def initialize(self) -> None:
         """Retain history after restart without replaying unfinished external calls."""
+        await self.presets.initialize()
         for session in await self.session_manager.get_sessions(include_content=False):
             if session.kind != "subagent":
                 continue
@@ -93,6 +103,8 @@ class SubAgentManager:
             "tool_names": list(config.tool_names),
             "excluded_tools": list(config.excluded_tools),
             "instruction": config.instruction,
+            "instruction_source": config.instruction_source,
+            "persona_id": config.persona_id,
             "max_steps": config.execution.max_steps,
             "final_step_hint": config.execution.final_step_hint,
             "tool_config": vars(config.execution.tool_config).copy(),
@@ -102,7 +114,7 @@ class SubAgentManager:
     def _restore_settings(settings: dict) -> SubAgentConfig:
         return SubAgentConfig(
             execution=AgentExecutionConfig(
-                max_steps=settings.get("max_steps", 5),
+                max_steps=settings.get("max_steps", SubAgentConfig().execution.max_steps),
                 tool_config=ToolExecutionConfig(**settings.get("tool_config", {})),
                 final_step_hint=settings.get("final_step_hint"),
             ),
@@ -110,6 +122,8 @@ class SubAgentManager:
             tool_names=tuple(settings.get("tool_names", ())),
             excluded_tools=tuple(settings.get("excluded_tools", ())),
             instruction=settings.get("instruction", SubAgentConfig().instruction),
+            instruction_source=settings.get("instruction_source", "custom"),
+            persona_id=settings.get("persona_id"),
         )
 
     @staticmethod
@@ -152,6 +166,7 @@ class SubAgentManager:
         parent_tools: ToolSet | None = None,
         tools: ToolSet | None = None,
         model_group: list[LLMModelClient] | None = None,
+        preset_id: str | None = None,
     ) -> dict:
         async with self._creation_lock:
             return await self._spawn(
@@ -163,6 +178,7 @@ class SubAgentManager:
                 parent_tools=parent_tools,
                 tools=tools,
                 model_group=model_group,
+                preset_id=preset_id,
             )
 
     async def _spawn(
@@ -177,6 +193,7 @@ class SubAgentManager:
         parent_tools = options["parent_tools"]
         tools = options["tools"]
         model_group = options["model_group"]
+        preset_id = options["preset_id"]
         title = options["title"]
         SubAgentExecutor._copy_user_message(task)
         self._reserve()
@@ -189,7 +206,9 @@ class SubAgentManager:
         parent_tools = self._copy_tools(parent_tools)
         custom_tools = self._copy_tools(tools if tools is not None else parent_tools)
         selected = self._tools(config, parent_tools, custom_tools)
-        models = self._models(model_group)
+        if preset_id is not None and model_group is not None:
+            raise ValueError("A subagent preset supplies its own model configuration")
+        models = self._preset_models(preset_id) if preset_id is not None else self._models(model_group)
         metadata = {
             "status": "queued",
             "scope_id": scope.internal_id if scope else None,
@@ -199,11 +218,9 @@ class SubAgentManager:
             "result": "",
             "error": "",
             "turn": 0,
-            "models": [
-                {"provider_id": model.model.provider_id, "model_id": model.model.model_id}
-                for model in models
-            ] if model_group is not None else [],
         }
+        if preset_id is not None:
+            metadata["preset_id"] = preset_id
         session = await self.session_manager.create_subagent_session(
             title=title or (task if isinstance(task, str) else "Subagent")[:100],
             parent_id=parent_id,
@@ -248,6 +265,23 @@ class SubAgentManager:
             raise ValueError("No default LLM is available for subagent execution")
         return [default]
 
+    def _preset_models(self, preset_id: str) -> list[LLMModelClient]:
+        try:
+            preset = self.presets.get(preset_id)
+        except KeyError as exc:
+            raise ValueError(f"Subagent preset is unavailable: {preset_id}") from exc
+        if preset.model is None:
+            return self._models(None)
+        provider_id, model_id = preset.model.split(":", 1)
+        model = self.provider_manager.get_model_client(
+            provider_id,
+            model_id,
+            ModelType.LLM,
+        )
+        if model is None:
+            raise ValueError(f"Subagent preset model is unavailable: {preset.model}")
+        return [model]
+
     def _build_executor(self, agent: _Agent, scope: Session, models: list[LLMModelClient]) -> None:
         event = SubAgentEvent(
             session=scope,
@@ -260,14 +294,14 @@ class SubAgentManager:
             messages=agent.session.flatten_content(),
         )
         request = LLMRequest(tool_set=self._tools(agent.config, agent.parent_tools, agent.custom_tools))
-        if agent.config.instruction:
+        if agent.config.instruction_source == "custom" and agent.config.instruction:
             request.messages.append(OpenAIMessage(
                 role="system",
                 content=agent.config.instruction,
             ))
             ctx.messages.insert(0, request.messages[0])
 
-        async def begin():
+        async def begin() -> list[LLMModelClient] | None:
             current_scope = await self.session_manager.get_session(ctx.event.session.sid, include_content=False)
             if current_scope is None:
                 raise PermissionError("The subagent permission session no longer exists")
@@ -299,6 +333,8 @@ class SubAgentManager:
             if not saved:
                 raise ValueError("The subagent session no longer exists")
             agent.session.data["subagent"] = metadata
+            preset_id = metadata.get("preset_id")
+            return self._preset_models(preset_id) if preset_id is not None else None
 
         async def result(step: AgentStepResult):
             agent.step = step
@@ -374,6 +410,10 @@ class SubAgentManager:
             context=ctx,
             request=request,
             config=agent.config.execution,
+            hooks=SubAgentExecutionHooks(
+                config=agent.config,
+                persona_manager=self.persona_manager,
+            ),
             semaphore=self.semaphore,
             on_turn_start=begin,
             on_turn_end=finish,
@@ -517,17 +557,8 @@ class SubAgentManager:
                 custom_tools=self._copy_tools(tools if tools is not None else parent_tools),
                 turn=state.get("turn", 0),
             )
-            models = []
-            for reference in state.get("models", []):
-                model = self.provider_manager.get_model_client(
-                    reference["provider_id"],
-                    reference["model_id"],
-                    ModelType.LLM,
-                )
-                if model is None:
-                    raise ValueError(f"Subagent model is unavailable: {reference}")
-                models.append(model)
-            self._build_executor(agent, scope, self._models(models or None))
+            models = [] if state.get("preset_id") is not None else self._models(None)
+            self._build_executor(agent, scope, models)
             self._agents[session.internal_id] = agent
         selection = replace(
             agent,

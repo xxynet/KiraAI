@@ -21,10 +21,13 @@
           </p>
         </div>
       </div>
-      <IconChevronDown
-        class="w-5 h-5 text-theme-faint transform transition-transform duration-200 shrink-0 ml-2"
-        :class="{ 'rotate-180': !isCollapsed }"
-      />
+      <div class="flex items-center gap-3 shrink-0 ml-2">
+        <slot name="trailing" />
+        <IconChevronDown
+          class="w-5 h-5 text-theme-faint transform transition-transform duration-200"
+          :class="{ 'rotate-180': !isCollapsed }"
+        />
+      </div>
     </div>
     <div
       class="collapsible-section-body border border-t-0 border-gray-200 dark:border-gray-700 rounded-b-lg bg-white dark:bg-gray-900 overflow-x-hidden transition-all duration-200"

@@ -641,3 +641,66 @@ async def test_prepared_request_preserves_options_with_one_history_and_tool_sour
     assert [message.content for message in request.messages] == ["stale request history"]
     assert all("final model call" not in str(message.content) for message in context.messages)
     no_event_hooks.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_unlimited_steps_continue_until_natural_completion_without_final_hint():
+    model = _model(
+        *[_tool_response(call_id=f"call-{index}") for index in range(7)],
+        LLMResponse("complete"),
+    )
+    context = BaseAgentExecutionContext()
+    executor = BaseAgentExecutor(
+        [model],
+        context=context,
+        request=LLMRequest(tool_set=ToolSet([ProbeTool()])),
+        config=AgentExecutionConfig(
+            max_steps=-1,
+            final_step_hint="Must not be injected without a step limit",
+        ),
+    )
+    steps = [step async for step in executor.run()]
+    assert [step.step_index for step in steps] == list(range(1, 9))
+    assert [step.is_final for step in steps] == [False] * 7 + [True]
+    assert steps[-1].llm_response.text_response == "complete"
+    assert len([message for message in context.messages if message.role == "tool"]) == 7
+    assert all(executor.config.final_step_hint not in str(message.content) for message in context.messages)
+    assert model.chat.await_count == 8
+    assert executor.state == "done"
+
+
+@pytest.mark.anyio
+async def test_unlimited_run_accepts_immediate_steering_and_cooperative_abort():
+    entered, release = asyncio.Event(), asyncio.Event()
+    received = []
+
+    async def chat(request):
+        received.extend(message.content for message in request.messages)
+        entered.set()
+        await release.wait()
+        return LLMResponse("finish current call")
+
+    model = _model()
+    model.chat.side_effect = chat
+    executor = BaseAgentExecutor(
+        [model],
+        context=BaseAgentExecutionContext(),
+        config=AgentExecutionConfig(max_steps=-1),
+    )
+    task = executor.start()
+    try:
+        assert executor.steer("instruction before background task starts")
+        await asyncio.wait_for(entered.wait(), timeout=2)
+        assert executor.abort()
+        assert not task.done()
+        release.set()
+        result = await asyncio.wait_for(task, timeout=2)
+        assert result.state == "stopped"
+        assert result.is_final and result.step_index == 1
+        assert received == ["instruction before background task starts"]
+        assert model.chat.await_count == 1
+    finally:
+        release.set()
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)

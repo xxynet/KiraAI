@@ -55,6 +55,8 @@ class SubAgentsPlugin(BasePlugin):
             FollowupTaskTool,
             InterruptAgentTool,
         ):
+            if tool_type is SpawnAgentTool and not self.ctx.subagent_mgr.presets.has_available_presets():
+                continue
             request.tool_set.add(tool_type(
                 ctx=self.ctx,
                 source=event.session,

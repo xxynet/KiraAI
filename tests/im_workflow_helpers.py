@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+from core.agent.subagent_presets import SubAgentPresetStore
 from core.chat.im_message_route import IMMessageRoute
 from core.chat.message_router import MessageRouter
 from core.chat.session_buffer import SessionBufferManager
@@ -67,6 +68,7 @@ def make_workflow_context(**overrides):
         "prompt_manager": Mock(),
         "tool_manager": Mock(),
         "skills_manager": Mock(),
+        "subagent_manager": SimpleNamespace(presets=SubAgentPresetStore()),
         "mcp_manager": Mock(),
         "db": Mock(),
     }

@@ -238,7 +238,7 @@ async def test_failed_agent_step_reports_last_attempted_model_identity(monkeypat
     assert steps[0].model.model_name == "fallback-upstream"
 
 
-@pytest.mark.parametrize("max_steps", [-1, True, 1.5, "3", None])
+@pytest.mark.parametrize("max_steps", [-2, True, 1.5, "3", None])
 def test_agent_config_rejects_invalid_step_limits(max_steps):
     with pytest.raises(ValueError, match="max_steps"):
         AgentExecutionConfig(max_steps=max_steps)

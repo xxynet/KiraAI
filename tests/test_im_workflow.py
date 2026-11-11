@@ -89,6 +89,63 @@ def processor(monkeypatch):
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("with_skills", [False, True])
+async def test_subagent_presets_are_built_with_skills_after_tools(processor, tmp_path, with_skills):
+    from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
+    from core.workflow.src.im.context import IMBatchContext
+    from core.workflow.src.im.stages.assemble import AssembleRequestStage
+    from core.workflow.src.im.stages.request import BuildRequestStage
+
+    instance, _ = processor
+    services = instance.im_workflow.ctx
+    store = SubAgentPresetStore(tmp_path / "presets.json")
+    preset = await store.save(SubAgentPreset(
+        name="Reviewer",
+        description="Inspect performance",
+        instruction="Private system prompt",
+    ))
+    await store.save(SubAgentPreset(name="Hidden", enabled=False))
+    services.subagent_manager = SimpleNamespace(presets=store)
+    services.prompt_manager.get_agent_prompt.side_effect = lambda *_: [
+        Prompt("Tools\n", name="tools"),
+        Prompt("Time\n", name="time"),
+    ]
+    skill = SimpleNamespace(name="Allowed", enabled=True)
+    blocked = SimpleNamespace(name="Blocked", enabled=True)
+    disabled = SimpleNamespace(name="Disabled", enabled=False)
+    services.skills_manager = SimpleNamespace(
+        skills_info=[skill, blocked, disabled] if with_skills else [],
+        is_skill_allowed=lambda name, sid: name == "Allowed",
+        build_skills_prompt=Mock(return_value=Prompt("Skills\n", name="skills")),
+    )
+    event = batch()
+    event.messages[0].message_str = "task"
+    ctx = IMBatchContext(services, event)
+    assert await BuildRequestStage().run(ctx)
+    expected = ["tools", "skills", "subagent_presets", "time"] if with_skills else ["tools", "subagent_presets", "time"]
+    assert [prompt.name for prompt in ctx.request.system_prompt] == expected
+    if with_skills:
+        services.skills_manager.build_skills_prompt.assert_called_once_with([skill])
+    else:
+        services.skills_manager.build_skills_prompt.assert_not_called()
+    catalog = ctx.request.system_prompt[2 if with_skills else 1]
+    assert catalog.source == "system"
+    assert "- **Reviewer**: Inspect performance" in catalog.content
+    assert preset["id"] not in catalog.content
+    assert "preset_name" in catalog.content
+    assert "spawn_agent" in catalog.content
+    assert "Hidden" not in catalog.content
+    assert "Private system prompt" not in catalog.content
+    assert await AssembleRequestStage().run(ctx)
+    assert any("Inspect performance" in (message.content or "") for message in ctx.request.messages)
+    assert all("Inspect performance" not in (message.content or "") for message in ctx.new_messages)
+    await store.save(SubAgentPreset(name="Reviewer", enabled=False), preset["id"])
+    next_ctx = IMBatchContext(services, batch())
+    assert await BuildRequestStage().run(next_ctx)
+    assert [prompt.name for prompt in next_ctx.request.system_prompt] == (["tools", "skills", "time"] if with_skills else ["tools", "time"])
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("stop_at", [
     None, EventType.ON_IM_BATCH_MESSAGE, EventType.ON_LLM_REQUEST,
     EventType.AFTER_XML_PARSE, EventType.ON_MESSAGE_SENT, EventType.ON_STEP_RESULT, EventType.ON_FINAL_RESULT,

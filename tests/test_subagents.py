@@ -20,6 +20,7 @@ from core.chat.message_router import MessageRouter
 from core.chat.message_utils import MessageChain
 from core.chat.session_manager import SessionManager
 from core.chat.subagent_route import SubAgentRoute
+from core.persona.persona_manager import PersonaManager
 from core.provider import LLMResponse
 from core.utils.tool_utils import BaseTool
 
@@ -51,6 +52,7 @@ async def agents(session_db):
         SimpleNamespace(get_default_llm=lambda: model),
         message_history=MessageHistoryService(session_db, sessions),
         event_bus=Mock(publish=AsyncMock()),
+        persona_manager=PersonaManager(sessions.db),
     )
     try:
         yield manager, sessions, parent, model
@@ -437,9 +439,10 @@ async def test_capacity_check_is_atomic_for_concurrent_spawns(agents):
 
 
 @pytest.mark.anyio
-async def test_native_tools_bind_the_caller_and_inherit_actual_request_tools(agents):
+async def test_native_tools_bind_the_caller_and_inherit_actual_request_tools(agents, tmp_path):
     import json
 
+    from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
     from core.config.config_loader import KiraConfig
     from core.plugin.builtin_plugins.subagents.main import SubAgentsPlugin
     from core.provider import LLMRequest
@@ -459,6 +462,14 @@ async def test_native_tools_bind_the_caller_and_inherit_actual_request_tools(age
     request = LLMRequest(tool_set=ToolSet([tool]))
     plugin = SubAgentsPlugin(ctx, {})
     event = SimpleNamespace(session=parent)
+    manager.presets = SubAgentPresetStore(tmp_path / "presets.json")
+    await plugin.inject_tools(event, request)
+    assert request.tool_set.get("spawn_agent") is None
+    assert request.tool_set.get("followup_task") is not None
+    preset = await manager.presets.save(SubAgentPreset(
+        name="Default",
+        instruction_source="custom",
+    ))
     await plugin.inject_tools(event, request)
     schemas = request.tool_set.to_list()
     controls = schemas[-len(SUBAGENT_TOOL_NAMES):]
@@ -471,11 +482,28 @@ async def test_native_tools_bind_the_caller_and_inherit_actual_request_tools(age
         assert isinstance(function["parameters"], dict)
         assert function["parameters"]["type"] == "object"
     spawn_schema = next(tool["function"] for tool in controls if tool["function"]["name"] == "spawn_agent")
-    assert spawn_schema["parameters"]["required"] == ["task"]
-    info = json.loads(await request.tool_set.get("spawn_agent").execute(event, task="delegate"))
+    assert spawn_schema["parameters"]["required"] == ["task", "preset_name"]
+    assert set(spawn_schema["parameters"]["properties"]) == {"task", "preset_name", "name"}
+    spawn = request.tool_set.get("spawn_agent")
+    with pytest.raises(TypeError, match="preset_name"):
+        await spawn.execute(event, task="delegate")
+    for invalid in (None, "", " ", preset["id"]):
+        with pytest.raises(ValueError, match="preset_name|Unknown subagent preset"):
+            await spawn.execute(
+                event,
+                task="delegate",
+                preset_name=invalid,
+            )
+    info = json.loads(await spawn.execute(
+        event,
+        task="delegate",
+        preset_name=preset["name"],
+    ))
     assert request.tool_set.get("wait_agent") is None
     result = await manager.wait(info["id"], timeout=2)
     assert result["status"] == "done"
+    child = await sessions.resolve_session(info["id"])
+    assert child.data["subagent"]["settings"]["max_steps"] == -1
     registry.build_tool_set.assert_not_called()
     assert [tool.name for tool in model.chat.await_args.args[0].tool_set.tools] == ["record"]
     listed = json.loads(await request.tool_set.get("list_agents").execute(event))
@@ -486,9 +514,10 @@ async def test_native_tools_bind_the_caller_and_inherit_actual_request_tools(age
 
 
 @pytest.mark.anyio
-async def test_native_custom_tools_can_select_outside_the_parent_tool_list(agents):
+async def test_native_custom_tools_can_select_outside_the_parent_tool_list(agents, tmp_path):
     import json
 
+    from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
     from core.config.config_loader import KiraConfig
     from core.plugin.builtin_plugins.subagents.main import SubAgentsPlugin
     from core.provider import LLMRequest
@@ -506,12 +535,18 @@ async def test_native_custom_tools_can_select_outside_the_parent_tool_list(agent
     )
     request = LLMRequest(tool_set=ToolSet())
     event = SimpleNamespace(session=parent)
+    manager.presets = SubAgentPresetStore(tmp_path / "presets.json")
+    preset = await manager.presets.save(SubAgentPreset(
+        name="Custom",
+        instruction_source="custom",
+        tool_mode="custom",
+        tools=["record"],
+    ))
     await SubAgentsPlugin(ctx, {}).inject_tools(event, request)
     info = json.loads(await request.tool_set.get("spawn_agent").execute(
         event,
         task="custom",
-        tool_mode="custom",
-        tools=["record"],
+        preset_name=preset["name"],
     ))
     await manager.wait(info["id"], timeout=2)
     assert [tool.name for tool in model.chat.await_args.args[0].tool_set.tools] == ["record"]
@@ -520,7 +555,437 @@ async def test_native_custom_tools_can_select_outside_the_parent_tool_list(agent
         is_server_allowed=lambda *_: False,
     )
     with pytest.raises(PermissionError):
-        await request.tool_set.get("spawn_agent").execute(event, task="denied", tool_mode="custom", tools=["record"])
+        await request.tool_set.get("spawn_agent").execute(
+            event,
+            task="denied",
+            preset_name=preset["name"],
+        )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("persona_id", [None, "reviewer"])
+async def test_preset_persona_follows_edits_for_existing_and_restored_agents(agents, tmp_path, persona_id):
+    import json
+
+    from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
+    from core.config import KiraConfig
+    from core.persona.model import PersonaInfo
+    from core.plugin.builtin_plugins.subagents.tools import SpawnAgentTool
+    from core.provider import LLMRequest
+
+    manager, sessions, parent, model = agents
+    personas = manager.persona_manager
+    await personas.create_persona(PersonaInfo(id="active", name="Active", content="Active persona"))
+    await personas.create_persona(PersonaInfo(id="reviewer", name="Reviewer", content="Review persona"))
+    await personas.set_active_persona("active")
+    manager.presets = SubAgentPresetStore(tmp_path / "presets.json")
+    preset = await manager.presets.save(SubAgentPreset(
+        name="Persona agent",
+        persona_id=persona_id,
+        instruction="This inactive custom prompt must be ignored",
+    ))
+    tool = SpawnAgentTool(
+        ctx=SimpleNamespace(
+            config=dict.__new__(KiraConfig),
+            session_mgr=sessions,
+            subagent_mgr=manager,
+            persona_mgr=personas,
+        ),
+        source=parent,
+        request=LLMRequest(tool_set=ToolSet()),
+    )
+    async def spawn():
+        info = json.loads(await tool.execute(
+            None,
+            task="inspect",
+            preset_name=preset["name"],
+        ))
+        await manager.wait(info["id"], timeout=2)
+        return info
+
+    first = await spawn()
+    original = "Review persona" if persona_id else "Active persona"
+    assert model.chat.await_args.args[0].messages[0].content == original
+    child = await sessions.resolve_session(first["id"])
+    settings = child.data["subagent"]["settings"]
+    assert settings["instruction_source"] == "persona"
+    assert settings["persona_id"] == persona_id
+    assert settings["instruction"] == ""
+    await personas.update_persona(PersonaInfo(
+        id=persona_id or "active",
+        content="Updated persona",
+    ))
+    second = await spawn()
+    assert model.chat.await_args.args[0].messages[0].content == "Updated persona"
+    assert second["id"] != first["id"]
+    await manager.followup(first["id"], "continue", caller_id=parent.internal_id)
+    await manager.wait(first["id"], timeout=2)
+    assert model.chat.await_args.args[0].messages[0].content == "Updated persona"
+    assert sum(message.role == "system" for message in model.chat.await_args.args[0].messages) == 1
+    manager._agents.clear()
+    await personas.update_persona(PersonaInfo(
+        id=persona_id or "active",
+        content="Updated again after restoration",
+    ))
+    await manager.followup(first["id"], "continue", caller_id=parent.internal_id)
+    await manager.wait(first["id"], timeout=2)
+    assert model.chat.await_args.args[0].messages[0].content == "Updated again after restoration"
+    assert sum(message.role == "system" for message in model.chat.await_args.args[0].messages) == 1
+    if persona_id is None:
+        await personas.set_active_persona("reviewer")
+        await manager.followup(first["id"], "active persona changed", caller_id=parent.internal_id)
+        await manager.wait(first["id"], timeout=2)
+        assert model.chat.await_args.args[0].messages[0].content == "Review persona"
+    if persona_id:
+        await personas.delete_persona(persona_id)
+    else:
+        async with sessions.db.db.engine.begin() as connection:
+            await connection.execute(text("UPDATE personas SET is_active = 0"))
+    before = model.chat.await_count
+    await manager.followup(first["id"], "missing persona", caller_id=parent.internal_id)
+    failure = await manager.wait(first["id"], timeout=2)
+    assert failure["status"] == "error"
+    assert "persona is unavailable" in failure["error"]
+    assert model.chat.await_count == before
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("boundary", ["tool", "provider_failover"])
+async def test_persona_refreshes_between_calls_without_mutating_inflight_messages(agents, boundary):
+    from httpx import Request
+    from openai import APIConnectionError
+
+    from core.persona.model import PersonaInfo
+
+    manager, _, parent, model = agents
+    personas = manager.persona_manager
+    await personas.create_persona(PersonaInfo(id="live", name="Live", content="Original persona"))
+    seen = []
+
+    async def edit_persona():
+        await personas.update_persona(PersonaInfo(id="live", content="Changed persona"))
+
+    class EditPersonaTool(RecordingTool):
+        async def execute(self, event):
+            await edit_persona()
+            return "changed"
+
+    async def first_call(request):
+        seen.append(request.messages[0])
+        if boundary == "provider_failover":
+            await edit_persona()
+            raise APIConnectionError(request=Request("POST", "https://example.test"))
+        return LLMResponse("", tool_calls=[{
+            "id": "edit",
+            "function": {"name": "record", "arguments": "{}"},
+        }])
+
+    async def next_call(request):
+        seen.append(request.messages[0])
+        return LLMResponse("done")
+
+    if boundary == "tool":
+        calls = iter([first_call, next_call])
+
+        async def chat(request):
+            return await next(calls)(request)
+
+        model.chat.side_effect = chat
+        models = [model]
+    else:
+        model.chat.side_effect = first_call
+        fallback = SimpleNamespace(model=model.model, chat=AsyncMock(side_effect=next_call))
+        models = [model, fallback]
+    info = await manager.spawn(
+        "task",
+        parent_id=parent.internal_id,
+        config=SubAgentConfig(
+            instruction_source="persona",
+            persona_id="live",
+        ),
+        parent_tools=ToolSet([EditPersonaTool()]),
+        model_group=models,
+    )
+    result = await manager.wait(info["id"], timeout=2)
+    assert result["status"] == "done"
+    assert [message.content for message in seen] == ["Original persona", "Changed persona"]
+    assert seen[0] is not seen[1]
+    context = manager._agents[info["id"]].executor.context
+    assert sum(message.role == "system" for message in context.messages) == 1
+    assert not any(message.role == "system" for message in context.new_messages)
+
+
+@pytest.mark.anyio
+async def test_native_preset_discovery_and_spawn_use_saved_settings(agents, tmp_path):
+    import json
+
+    from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
+    from core.config import KiraConfig
+    from core.plugin.builtin_plugins.subagents.main import SubAgentsPlugin
+    from core.provider import LLMRequest
+
+    manager, sessions, parent, model = agents
+    manager.presets = SubAgentPresetStore(tmp_path / "presets.json")
+    preset = await manager.presets.save(SubAgentPreset(
+        instruction_source="custom",
+        name="Reviewer",
+        description="Inspect performance",
+        instruction="Focus only on performance",
+        max_steps=2,
+        tool_mode="exclude",
+        tools=["record"],
+    ))
+    await manager.presets.save(SubAgentPreset(
+        instruction_source="custom",
+        name="Hidden",
+        enabled=False,
+    ))
+    config = dict.__new__(KiraConfig)
+    request = LLMRequest(tool_set=ToolSet([RecordingTool()]))
+    ctx = SimpleNamespace(
+        config=config,
+        session_mgr=sessions,
+        subagent_mgr=manager,
+    )
+    plugin = SubAgentsPlugin(ctx, {})
+    event = SimpleNamespace(session=parent)
+    await plugin.inject_tools(event, request)
+    await plugin.inject_tools(event, request)
+    assert not request.system_prompt
+    prompt = manager.presets.build_presets_prompt()
+    assert not prompt.persist
+    assert preset["id"] not in prompt.content
+    assert preset["name"] in prompt.content
+    assert "Inspect performance" in prompt.content
+    assert "Hidden" not in prompt.content
+    spawn = request.tool_set.get("spawn_agent")
+    info = json.loads(await spawn.execute(
+        event,
+        task="inspect",
+        preset_name=preset["name"],
+    ))
+    await manager.wait(info["id"], timeout=2)
+    assert info["title"] == "Reviewer"
+    used_request = model.chat.await_args.args[0]
+    assert used_request.messages[0].content == "Focus only on performance"
+    assert not used_request.tool_set.tools
+    saved = await sessions.resolve_session(info["id"])
+    assert saved.data["subagent"]["settings"]["max_steps"] == 2
+    await manager.presets.save(SubAgentPreset(
+        instruction_source="custom",
+        name="Changed",
+        instruction="new",
+        enabled=False,
+    ), preset["id"])
+    await manager.followup(info["id"], "again", caller_id=parent.internal_id)
+    assert (await manager.wait(info["id"], timeout=2))["status"] == "done"
+    assert model.chat.await_args.args[0].messages[0].content == "Focus only on performance"
+    await manager.presets.delete(preset["id"])
+    await manager.followup(info["id"], "after deletion", caller_id=parent.internal_id)
+    result = await manager.wait(info["id"], timeout=2)
+    assert result["status"] == "error"
+    assert "Subagent preset is unavailable" in result["error"]
+    assert model.chat.await_count == 2
+    with pytest.raises(ValueError, match="Unknown subagent preset"):
+        await spawn.execute(
+            event,
+            task="missing",
+            preset_name=preset["name"],
+        )
+
+
+@pytest.mark.anyio
+async def test_native_preset_cannot_bypass_disabled_state_or_custom_tool_permissions(agents, tmp_path):
+    from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
+    from core.config import KiraConfig
+    from core.plugin.builtin_plugins.subagents.tools import SpawnAgentTool
+    from core.provider import LLMRequest
+
+    manager, sessions, parent, model = agents
+    manager.presets = SubAgentPresetStore(tmp_path / "presets.json")
+    preset = await manager.presets.save(SubAgentPreset(
+        instruction_source="custom",
+        name="Custom",
+        tool_mode="custom",
+        tools=["record"],
+    ))
+    ctx = SimpleNamespace(
+        config=dict.__new__(KiraConfig),
+        session_mgr=sessions,
+        subagent_mgr=manager,
+        tool_mgr=SimpleNamespace(build_tool_set=lambda: ToolSet([RecordingTool()])),
+        mcp_mgr=SimpleNamespace(
+            get_tool_server_map=lambda: {"record": "blocked"},
+            is_server_allowed=lambda *_: False,
+        ),
+    )
+    spawn = SpawnAgentTool(
+        ctx=ctx,
+        source=parent,
+        request=LLMRequest(tool_set=ToolSet()),
+    )
+    with pytest.raises(PermissionError, match="not allowed"):
+        await spawn.execute(
+            None,
+            task="denied",
+            preset_name=preset["name"],
+        )
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        await spawn.execute(
+            None,
+            task="override",
+            preset_name=preset["name"],
+            tools=[],
+        )
+    await manager.presets.save(SubAgentPreset(
+        instruction_source="custom",
+        name=preset["name"],
+        enabled=False,
+    ), preset["id"])
+    with pytest.raises(ValueError, match="disabled"):
+        await spawn.execute(
+            None,
+            task="disabled",
+            preset_name=preset["name"],
+        )
+    assert not await manager.list_agents()
+    model.chat.assert_not_awaited()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("restored", [False, True])
+async def test_preset_model_is_resolved_for_each_turn_without_persisting_it(agents, tmp_path, restored):
+    import json
+
+    from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
+    from core.config import KiraConfig
+    from core.plugin.builtin_plugins.subagents.tools import SpawnAgentTool
+    from core.provider import LLMRequest, ModelType
+
+    manager, sessions, parent, model = agents
+    manager.presets = SubAgentPresetStore(tmp_path / "presets.json")
+    preset = await manager.presets.save(SubAgentPreset(
+        instruction_source="custom",
+        name="Selected model",
+        model="test:test",
+    ))
+    providers = manager.provider_manager
+    providers.get_model_client = Mock(return_value=model)
+    default = SimpleNamespace(model=model.model, chat=AsyncMock(return_value=LLMResponse("default")))
+    providers.get_default_llm = Mock(return_value=default)
+    ctx = SimpleNamespace(
+        config=dict.__new__(KiraConfig),
+        session_mgr=sessions,
+        subagent_mgr=manager,
+    )
+    tool = SpawnAgentTool(
+        ctx=ctx,
+        source=parent,
+        request=LLMRequest(tool_set=ToolSet()),
+    )
+    info = json.loads(await tool.execute(
+        None,
+        task="first",
+        preset_name=preset["name"],
+    ))
+    await manager.wait(info["id"], timeout=2)
+    child = await sessions.resolve_session(info["id"])
+    assert child.data["subagent"]["preset_id"] == preset["id"]
+    assert "models" not in child.data["subagent"]
+    assert preset["id"] not in info.values()
+    model.chat.assert_awaited_once()
+    providers.get_model_client.assert_called_with("test", "test", ModelType.LLM)
+    providers.get_default_llm.assert_not_called()
+    await manager.presets.save(SubAgentPreset(
+        instruction_source="custom",
+        name="Renamed model preset",
+    ), preset["id"])
+    if restored:
+        manager._agents.clear()
+        await manager.presets.initialize()
+    await manager.followup(info["id"], "resumed", caller_id=parent.internal_id)
+    assert (await manager.wait(info["id"], timeout=2))["result"] == "default"
+    model.chat.assert_awaited_once()
+    default.chat.assert_awaited_once()
+    providers.get_default_llm.assert_called_once_with()
+    assert "models" not in (await sessions.resolve_session(info["id"])).data["subagent"]
+
+
+@pytest.mark.anyio
+async def test_queued_subagent_turn_reads_model_changes_after_submission(agents, tmp_path):
+    from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
+    from core.provider import ModelType
+
+    manager, _, parent, model = agents
+    manager.presets = SubAgentPresetStore(tmp_path / "presets.json")
+    preset = await manager.presets.save(SubAgentPreset(name="Live model"))
+    replacement = SimpleNamespace(model=model.model, chat=AsyncMock(return_value=LLMResponse("replacement")))
+    manager.provider_manager.get_model_client = Mock(return_value=replacement)
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def chat(request):
+        entered.set()
+        await release.wait()
+        return LLMResponse("original")
+
+    model.chat.side_effect = chat
+    info = await manager.spawn(
+        "first",
+        parent_id=parent.internal_id,
+        preset_id=preset["id"],
+    )
+    await asyncio.wait_for(entered.wait(), 2)
+    await manager.followup(info["id"], "second")
+    await manager.presets.save(SubAgentPreset(
+        name=preset["name"],
+        model="provider:replacement",
+    ), preset["id"])
+    release.set()
+    result = await manager.wait(info["id"], timeout=2)
+    assert result["turn"] == 2 and result["result"] == "replacement"
+    model.chat.assert_awaited_once()
+    replacement.chat.assert_awaited_once()
+    manager.provider_manager.get_model_client.assert_called_once_with("provider", "replacement", ModelType.LLM)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("unavailable", [None, ValueError("Provider is disabled")])
+async def test_unavailable_preset_model_does_not_silently_use_the_default(agents, tmp_path, unavailable):
+    from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
+    from core.config import KiraConfig
+    from core.plugin.builtin_plugins.subagents.tools import SpawnAgentTool
+    from core.provider import LLMRequest
+
+    manager, sessions, parent, model = agents
+    manager.presets = SubAgentPresetStore(tmp_path / "presets.json")
+    preset = await manager.presets.save(SubAgentPreset(
+        instruction_source="custom",
+        name="Unavailable",
+        model="provider:missing",
+    ))
+    providers = manager.provider_manager
+    providers.get_model_client = Mock(
+        return_value=None,
+        side_effect=unavailable,
+    )
+    providers.get_default_llm = Mock(return_value=model)
+    tool = SpawnAgentTool(
+        ctx=SimpleNamespace(
+            config=dict.__new__(KiraConfig),
+            session_mgr=sessions,
+            subagent_mgr=manager,
+        ),
+        source=parent,
+        request=LLMRequest(tool_set=ToolSet()),
+    )
+    with pytest.raises(ValueError, match="disabled|unavailable"):
+        await tool.execute(
+            None,
+            task="unavailable",
+            preset_name=preset["name"],
+        )
+    providers.get_default_llm.assert_not_called()
+    assert not await manager.list_agents()
 
 
 @pytest.mark.anyio
@@ -537,7 +1002,7 @@ async def test_archive_records_link_to_child_memory_and_usage_is_recorded(agents
 
 
 @pytest.mark.anyio
-async def test_resume_keeps_explicit_model_and_requires_reauthorized_tools(agents):
+async def test_resume_uses_default_for_ephemeral_model_and_requires_reauthorized_tools(agents):
     manager, sessions, parent, model = agents
     tool = RecordingTool()
     info = await manager.spawn(
@@ -548,9 +1013,13 @@ async def test_resume_keeps_explicit_model_and_requires_reauthorized_tools(agent
         tools=ToolSet([tool]),
     )
     await manager.wait(info["id"], timeout=2)
+    child = await sessions.resolve_session(info["id"])
+    assert "models" not in child.data["subagent"]
+    assert "preset_id" not in child.data["subagent"]
+    default = SimpleNamespace(model=model.model, chat=AsyncMock(return_value=LLMResponse("default")))
     provider = SimpleNamespace(
         get_model_client=Mock(return_value=model),
-        get_default_llm=Mock(side_effect=AssertionError("explicit model must be retained")),
+        get_default_llm=Mock(return_value=default),
     )
     restored = SubAgentManager(
         sessions,
@@ -562,9 +1031,9 @@ async def test_resume_keeps_explicit_model_and_requires_reauthorized_tools(agent
         with pytest.raises(ValueError, match="tool set"):
             await restored.followup(info["id"], "missing tools")
         await restored.followup(info["id"], "second", tools=ToolSet([tool]))
-        await restored.wait(info["id"], timeout=2)
-        provider.get_model_client.assert_called_once()
-        provider.get_default_llm.assert_not_called()
+        assert (await restored.wait(info["id"], timeout=2))["result"] == "default"
+        provider.get_model_client.assert_not_called()
+        provider.get_default_llm.assert_called_once_with()
         assert len((await sessions.resolve_session(info["id"])).content) == 2
     finally:
         await restored.shutdown(timeout=0)
@@ -730,3 +1199,73 @@ async def test_notice_failure_preserves_completed_state_and_result(agents):
     result = await manager.wait(info["id"], timeout=2)
     assert result["status"] == "done" and result["result"] == "result"
     assert (await sessions.resolve_session(info["id"])).data["subagent"]["status"] == "done"
+
+
+@pytest.mark.anyio
+async def test_subagent_default_has_no_step_limit_and_restores_it_for_followups(agents):
+    manager, sessions, parent, model = agents
+    tool = RecordingTool()
+    model.chat.side_effect = [
+        LLMResponse("", tool_calls=[{
+            "id": f"call-{index}",
+            "function": {"name": "record", "arguments": "{}"},
+        }]) for index in range(7)
+    ] + [LLMResponse("complete"), LLMResponse("follow-up complete")]
+    assert SubAgentConfig().execution.max_steps == -1
+    assert AgentExecutionConfig().max_steps == 5
+    info = await manager.spawn(
+        "task",
+        parent_id=parent.internal_id,
+        parent_tools=ToolSet([tool]),
+    )
+    result = await manager.wait(info["id"], timeout=2)
+    assert result["status"] == "done"
+    assert result["step_index"] == 8
+    assert len(tool.events) == 7
+    manager._agents.clear()
+    await manager.followup(
+        info["id"],
+        "another task",
+        caller_id=parent.internal_id,
+        parent_tools=ToolSet([tool]),
+    )
+    result = await manager.wait(info["id"], timeout=2)
+    assert result["result"] == "follow-up complete"
+    child = await sessions.resolve_session(info["id"])
+    assert child.data["subagent"]["settings"]["max_steps"] == -1
+    assert result["step_index"] == 1
+
+
+@pytest.mark.anyio
+async def test_native_spawn_accepts_preset_step_limits_above_fifty(agents, tmp_path):
+    import json
+
+    from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
+    from core.config import KiraConfig
+    from core.plugin.builtin_plugins.subagents.tools import SpawnAgentTool
+    from core.provider import LLMRequest
+
+    manager, sessions, parent, _ = agents
+    manager.presets = SubAgentPresetStore(tmp_path / "presets.json")
+    tool = SpawnAgentTool(
+        ctx=SimpleNamespace(
+            config=dict.__new__(KiraConfig),
+            session_mgr=sessions,
+            subagent_mgr=manager,
+        ),
+        source=parent,
+        request=LLMRequest(tool_set=ToolSet()),
+    )
+    preset = await manager.presets.save(SubAgentPreset(
+        instruction_source="custom",
+        name="Long task",
+        max_steps=100,
+    ))
+    info = json.loads(await tool.execute(
+        None,
+        task="task",
+        preset_name=preset["name"],
+    ))
+    await manager.wait(info["id"], timeout=2)
+    child = await sessions.resolve_session(info["id"])
+    assert child.data["subagent"]["settings"]["max_steps"] == 100

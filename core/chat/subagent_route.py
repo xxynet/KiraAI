@@ -81,9 +81,3 @@ class SubAgentRoute:
             await self._message(chain),
         )
         return KiraIMSentResult(message_id=f"input_{uuid4().hex}")
-
-    async def get_receive_permission_error(self, session: Session) -> str | None:
-        """Check availability; caller ownership is checked by manager operations."""
-        if self.manager._closing:
-            return "Subagent manager is shutting down"
-        return None

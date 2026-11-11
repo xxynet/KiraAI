@@ -22,8 +22,6 @@ class MessageRoute(Protocol):
         memory_message: OpenAIMessage | None = None, bot: User | None = None,
     ) -> KiraIMSentResult: ...
 
-    async def get_receive_permission_error(self, session: Session) -> str | None: ...
-
 
 class MessageRouter:
     """Select routes by priority, then registration order, using full sessions.
@@ -93,7 +91,3 @@ class MessageRouter:
             memory_message=memory_message,
             bot=bot,
         )
-
-    async def get_receive_permission_error(self, session: Session) -> str | None:
-        """Let the target transport enforce cross-session receive permissions."""
-        return await self._resolve(session).get_receive_permission_error(session)

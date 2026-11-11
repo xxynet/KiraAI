@@ -5,7 +5,9 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from core.persona.persona_manager import PersonaManager
 from core.plugin.handlers import EventType, event_handler_reg
+from core.provider import LLMModelClient, LLMRequest
 from core.utils.media_refs import session_media_scope
 from core.utils.tool_utils import BaseTool
 
@@ -14,8 +16,10 @@ from .base_agent_executor import (
     BaseAgentExecutionContext,
     BaseAgentExecutor,
 )
+from .config import SubAgentConfig
 from .hook_context import ToolCallContext
 from .hooks import AgentExecutionHooks
+from .message import OpenAIMessage
 from .subagent_event import SubAgentEvent
 from .tool_executor import ToolExecutor
 
@@ -48,6 +52,33 @@ class SubAgentToolExecutor(ToolExecutor):
 class SubAgentExecutionHooks(AgentExecutionHooks[SubAgentExecutionContext]):
     """Run shared tool approvals without broadcasting IM response hooks."""
 
+    def __init__(
+        self,
+        *,
+        config: SubAgentConfig | None = None,
+        persona_manager: PersonaManager | None = None,
+    ):
+        self.config = config or SubAgentConfig()
+        self.persona_manager = persona_manager
+        self._persona_message: OpenAIMessage | None = None
+
+    async def on_llm_request(self, ctx: SubAgentExecutionContext, request: LLMRequest) -> None:
+        if self.config.instruction_source != "persona":
+            return
+        if self.persona_manager is None:
+            raise ValueError("Persona manager unavailable")
+        persona = await self.persona_manager.get_persona(self.config.persona_id)
+        if persona is None:
+            raise ValueError(f"Subagent persona is unavailable: {self.config.persona_id or 'active'}")
+        message = OpenAIMessage(
+            role="system",
+            content=persona.content or "",
+        )
+        for messages in (ctx.messages, request.messages):
+            messages[:] = [item for item in messages if item is not self._persona_message]
+            messages.insert(0, message)
+        self._persona_message = message
+
     async def on_tool_call(self, ctx: ToolCallContext) -> None:
         for handler in event_handler_reg.get_handlers(EventType.ON_TOOL_CALL):
             await handler.exec_handler(ctx)
@@ -65,7 +96,7 @@ class SubAgentExecutor(BaseAgentExecutor[SubAgentExecutionContext]):
         context: SubAgentExecutionContext,
         semaphore: asyncio.Semaphore,
         on_turn_end: Callable[[SubAgentExecutionContext, BaseException | None], Awaitable[None]],
-        on_turn_start: Callable[[], Awaitable[None]],
+        on_turn_start: Callable[[], Awaitable[list[LLMModelClient] | None]],
         **kwargs,
     ):
         super().__init__(
@@ -97,7 +128,9 @@ class SubAgentExecutor(BaseAgentExecutor[SubAgentExecutionContext]):
                 slot.result()
                 if run_state.abort_requested.is_set():
                     return
-                await self.on_turn_start()
+                models = await self.on_turn_start()
+                if models is not None:
+                    run_state.model_group = models
                 ctx.event._stopped = False
                 iterator = super()._run(ctx, run_state)
                 async for step in iterator:

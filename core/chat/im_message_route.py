@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from core.adapter.capabilities import IMCapability
-
 from .message_utils import (
     KiraIMSentResult,
     KiraMessageBatchEvent,
@@ -61,22 +59,3 @@ class IMMessageRoute:
             memory_message=memory_message,
             bot=bot,
         )
-
-    async def get_receive_permission_error(self, session: Session) -> str | None:
-        """Apply the existing adapter policy to the opaque target ID."""
-        adapter_name, session_type, session_id = session.adapter_name, session.session_type, session.session_id
-        if session_type not in {"dm", "gm"}:
-            return "Permission denied: target session type must be dm or gm"
-        adapter = self.adapter_mgr.get_adapter(adapter_name)
-        if adapter is None:
-            return f"Permission denied: adapter not found: {adapter_name}"
-        try:
-            capability = adapter.get_capability(IMCapability)
-        except ValueError:
-            is_allowed = False
-        else:
-            permission = "im.direct.receive" if session_type == "dm" else "im.group.receive"
-            is_allowed = capability.is_allowed(session_id, permission=permission)
-        if not is_allowed:
-            return f"Permission denied: target session is not allowed by adapter {adapter_name}"
-        return None
