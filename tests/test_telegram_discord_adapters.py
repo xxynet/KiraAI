@@ -29,6 +29,7 @@ from core.chat.message_elements import (
 )
 from core.plugin.plugin_context import PluginContext
 from tests.adapter_lifecycle import start_adapter
+from tests.im_workflow_helpers import make_session_manager
 from tests.test_adapter_routing import processor_for
 
 
@@ -261,6 +262,7 @@ async def test_plugin_notices_use_adapter_metadata_and_session_format(adapter_fa
     ctx = PluginContext.__new__(PluginContext)
     ctx.adapter_mgr = NS(get_adapter=lambda name: adapter)
     ctx.event_bus = NS(publish=AsyncMock())
+    ctx.session_mgr = make_session_manager()
     sid = f"{adapter.info.name}:{'gm' if group else 'dm'}:123"
     await ctx.publish_notice(sid, MessageChain([Text("notice")]))
     event = ctx.event_bus.publish.await_args.args[0]

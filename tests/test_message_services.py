@@ -24,7 +24,11 @@ from core.workflow.src.im.message_delivery import MessageDeliveryService
 from core.workflow.src.im.message_formatter import MessageFormatter
 from core.workflow.src.im.native_content import MessageMediaService
 from core.workflow.src.im.workflow import DefaultIMWorkflow
-from tests.im_workflow_helpers import make_workflow_context
+from tests.im_workflow_helpers import (
+    make_message_router,
+    make_session_manager,
+    make_workflow_context,
+)
 
 
 def test_delivery_delays_follow_config_changes():
@@ -45,19 +49,43 @@ def test_delivery_delays_follow_config_changes():
 
 @pytest.mark.anyio
 async def test_plugin_context_exposes_services_without_processor_dependency():
-    history = MessageHistoryService(Mock(), Mock())
+    history = MessageHistoryService(Mock(), make_session_manager())
     prompt_manager, skills_manager, mcp_manager = Mock(), Mock(), Mock()
     cache = ImageDescCache(history.db)
+    adapter_mgr = Mock()
+    delivery = MessageDeliveryService(
+        kira_config=Mock(),
+        adapter_mgr=adapter_mgr,
+        persona_mgr=None,
+        message_history=history,
+    )
+    router = make_message_router(
+        adapter_mgr=adapter_mgr,
+        message_delivery=delivery,
+    )
     context = PluginContext(
-        db=history.db, config=Mock(), event_bus=Mock(), provider_mgr=Mock(),
-        tool_mgr=Mock(), adapter_mgr=Mock(), persona_mgr=Mock(),
-        sticker_mgr=Mock(), session_mgr=history.session_manager,
-        message_processor=SimpleNamespace(), message_history=history,
-        prompt_mgr=prompt_manager, skills_mgr=skills_manager, mcp_mgr=mcp_manager,
-        image_desc_cache=cache, session_buffer_mgr=SessionBufferManager(),
-        message_delivery=MessageDeliveryService(Mock(), Mock(), None, history),
+        db=history.db,
+        config=Mock(),
+        event_bus=Mock(),
+        provider_mgr=Mock(),
+        tool_mgr=Mock(),
+        adapter_mgr=adapter_mgr,
+        persona_mgr=Mock(),
+        sticker_mgr=Mock(),
+        session_mgr=history.session_manager,
+        message_processor=SimpleNamespace(),
+        message_history=history,
+        prompt_mgr=prompt_manager,
+        skills_mgr=skills_manager,
+        mcp_mgr=mcp_manager,
+        image_desc_cache=cache,
+        session_buffer_mgr=SessionBufferManager(),
+        message_delivery=delivery,
+        message_router=router,
+        subagent_mgr=Mock(),
     )
 
+    assert context.message_router is router
     assert context.image_desc_cache is cache
     assert context.message_history is history
     assert context.prompt_mgr is prompt_manager
@@ -93,11 +121,15 @@ async def test_plugin_context_exposes_services_without_processor_dependency():
     result = KiraIMSentResult("sent-id")
     context.message_delivery.send_message_chain = AsyncMock(return_value=result)
     assert await context.send_message_chain(sid, first.message.chain) is result
-    context.message_delivery.send_message_chain.assert_awaited_once_with(sid, first.message.chain, bot=None)
+    context.message_delivery.send_message_chain.assert_awaited_once_with(
+        sid, first.message.chain, memory_message=None, bot=None,
+    )
     context.message_delivery.send_message_chain.reset_mock()
     bot = User("bot", "Kira")
     assert await context.send_message_chain(sid, first.message.chain, bot=bot) is result
-    context.message_delivery.send_message_chain.assert_awaited_once_with(sid, first.message.chain, bot=bot)
+    context.message_delivery.send_message_chain.assert_awaited_once_with(
+        sid, first.message.chain, memory_message=None, bot=bot,
+    )
 
 
 def make_event(identity="one"):
@@ -123,7 +155,15 @@ async def test_compatibility_entry_points_share_buffer_and_send_lock():
     history = MessageHistoryService(Mock(), Mock())
     cache = ImageDescCache(history.db)
     services = make_workflow_context(config=config, message_history=history, image_desc_cache=cache)
-    processor = MessageProcessor(DefaultIMWorkflow(services))
+    workflow = DefaultIMWorkflow(services)
+    processor = MessageProcessor(
+        workflow,
+        message_router=make_message_router(
+            adapter_mgr=services.message_delivery.adapter_mgr,
+            message_delivery=services.message_delivery,
+            workflow=workflow,
+        ),
+    )
     event = make_event()
     sid = event.session.sid
 

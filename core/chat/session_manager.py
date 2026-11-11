@@ -6,6 +6,7 @@ import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, overload
+from uuid import uuid4
 
 from core.config import KiraConfig
 from core.db.service import DatabaseService
@@ -125,6 +126,53 @@ class SessionManager:
             raise ValueError("Session data must be an object")
         return record
 
+    async def resolve_session(self, target: Session | str) -> Session:
+        """Resolve delivery targets without creating or changing stored sessions.
+
+        Full objects are used as supplied. Stored SID and internal-ID targets
+        load their complete context. Unstored SIDs remain valid for proactive IM
+        delivery, preserving the existing plugin sending contract.
+        """
+        if isinstance(target, Session):
+            return target
+        if not isinstance(target, str) or not target:
+            raise ValueError("Session target must be a Session, SID, or internal ID")
+        if ":" not in target:
+            row = await self.db.get_chat_session_by_id(target)
+            if row is None:
+                raise ValueError(f"Session not found: {target}")
+            record = Session.from_record(row)
+            if not isinstance(record.data, dict):
+                raise ValueError("Session data must be an object")
+            return record
+        parts = target.split(":", maxsplit=2)
+        if len(parts) != 3 or any(not part for part in parts):
+            raise ValueError("Invalid session routing key")
+        record = await self.get_session(target)
+        return record if record is not None else Session(*parts)
+
+    async def create_subagent_session(
+        self,
+        *,
+        title: str = "",
+        parent_id: str | None = None,
+        data: dict | None = None,
+    ) -> Session:
+        """Create an independent child or root session with one stable identity."""
+        async with self._write_lock:
+            if parent_id is not None and await self.db.get_chat_session_by_id(parent_id) is None:
+                raise ValueError(f"Parent session not found: {parent_id}")
+            identity = f"sess_{uuid4().hex}"
+            record = await self.db.save_chat_session(
+                f"subagent:dm:{identity}",
+                internal_id=identity,
+                kind="subagent",
+                parent_id=parent_id,
+                title=title,
+                data=copy.deepcopy(data or {}),
+            )
+        return Session.from_record(record)
+
     async def get_session_message_counts(self, session: str | None = None) -> dict[str, int]:
         """Return chunk counts for one routing SID, or all sessions when omitted."""
         if session is None:
@@ -223,13 +271,28 @@ class SessionManager:
                 data["data"]["capabilities"] = copy.deepcopy(capabilities)
             await self._save_session(session, data)
 
-    async def update_memory(self, session: str, new_chunk):
+    async def update_memory(
+        self,
+        session: str,
+        new_chunk,
+        *,
+        metadata: dict | None = None,
+        require_existing: bool = False,
+    ):
         from core.agent.message import OpenAIMessage
 
         new_chunk = normalize_memory([[m.to_memory_dict() if isinstance(m, OpenAIMessage) else m for m in new_chunk]])[0]
         async with self._write_lock:
-            data = await self._session_data(session)
-            data["content"].append(new_chunk)
+            if require_existing:
+                data = await self.db.get_chat_session(session)
+                if data is None:
+                    return False
+            else:
+                data = await self._session_data(session)
+            if new_chunk or not require_existing:
+                data["content"].append(new_chunk)
+            if metadata is not None:
+                data["data"].update(copy.deepcopy(metadata))
             discarded_memory = []
             if len(data["content"]) > self.max_memory_length:
                 overflow_count = len(data["content"]) - self.max_memory_length

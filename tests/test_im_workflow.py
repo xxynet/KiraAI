@@ -15,6 +15,7 @@ from core.chat.message_utils import (
     MessageChain,
 )
 from core.chat.session import Session, User
+from core.chat.session_manager import SessionManager
 from core.config.config_loader import KiraConfig
 from core.message_manager import MessageProcessor
 from core.plugin.handlers import EventType, event_handler_reg
@@ -22,7 +23,7 @@ from core.prompt_manager import Prompt
 from core.provider import LLMResponse
 from core.tag import RootTagAction
 from core.workflow.src.im.workflow import DefaultIMWorkflow
-from tests.im_workflow_helpers import make_workflow_context
+from tests.im_workflow_helpers import make_message_router, make_workflow_context
 from tests.image_samples import PNG_DATA_URL
 
 
@@ -74,8 +75,74 @@ def processor(monkeypatch):
     services.message_delivery.parse_xml = AsyncMock(return_value=[MessageChain([Text("reply")])])
     services.message_delivery.send_message_chain = AsyncMock(return_value=KiraIMSentResult("sent-id"))
     services.message_media.build_native_content = AsyncMock(return_value=[])
-    instance = MessageProcessor(DefaultIMWorkflow(services))
+    services.session_manager.resolve_session = SessionManager.resolve_session.__get__(services.session_manager)
+    workflow = DefaultIMWorkflow(services)
+    instance = MessageProcessor(
+        workflow,
+        message_router=make_message_router(
+            adapter_mgr=services.message_delivery.adapter_mgr,
+            message_delivery=services.message_delivery,
+            workflow=workflow,
+        ),
+    )
     return instance, model
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("with_skills", [False, True])
+async def test_subagent_presets_are_built_with_skills_after_tools(processor, tmp_path, with_skills):
+    from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
+    from core.workflow.src.im.context import IMBatchContext
+    from core.workflow.src.im.stages.assemble import AssembleRequestStage
+    from core.workflow.src.im.stages.request import BuildRequestStage
+
+    instance, _ = processor
+    services = instance.im_workflow.ctx
+    store = SubAgentPresetStore(tmp_path / "presets.json")
+    preset = await store.save(SubAgentPreset(
+        name="Reviewer",
+        description="Inspect performance",
+        instruction="Private system prompt",
+    ))
+    await store.save(SubAgentPreset(name="Hidden", enabled=False))
+    services.subagent_manager = SimpleNamespace(presets=store)
+    services.prompt_manager.get_agent_prompt.side_effect = lambda *_: [
+        Prompt("Tools\n", name="tools"),
+        Prompt("Time\n", name="time"),
+    ]
+    skill = SimpleNamespace(name="Allowed", enabled=True)
+    blocked = SimpleNamespace(name="Blocked", enabled=True)
+    disabled = SimpleNamespace(name="Disabled", enabled=False)
+    services.skills_manager = SimpleNamespace(
+        skills_info=[skill, blocked, disabled] if with_skills else [],
+        is_skill_allowed=lambda name, sid: name == "Allowed",
+        build_skills_prompt=Mock(return_value=Prompt("Skills\n", name="skills")),
+    )
+    event = batch()
+    event.messages[0].message_str = "task"
+    ctx = IMBatchContext(services, event)
+    assert await BuildRequestStage().run(ctx)
+    expected = ["tools", "skills", "subagent_presets", "time"] if with_skills else ["tools", "subagent_presets", "time"]
+    assert [prompt.name for prompt in ctx.request.system_prompt] == expected
+    if with_skills:
+        services.skills_manager.build_skills_prompt.assert_called_once_with([skill])
+    else:
+        services.skills_manager.build_skills_prompt.assert_not_called()
+    catalog = ctx.request.system_prompt[2 if with_skills else 1]
+    assert catalog.source == "system"
+    assert "- **Reviewer**: Inspect performance" in catalog.content
+    assert preset["id"] not in catalog.content
+    assert "preset_name" in catalog.content
+    assert "spawn_agent" in catalog.content
+    assert "Hidden" not in catalog.content
+    assert "Private system prompt" not in catalog.content
+    assert await AssembleRequestStage().run(ctx)
+    assert any("Inspect performance" in (message.content or "") for message in ctx.request.messages)
+    assert all("Inspect performance" not in (message.content or "") for message in ctx.new_messages)
+    await store.save(SubAgentPreset(name="Reviewer", enabled=False), preset["id"])
+    next_ctx = IMBatchContext(services, batch())
+    assert await BuildRequestStage().run(next_ctx)
+    assert [prompt.name for prompt in next_ctx.request.system_prompt] == (["tools", "skills", "time"] if with_skills else ["tools", "time"])
 
 
 @pytest.mark.anyio
@@ -360,6 +427,11 @@ async def test_batch_runs_with_injected_services_without_processor(processor):
     })
     workflow = DefaultIMWorkflow(services)
 
+    services.message_router = make_message_router(
+        adapter_mgr=original.message_delivery.adapter_mgr,
+        message_delivery=delivery,
+        workflow=workflow,
+    )
     await workflow.handle_batch_event(batch())
 
     assert not hasattr(services, "processor")
@@ -373,6 +445,47 @@ async def test_batch_runs_with_injected_services_without_processor(processor):
     memory = services.session_manager.update_memory.call_args.args[1]
     assert memory[0].content == "injected\n"
     assert 'message_id="injected-id"' in memory[1].content
+
+
+@pytest.mark.anyio
+async def test_automatic_im_reply_uses_the_session_route_and_keeps_result_hooks(processor, monkeypatch):
+    instance, model = processor
+    services = instance.im_workflow.ctx
+    session = Session(
+        adapter_name="adapter",
+        session_type="dm",
+        session_id="user",
+        internal_id="sess_custom",
+        data={"kind": "worker"},
+        content=[[{"role": "user", "content": "previous instruction"}]],
+    )
+    services.session_manager.get_session = AsyncMock(return_value=session)
+    receipt = KiraIMSentResult(message_id="worker-receipt")
+    route = SimpleNamespace(
+        matches=lambda target: target.data.get("kind") == "worker",
+        send_message_chain=AsyncMock(return_value=receipt),
+    )
+    services.message_router.register_route(route)
+    sent = AsyncMock()
+    monkeypatch.setattr(event_handler_reg, "get_handlers", lambda event_type: (
+        [SimpleNamespace(exec_handler=sent)] if event_type == EventType.ON_MESSAGE_SENT else []
+    ))
+
+    await instance.im_workflow.handle_batch_event(batch())
+
+    model.chat.assert_awaited_once()
+    route.send_message_chain.assert_awaited_once()
+    target, chain = route.send_message_chain.await_args.args
+    assert target is session
+    assert target.content[0][0]["content"] == "previous instruction"
+    assert chain[0].text == "reply"
+    assert route.send_message_chain.await_args.kwargs["memory_message"] is not None
+    assert route.send_message_chain.await_args.kwargs["bot"].user_id == "bot"
+    services.message_delivery.send_message_chain.assert_not_awaited()
+    sent.assert_awaited_once()
+    assert sent.await_args.args[2] is receipt
+    memory = services.session_manager.update_memory.call_args.args[1]
+    assert 'message_id="worker-receipt"' in memory[-1].content
 
 
 @pytest.mark.anyio
@@ -641,7 +754,14 @@ async def test_direct_im_and_comments_share_limit_while_batches_can_run(processo
 
     original, _ = processor
     workflow = DefaultIMWorkflow(original.im_workflow.ctx, max_concurrent_messages=1)
-    instance = MessageProcessor(workflow)
+    instance = MessageProcessor(
+        workflow,
+        message_router=make_message_router(
+            adapter_mgr=workflow.ctx.message_delivery.adapter_mgr,
+            message_delivery=workflow.ctx.message_delivery,
+            workflow=workflow,
+        ),
+    )
     entered = asyncio.Event()
     release = asyncio.Event()
 

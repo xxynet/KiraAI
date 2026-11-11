@@ -14,6 +14,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from copy import copy, deepcopy
 from dataclasses import dataclass, field
 from functools import partial
+from itertools import count
 from typing import Generic, Literal, TypeVar
 
 from openai import APIConnectionError, APIStatusError, APITimeoutError
@@ -183,7 +184,7 @@ class BaseAgentExecutor(Generic[ContextT]):
         return _AgentRunState(
             config=config, model_group=self.model_group.copy(),
             request=self._build_request(tool_set),
-            accepting_steering=config.max_steps > 0,
+            accepting_steering=config.max_steps != 0,
         )
 
     def _begin_run(self) -> _AgentRunState:
@@ -456,6 +457,7 @@ class BaseAgentExecutor(Generic[ContextT]):
         model_group = run_state.model_group
         config = run_state.config
         max_steps = config.max_steps
+        step_limit = "unlimited" if max_steps == -1 else max_steps
 
         if not model_group:
             raise ValueError("model_group must be a non-empty list of LLMModelClient")
@@ -471,7 +473,7 @@ class BaseAgentExecutor(Generic[ContextT]):
         if run_state.abort_requested.is_set():
             return
         self._apply_steering(ctx, run_state)
-        for step in range(max_steps):
+        for step in (count() if max_steps == -1 else range(max_steps)):
             if run_state.abort_requested.is_set():
                 return
             step_index = step + 1
@@ -507,6 +509,9 @@ class BaseAgentExecutor(Generic[ContextT]):
                 model_name = model.model.model_name
                 try:
                     self._apply_steering(ctx, run_state)
+                    await self.hooks.on_llm_request(ctx, request)
+                    if run_state.abort_requested.is_set():
+                        return
                     llm_resp = await model.chat(request)
                     if model_idx > 0:
                         llm_logger.info(f"[{sid}] Successfully switched to model: {model_name} ({provider_name})")
@@ -550,7 +555,7 @@ class BaseAgentExecutor(Generic[ContextT]):
                     cached_tokens_info += f" (Cache hit rate: {cache_hit_rate:.1f}%)"
 
             llm_logger.info(
-                f"[{sid}] Time consumed: {llm_resp.time_consumed}s, Input tokens: {llm_resp.input_tokens}, output tokens: {llm_resp.output_tokens}{cached_tokens_info}, step: {step_index}/{max_steps}"
+                f"[{sid}] Time consumed: {llm_resp.time_consumed}s, Input tokens: {llm_resp.input_tokens}, output tokens: {llm_resp.output_tokens}{cached_tokens_info}, step: {step_index}/{step_limit}"
             )
 
             stopped_by_hook = await self.hooks.on_llm_response(ctx, llm_resp)

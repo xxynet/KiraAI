@@ -35,17 +35,23 @@ class BuildRequestStage(BaseStage[IMBatchContext]):
         # Generate agent prompt
         agent_prompt_list = await services.prompt_manager.get_agent_prompt(chat_env)
 
-        # Inject skills prompt (filtered by scope)
+        # Build scoped Skills and enabled subagent preset prompts.
         allowed_skills = []
         for s in services.skills_manager.skills_info:
             if not s.enabled:
                 continue
             if services.skills_manager.is_skill_allowed(s.name, sid):
                 allowed_skills.append(s)
+        capability_prompts = []
         if allowed_skills:
+            capability_prompts.append(services.skills_manager.build_skills_prompt(allowed_skills))
+        subagent_prompt = services.subagent_manager.presets.build_presets_prompt()
+        if subagent_prompt is not None:
+            capability_prompts.append(subagent_prompt)
+        if capability_prompts:
             for i, p in enumerate(agent_prompt_list):
                 if p.name == "tools":
-                    agent_prompt_list.insert(i+1, services.skills_manager.build_skills_prompt(allowed_skills))
+                    agent_prompt_list[i + 1:i + 1] = capability_prompts
                     break
 
         model_group: list[LLMModelClient] = []

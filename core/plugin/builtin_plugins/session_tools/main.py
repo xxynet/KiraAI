@@ -32,6 +32,7 @@ SESSION_SEND_PROMPT = """
 ### session_send 工具说明
 当你需要在其他会话（私聊、群聊等）发送消息时，
 即 当前会话 ≠ 发消息目标会话时，需要调用 `session_send` 工具进行**跨会话发送**。
+向已有子代理交付后续任务时，使用 `followup_task`。
 
 `target` 必须从「当前存在的会话」列表中逐字复制完整会话标识。标识第一段
 `adapter_name` 是用户配置的适配器实例名，可能是任意名称，和 QQ、Telegram 等
@@ -261,34 +262,34 @@ class SessionPlugin(BasePlugin):
         }
     )
     async def session_send(self, event: KiraMessageBatchEvent, target: str, description: str):
-        parts = target.split(":", maxsplit=2)
-        if len(parts) != 3 or any(not part for part in parts):
-            raise ValueError("Failed to parse sid")
-        if event.sid == target:
-            return "Do not send messages to current session using this tool, output directly to send messages"
-
-        adapter_name, session_type, session_id = parts
-        if session_type not in {"dm", "gm"}:
-            return "Permission denied: target session type must be dm or gm"
-
-        adapter = self.ctx.adapter_mgr.get_adapter(adapter_name)
-        if not adapter:
-            return f"Permission denied: adapter not found: {adapter_name}"
-
         try:
-            capability = adapter.get_capability(IMCapability)
-        except ValueError:
-            is_allowed = False
-        else:
-            permission = "im.direct.receive" if session_type == "dm" else "im.group.receive"
-            is_allowed = capability.is_allowed(session_id, permission=permission)
-        if not is_allowed:
-            return f"Permission denied: target session is not allowed by adapter {adapter_name}"
-
-        try:
+            session = await self.ctx.session_mgr.resolve_session(target)
+            if event.sid == session.sid:
+                return "Do not send messages to current session using this tool, output directly to send messages"
+            if session.kind == "subagent":
+                return "Use followup_task to send a task to a subagent session"
+            if session.kind != "im":
+                return f"Unsupported target session kind: {session.kind}"
+            if session.session_type not in {"dm", "gm"}:
+                return "Permission denied: target session type must be dm or gm"
+            adapter = self.ctx.adapter_mgr.get_adapter(session.adapter_name)
+            if adapter is None:
+                return f"Permission denied: adapter not found: {session.adapter_name}"
+            try:
+                capability = adapter.get_capability(IMCapability)
+            except ValueError:
+                is_allowed = False
+            else:
+                permission = "im.direct.receive" if session.session_type == "dm" else "im.group.receive"
+                is_allowed = capability.is_allowed(
+                    session.session_id,
+                    permission=permission,
+                )
+            if not is_allowed:
+                return f"Permission denied: target session is not allowed by adapter {session.adapter_name}"
             cross_session_prompt = CROSS_SESSION_PROMPT.format(session_id=event.sid, description=description)
 
-            await self.ctx.publish_notice(target, MessageChain([Text(cross_session_prompt)]))
+            await self.ctx.publish_notice(session, MessageChain([Text(cross_session_prompt)]))
             return "message sent"
         except Exception as e:
             return f"failed to send: {e}"

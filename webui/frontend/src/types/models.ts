@@ -396,6 +396,8 @@ export interface SessionCapabilities {
 }
 
 export interface SessionItem {
+  kind: 'im' | 'subagent'
+  parent_id: string | null
   internal_id?: string | null
   created_at?: number | null
   updated_at?: number | null

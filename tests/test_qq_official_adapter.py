@@ -16,6 +16,7 @@ from core.adapter.src.qq_official.qq_official import QQOfficialAdapter
 from core.chat import MessageChain
 from core.chat.message_elements import At, Emoji, File, Image, Record, Reply, Text
 from tests.adapter_lifecycle import start_adapter
+from tests.im_workflow_helpers import make_message_router, make_session_manager
 
 
 def test_qq_official_schema_starts_with_setup_info():
@@ -499,13 +500,15 @@ async def test_cross_session_tool_uses_qq_official_receive_policy(group):
         adapter_mgr=SimpleNamespace(get_adapter=lambda name: adapter),
         publish_notice=AsyncMock(), config={"bot_config": {"bot": {}}},
     )
+    ctx.session_mgr = make_session_manager()
+    ctx.message_router = make_message_router(ctx.adapter_mgr)
     plugin = SessionPlugin(ctx, {})
     kind = "gm" if group else "dm"
     target_id = "group-openid" if group else "user-openid"
     event = SimpleNamespace(sid="source:dm:1")
     target = f"qq_official:{kind}:{target_id}"
     assert await plugin.session_send(event, target, "hello") == "message sent"
-    assert ctx.publish_notice.await_args.args[0] == target
+    assert ctx.publish_notice.await_args.args[0].sid == target
     assert "Permission denied" in await plugin.session_send(event, f"qq_official:{kind}:unlisted", "hello")
     assert ctx.publish_notice.await_count == 1
 

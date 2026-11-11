@@ -662,10 +662,12 @@ class MCPManager:
             asyncio.create_task(init_server(server))
 
     def _make_mcp_func(self, server: MCPServer, tool_name: str):
-        async def _wrapped(*_, **kwargs):
-            # ignore positional args, e.g. MessageEvent
+        async def _wrapped(*args, **kwargs):
             if not self._is_server_active(server.id):
                 raise RuntimeError(f"MCP server {server.name} is disabled or removed")
+            sid = getattr(args[0], "sid", None) if args else None
+            if sid is not None and not self.is_server_allowed(server.id, sid):
+                raise PermissionError(f"MCP server is not allowed for the calling session: {server.name}")
             client = await self._get_connected_client(server, require_active=True)
             try:
                 result = await client.call_tool(tool_name, kwargs, timeout=server.timeout)

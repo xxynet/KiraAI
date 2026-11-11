@@ -117,6 +117,8 @@ class ChatSessionRecord(Base):
 
     id = Column(String(37), primary_key=True, nullable=False)
     session_key = Column(String, unique=True, nullable=False)
+    kind = Column(String(32), nullable=False, server_default="im")
+    parent_id = Column(String(37), nullable=True, index=True)
     title = Column(Text().evaluates_none(), nullable=True, server_default="")
     description = Column(Text().evaluates_none(), nullable=True, server_default="")
     content = Column(JSON, nullable=False, server_default="[]")

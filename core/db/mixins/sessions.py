@@ -4,7 +4,7 @@ import time
 from copy import deepcopy
 from uuid import uuid4
 
-from sqlalchemy import case, delete, func, select
+from sqlalchemy import case, delete, func, select, update
 
 from core.config import VERSION
 
@@ -60,6 +60,7 @@ class ChatSessionMixin:
     def _chat_session_record(row: ChatSessionRecord) -> dict:
         return {
             "id": row.id, "session_key": row.session_key,
+            "kind": row.kind or "im", "parent_id": row.parent_id,
             "title": row.title, "description": row.description,
             "content": deepcopy(row.content), "created_at": row.created_at,
             "updated_at": row.updated_at, "data": deepcopy(row.data),
@@ -71,6 +72,7 @@ class ChatSessionMixin:
         columns = [
             ChatSessionRecord.id, ChatSessionRecord.session_key,
             ChatSessionRecord.title, ChatSessionRecord.description,
+            ChatSessionRecord.kind, ChatSessionRecord.parent_id,
             ChatSessionRecord.created_at, ChatSessionRecord.updated_at, ChatSessionRecord.data,
         ]
         if include_content:
@@ -84,6 +86,18 @@ class ChatSessionMixin:
         query = self._chat_session_query(
             include_content=include_content,
         ).where(ChatSessionRecord.session_key == session_key)
+        async with self.db.get_session() as session:
+            result = await session.execute(query)
+            row = result.mappings().one_or_none()
+            return dict(row) if row is not None else None
+
+    async def get_chat_session_by_id(
+        self, internal_id: str, *, include_content: bool = True,
+    ) -> dict | None:
+        """Read a session by its stable identity rather than its routing key."""
+        query = self._chat_session_query(
+            include_content=include_content,
+        ).where(ChatSessionRecord.id == internal_id)
         async with self.db.get_session() as session:
             result = await session.execute(query)
             row = result.mappings().one_or_none()
@@ -114,8 +128,16 @@ class ChatSessionMixin:
             return {session_key: message_count for session_key, message_count in result}
 
     async def save_chat_session(
-        self, session_key: str, *, title=_FIELD_UNSET, description=_FIELD_UNSET,
-        content=_FIELD_UNSET, data=_FIELD_UNSET,
+        self,
+        session_key: str,
+        *,
+        title=_FIELD_UNSET,
+        description=_FIELD_UNSET,
+        content=_FIELD_UNSET,
+        data=_FIELD_UNSET,
+        kind=_FIELD_UNSET,
+        parent_id=_FIELD_UNSET,
+        internal_id: str | None = None,
     ) -> dict:
         """Save supplied fields while retaining omitted fields, ID and creation time."""
         updated_at = int(time.time())
@@ -125,12 +147,20 @@ class ChatSessionMixin:
             ))
             if row is None:
                 row = ChatSessionRecord(
-                    id=f"sess_{uuid4().hex}", session_key=session_key, created_at=updated_at,
-                    title="", description="", content=[], data={},
+                    id=internal_id or f"sess_{uuid4().hex}",
+                    session_key=session_key,
+                    created_at=updated_at,
+                    kind="im",
+                    parent_id=None,
+                    title="",
+                    description="",
+                    content=[],
+                    data={},
                 )
                 session.add(row)
             for name, value in (("title", title), ("description", description),
-                                ("content", content), ("data", data)):
+                                ("content", content), ("data", data),
+                                ("kind", kind), ("parent_id", parent_id)):
                 if value is not _FIELD_UNSET:
                     setattr(row, name, deepcopy(value))
             row.updated_at = updated_at
@@ -139,6 +169,13 @@ class ChatSessionMixin:
 
     async def delete_chat_session(self, session_key: str) -> None:
         async with self.db.transaction() as session:
+            identity = await session.scalar(select(ChatSessionRecord.id).where(
+                ChatSessionRecord.session_key == session_key,
+            ))
+            if identity is not None:
+                await session.execute(update(ChatSessionRecord).where(
+                    ChatSessionRecord.parent_id == identity,
+                ).values(parent_id=None))
             await session.execute(delete(ChatSessionRecord).where(
                 ChatSessionRecord.session_key == session_key,
             ))

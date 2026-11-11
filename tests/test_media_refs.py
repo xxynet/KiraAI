@@ -145,7 +145,7 @@ async def test_stopped_batch_does_not_persist_native_media(monkeypatch):
 
     services.message_media.build_native_content = record_persistence
     monkeypatch.setattr(
-        "core.message_manager.event_handler_reg.get_handlers",
+        "core.plugin.handlers.event_handler_reg.get_handlers",
         lambda *_args, **_kwargs: [StopHandler()],
     )
     event = SimpleNamespace(

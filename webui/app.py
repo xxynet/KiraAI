@@ -34,6 +34,7 @@ from webui.routes.sessions import SessionsRoutes
 from webui.routes.settings import SettingsRoutes
 from webui.routes.skills import SkillsRoutes
 from webui.routes.stickers import StickersRoutes
+from webui.routes.subagents import SubAgentsRoutes
 from webui.routes.system import SystemRoutes
 from webui.routes.webchat import WebChatRoutes
 from webui.utils import _get_or_generate_access_token
@@ -148,6 +149,7 @@ class KiraWebUI:
         ConfigRoutes(self.app, self.lifecycle).register()
         StickersRoutes(self.app, self.lifecycle).register()
         SkillsRoutes(self.app, self.lifecycle).register()
+        SubAgentsRoutes(self.app, self.lifecycle).register()
         ScopeRoutes(self.app, self.lifecycle).register()
         SettingsRoutes(self.app, self.lifecycle).register()
         SystemRoutes(self.app, self.lifecycle).register()

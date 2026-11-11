@@ -6,6 +6,7 @@ import json
 import pytest
 from sqlalchemy import text
 
+from core.chat.session import Session
 from core.chat.session_manager import SessionManager
 from tests.test_session_manager_events import RecordingEventBus, wait_for_event_tasks
 
@@ -17,6 +18,36 @@ def manager_for(session_db, tmp_path):
     manager = SessionManager(session_db, CONFIG, RecordingEventBus())
     manager.chat_memory_path = str(tmp_path / "chat_memory.json")
     return manager
+
+
+@pytest.mark.anyio
+async def test_delivery_resolution_loads_full_context_by_sid_or_internal_id(session_db, tmp_path):
+    manager = manager_for(session_db, tmp_path)
+    content = [[{"role": "user", "content": "performance"}]]
+    data = {"routing": {"worker": "analysis"}}
+    row = await session_db.save_chat_session(SID, content=content, data=data)
+    for target in (SID, row["id"]):
+        resolved = await manager.resolve_session(target)
+        assert resolved.internal_id == row["id"]
+        assert resolved.content == content
+        assert resolved.data == data
+        resolved.data["routing"]["worker"] = "changed"
+    assert (await session_db.get_chat_session(SID))["data"] == data
+    assert (await session_db.get_chat_session_by_id(row["id"], include_content=False)).get("content") is None
+
+
+@pytest.mark.anyio
+async def test_delivery_resolution_preserves_objects_and_does_not_persist_new_targets(session_db, tmp_path):
+    manager = manager_for(session_db, tmp_path)
+    session = Session("arbitrary:namespace", "worker", "", data={"route": "custom"})
+    assert await manager.resolve_session(session) is session
+    resolved = await manager.resolve_session("adapter:dm:opaque:123")
+    assert resolved.session_id == "opaque:123" and resolved.internal_id is None
+    assert await session_db.list_chat_sessions() == []
+    for invalid in ("sess_missing", "adapter:dm", "adapter::user", "", None):
+        with pytest.raises(ValueError):
+            await manager.resolve_session(invalid)
+    assert await session_db.list_chat_sessions() == []
 
 
 @pytest.mark.anyio

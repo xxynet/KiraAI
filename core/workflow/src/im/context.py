@@ -16,7 +16,9 @@ if TYPE_CHECKING:
     from core.agent.func_tool_manager import FuncToolManager
     from core.agent.mcp_mgr import MCPManager
     from core.agent.skills_mgr import SkillsManager
+    from core.agent.subagent_manager import SubAgentManager
     from core.chat.message_history import MessageHistoryService
+    from core.chat.message_router import MessageRouter
     from core.chat.session_buffer import SessionBufferManager
     from core.chat.session_manager import SessionManager
     from core.config import KiraConfig
@@ -37,12 +39,14 @@ class IMWorkflowContext:
     message_media: MessageMediaService
     message_buffer: SessionBufferManager
     message_delivery: MessageDeliveryService
+    message_router: MessageRouter
     config: KiraConfig
     session_manager: SessionManager
     prompt_manager: PromptManager
     provider_mgr: ProviderManager
     tool_manager: FuncToolManager
     skills_manager: SkillsManager
+    subagent_manager: SubAgentManager
     mcp_manager: MCPManager
     db: DatabaseService
     event_bus: EventBus

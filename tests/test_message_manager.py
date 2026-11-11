@@ -105,11 +105,15 @@ async def test_event_bus_records_telemetry_only_for_im(is_comment):
 @pytest.mark.anyio
 @pytest.mark.parametrize("already_stopped", [False, True])
 async def test_comment_subscription_respects_stop_and_releases_shared_limit(monkeypatch, already_stopped):
+    from core.chat.message_router import MessageRouter
     from core.message_manager import MessageProcessor
     from core.plugin.handlers import EventType, event_handler_reg
 
     semaphore = asyncio.Semaphore(1)
-    processor = MessageProcessor(SimpleNamespace(message_processing_semaphore=semaphore))
+    processor = MessageProcessor(
+        SimpleNamespace(message_processing_semaphore=semaphore),
+        message_router=MessageRouter(session_manager=Mock()),
+    )
     event = _comment_event()
     if already_stopped:
         event.stop()

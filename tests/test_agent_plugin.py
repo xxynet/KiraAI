@@ -5,11 +5,14 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from PIL import Image as PILImage
 
+from core.agent.subagent_event import SubAgentEvent
 from core.agent.tool import ToolResult
+from core.chat.session import Session
 from core.image_desc_cache import ImageDescCache
 from core.plugin.builtin_plugins.agent import main as agent_main
 from core.plugin.builtin_plugins.agent.main import AgentPlugin, BackgroundExecTask
 from core.utils import image_compression, media_refs
+from tests.im_workflow_helpers import make_session_manager
 
 
 @pytest.fixture(autouse=True)
@@ -679,15 +682,27 @@ async def test_read_file_reports_unavailable_description_when_vlm_fails(
 
 
 @pytest.mark.anyio
-async def test_read_file_attaches_raw_image_in_native_mode(agent_plugin, tmp_path, monkeypatch):
+@pytest.mark.parametrize("is_subagent", [False, True])
+async def test_read_file_attaches_raw_image_in_native_mode(agent_plugin, tmp_path, monkeypatch, is_subagent):
     monkeypatch.setattr(agent_main, "restricted_paths", [])
     monkeypatch.setattr(media_refs, "get_data_path", lambda: tmp_path)
     agent_plugin.allowed_read_paths = (str(tmp_path),)
     agent_plugin.ctx = make_media_ctx(mode="native")
     target = _png_file(tmp_path)
-    event = SimpleNamespace(
-        sid="test:dm:1", messages=[SimpleNamespace(message_id="msg-1")]
-    )
+    if is_subagent:
+        child = Session("subagent", "dm", "child", kind="subagent")
+        event = SubAgentEvent(
+            session=Session("test", "dm", "1"),
+            agent_session=child,
+            content="read image",
+        )
+        media_sid, message_id = child.sid, event.messages[-1].message_id
+    else:
+        media_sid, message_id = "test:dm:1", "msg-1"
+        event = SimpleNamespace(
+            sid=media_sid,
+            messages=[SimpleNamespace(message_id=message_id)],
+        )
 
     with patch.object(agent_main, "desc_img", AsyncMock()) as desc_img:
         result = await agent_plugin.read_file(event, str(target))
@@ -699,6 +714,7 @@ async def test_read_file_attaches_raw_image_in_native_mode(agent_plugin, tmp_pat
     assert ref["type"] == media_refs.MEDIA_REF_TYPE
     assert ref["mime_type"] == "image/png"
     stored = tmp_path / ref["path"]
+    assert stored.parent == media_refs._message_directory(media_sid, message_id)
     assert stored.read_bytes() == target.read_bytes()
     desc_img.assert_not_awaited()
 
@@ -923,6 +939,7 @@ async def test_background_result_reaches_real_notice_api_without_im(agent_plugin
     ctx = object.__new__(PluginContext)
     ctx.adapter_mgr = SimpleNamespace(get_adapter=lambda name: adapter)
     ctx.event_bus = SimpleNamespace(publish=AsyncMock())
+    ctx.session_mgr = make_session_manager()
     agent_plugin.ctx = ctx
     completed = asyncio.get_running_loop().create_future()
     completed.set_result("finished")

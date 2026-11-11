@@ -727,9 +727,13 @@ class AgentPlugin(BasePlugin):
 
         try:
             if mode == "native":
+                target_session = getattr(event, "target_session", None)
+                media_sid = target_session.sid if target_session is not None else event.sid
                 message_id = event.messages[-1].message_id if event.messages else "read_file"
                 media_ref = await store_session_media(
-                    Image(image=str(image_path), mime=mime), event.sid, message_id
+                    Image(image=str(image_path), mime=mime),
+                    media_sid,
+                    message_id,
                 )
                 return ToolResult(
                     text=f"Image file: {path} ({mime}). The raw image data is attached in the message below.",

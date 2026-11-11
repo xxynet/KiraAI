@@ -56,6 +56,9 @@ class Session:
     content: list[list[dict]] = field(default_factory=list, repr=False)
     data: dict = field(default_factory=dict, repr=False)
 
+    kind: str = "im"
+    parent_id: str | None = None
+
     def flatten_content(self) -> list[dict]:
         """Return a deep copy of the flattened content in message order."""
         return deepcopy([message for chunk in self.content for message in chunk])
@@ -72,6 +75,8 @@ class Session:
             timestamp=record["updated_at"], internal_id=record["id"],
             created_at=record["created_at"], updated_at=record["updated_at"],
             content=deepcopy(record.get("content", [])), data=deepcopy(record["data"]),
+            kind=record.get("kind", "im"),
+            parent_id=record.get("parent_id"),
         )
 
     @property

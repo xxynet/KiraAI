@@ -164,6 +164,8 @@ class SessionsRoutes(Routes):
         return {
             "id": session_id,
             "internal_id": row.internal_id if row else None,
+            "kind": row.kind if row else "im",
+            "parent_id": row.parent_id if row else None,
             "created_at": row.created_at if row else None,
             "updated_at": row.updated_at if row else None,
             "adapter_name": adapter, "session_type": kind, "session_id": target,

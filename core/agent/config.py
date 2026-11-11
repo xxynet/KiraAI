@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from math import isfinite
-from typing import Any
+from typing import Any, Literal
 
 
 @dataclass(frozen=True)
@@ -30,6 +30,7 @@ class ToolExecutionConfig:
 class AgentExecutionConfig:
     """Settings captured for one complete agent loop."""
 
+    # -1 disables the step limit; zero skips the turn.
     max_steps: int = 5
     tool_config: ToolExecutionConfig = field(default_factory=ToolExecutionConfig)
     # None or an empty string disables the final-step prompt.
@@ -37,9 +38,39 @@ class AgentExecutionConfig:
     extra: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
-        if not isinstance(self.max_steps, int) or isinstance(self.max_steps, bool) or self.max_steps < 0:
-            raise ValueError("max_steps must be a non-negative integer")
+        if not isinstance(self.max_steps, int) or isinstance(self.max_steps, bool) or self.max_steps < -1:
+            raise ValueError("max_steps must be a non-negative integer or -1 for unlimited steps")
         if not isinstance(self.tool_config, ToolExecutionConfig):
             raise TypeError("tool_config must be a ToolExecutionConfig")
         if self.final_step_hint is not None and not isinstance(self.final_step_hint, str):
             raise TypeError("final_step_hint must be a string or None")
+
+
+@dataclass(frozen=True)
+class SubAgentConfig:
+    """Independent execution settings and tool selection for a child session."""
+
+    execution: AgentExecutionConfig = field(default_factory=lambda: AgentExecutionConfig(max_steps=-1))
+    tool_mode: Literal["inherit", "exclude", "custom"] = "inherit"
+    tool_names: tuple[str, ...] = ()
+    excluded_tools: tuple[str, ...] = ()
+    instruction: str = "Complete the delegated task. Return your findings to the delegating agent in plain text."
+    instruction_source: Literal["custom", "persona"] = "custom"
+    persona_id: str | None = None
+
+    def __post_init__(self):
+        if self.tool_mode not in {"inherit", "exclude", "custom"}:
+            raise ValueError("Unknown subagent tool mode")
+        if not isinstance(self.execution, AgentExecutionConfig):
+            raise TypeError("execution must be an AgentExecutionConfig")
+        if not isinstance(self.instruction, str):
+            raise TypeError("instruction must be a string")
+        if self.instruction_source not in {"custom", "persona"}:
+            raise ValueError("Unknown subagent instruction source")
+        if self.persona_id is not None and (not isinstance(self.persona_id, str) or not self.persona_id.strip()):
+            raise ValueError("Persona ID must be a non-empty string or None")
+        for names in (self.tool_names, self.excluded_tools):
+            if not isinstance(names, (tuple, list)) or any(not isinstance(name, str) or not name for name in names):
+                raise ValueError("Tool names must be non-empty strings")
+        object.__setattr__(self, "tool_names", tuple(self.tool_names))
+        object.__setattr__(self, "excluded_tools", tuple(self.excluded_tools))

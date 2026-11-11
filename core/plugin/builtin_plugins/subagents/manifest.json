@@ -1,0 +1,15 @@
+{
+  "display_name": "Subagents",
+  "plugin_id": "subagents",
+  "hide": true,
+  "version": "1.0.0",
+  "author": "KiraAI",
+  "description": "Delegate tasks to background agents and query their results",
+  "tags": ["agent", "tools"],
+  "locales": {
+    "zh": {
+      "display_name": "子代理",
+      "description": "后台委派任务、继续子代理会话并查询执行结果"
+    }
+  }
+}
