@@ -1118,6 +1118,31 @@ async def test_archive_records_link_to_child_memory_and_usage_is_recorded(agents
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(("content", "archived_text"), [
+    ({"task": "检查"}, '{"task": "检查"}'),
+    ({"type": "text", "text": "check"}, "check"),
+    ([{"type": "image_url", "image_url": {}}], None),
+])
+async def test_archive_content_conversion_preserves_completion_notice(agents, content, archived_text):
+    manager, sessions, parent, _ = agents
+    info = await manager.spawn(
+        OpenAIMessage(role="user", content=content),
+        parent_id=parent.internal_id,
+    )
+    result = await manager.wait(info["id"], timeout=2)
+
+    assert result["status"] == "done"
+    manager.event_bus.publish.assert_awaited_once()
+    assert manager.event_bus.publish.await_args.args[0].payload == result
+    saved = await sessions.resolve_session(info["id"])
+    assert saved.content[0][0]["content"] == content
+    page = await manager.message_history.list_messages(info["sid"])
+    archived = {message.direction: message.chain[0].text for message in page.messages}
+    assert archived["outgoing"] == "result"
+    assert archived.get("incoming") == archived_text
+
+
+@pytest.mark.anyio
 async def test_resume_uses_default_for_ephemeral_model_and_requires_reauthorized_tools(agents):
     manager, sessions, parent, model = agents
     tool = RecordingTool()

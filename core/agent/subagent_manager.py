@@ -435,22 +435,24 @@ class SubAgentManager:
         for message in context.new_messages:
             if message.role not in {"user", "assistant"} or not message.content:
                 continue
-            elements = []
-            if isinstance(message.content, str):
-                elements.append(Text(message.content))
-            else:
-                for part in message.content:
-                    if part.get("type") == "text":
-                        elements.append(Text(part.get("text", "")))
-                    elif part.get("type") == "image_url":
-                        elements.append(Image(image=part["image_url"]["url"]))
-                    elif part.get("type") == MEDIA_REF_TYPE:
-                        elements.append(Image(image=str(get_data_path() / part["path"])))
-                    else:
-                        elements.append(Text(json.dumps(part, ensure_ascii=False)))
-            chain = MessageChain(elements)
-            identity = message.to_memory_dict()["_extra"]["llm_message_id"]
             try:
+                content = message.content
+                elements = []
+                if isinstance(content, str):
+                    elements.append(Text(content))
+                else:
+                    parts = [content] if isinstance(content, dict) else content
+                    for part in parts:
+                        if part.get("type") == "text":
+                            elements.append(Text(part.get("text", "")))
+                        elif part.get("type") == "image_url":
+                            elements.append(Image(image=part["image_url"]["url"]))
+                        elif part.get("type") == MEDIA_REF_TYPE:
+                            elements.append(Image(image=str(get_data_path() / part["path"])))
+                        else:
+                            elements.append(Text(json.dumps(part, ensure_ascii=False)))
+                chain = MessageChain(elements)
+                identity = message.to_memory_dict()["_extra"]["llm_message_id"]
                 if message.role == "user":
                     record = await self.message_history.record_incoming(
                         KiraIMMessage(
