@@ -37,17 +37,17 @@
         <p v-else-if="!filteredGroups.length" class="py-6 text-center text-sm text-theme-subtle">{{ $t(query.trim() ? 'plugin.no_search_results' : 'plugin.subagents.tools_empty') }}</p>
         <CollapsibleSection
           v-for="group in filteredGroups"
-          :key="group.plugin.id"
-          :title="pluginName(group)"
-          :description="group.plugin.id"
-          :collapsed="!expandedGroups.has(group.plugin.id)"
-          @update:collapsed="setGroupCollapsed(group.plugin.id, $event)"
+          :key="groupKey(group)"
+          :title="sourceName(group)"
+          :description="groupDescription(group)"
+          :collapsed="!expandedGroups.has(groupKey(group))"
+          @update:collapsed="setGroupCollapsed(groupKey(group), $event)"
         >
           <template #icon>
             <input
               type="checkbox"
               class="ui-checkbox"
-              :aria-label="pluginName(group)"
+              :aria-label="sourceName(group)"
               :checked="group.tools.every(tool => selected.has(tool.name))"
               :indeterminate="group.tools.some(tool => selected.has(tool.name)) && !group.tools.every(tool => selected.has(tool.name))"
               @click.stop
@@ -88,8 +88,9 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { getMcpServers, getMcpServerTools } from '@/api/mcp'
 import { getPluginComponents, getPlugins } from '@/api/plugin'
-import type { PluginComponent, PluginItem } from '@/types'
+import type { McpServerItem, PluginComponent, PluginItem } from '@/types'
 import { useLocalized } from '@/composables/useLocalized'
 import { IconClose, IconRefresh, IconSpinner } from '@/components/icons'
 import Modal from '@/components/common/Modal.vue'
@@ -97,10 +98,9 @@ import CollapsibleSection from '@/components/common/CollapsibleSection.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import TagInput from '@/components/common/TagInput.vue'
 
-interface ToolGroup {
-  plugin: PluginItem
-  tools: PluginComponent[]
-}
+type ToolSource = { kind: 'plugin'; info: PluginItem } | { kind: 'mcp'; info: McpServerItem }
+type ToolOption = Pick<PluginComponent, 'name' | 'description'>
+type ToolGroup = ToolSource & { tools: ToolOption[] }
 
 const props = defineProps<{ modelValue: string[]; label: string; disabled?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string[]] }>()
@@ -125,19 +125,28 @@ const filteredGroups = computed(() => {
   const search = query.value.trim().toLowerCase()
   if (!search) return groups.value
   return groups.value.map(group => {
-    const pluginMatches = `${pluginName(group)} ${group.plugin.id}`.toLowerCase().includes(search)
+    const sourceMatches = `${sourceName(group)} ${groupDescription(group)}`.toLowerCase().includes(search)
     return {
       ...group,
-      tools: pluginMatches ? group.tools : group.tools.filter(tool => `${tool.name} ${toolDescription(tool)}`.toLowerCase().includes(search)),
+      tools: sourceMatches ? group.tools : group.tools.filter(tool => `${tool.name} ${toolDescription(tool)}`.toLowerCase().includes(search)),
     }
   }).filter(group => group.tools.length)
 })
 
-function pluginName(group: ToolGroup) {
-  return localize(group.plugin, 'display_name', group.plugin.name || group.plugin.id)
+function sourceName(source: ToolSource) {
+  const name = source.info.name || source.info.id
+  return source.kind === 'plugin' ? localize(source.info, 'display_name', name) : name
 }
 
-function toolDescription(tool: PluginComponent): string {
+function groupKey(group: ToolGroup) {
+  return `${group.kind}:${group.info.id}`
+}
+
+function groupDescription(group: ToolGroup) {
+  return group.kind === 'mcp' ? `${t('plugin.tab_mcp')} · ${group.info.id}` : group.info.id
+}
+
+function toolDescription(tool: ToolOption): string {
   if (typeof tool.description === 'string') return tool.description
   return tool.description[locale.value] || tool.description[locale.value.split(/[-_]/)[0]!] || tool.description.en || Object.values(tool.description)[0] || ''
 }
@@ -163,18 +172,32 @@ async function loadTools() {
   loadError.value = ''
   groups.value = []
   try {
-    const response = await getPlugins()
-    const plugins = response.data.filter(plugin => plugin.enabled)
-    const results = await Promise.allSettled(plugins.map(plugin => getPluginComponents(plugin.id)))
+    const [plugins, servers] = await Promise.allSettled([getPlugins(), getMcpServers()])
     const errors: string[] = []
+    const sources: ToolSource[] = []
+    if (plugins.status === 'fulfilled') {
+      sources.push(...plugins.value.data.filter(plugin => plugin.enabled).map<ToolSource>(info => ({ kind: 'plugin', info })))
+    } else {
+      errors.push(`${t('plugin.tab_plugins')}: ${errorDetail(plugins.reason)}`)
+    }
+    if (servers.status === 'fulfilled') {
+      sources.push(...servers.value.data.filter(server => server.enabled).map<ToolSource>(info => ({ kind: 'mcp', info })))
+    } else {
+      errors.push(`${t('plugin.tab_mcp')}: ${errorDetail(servers.reason)}`)
+    }
+
+    const results = await Promise.allSettled(sources.map(async (source): Promise<ToolGroup> => {
+      const tools = source.kind === 'plugin'
+        ? (await getPluginComponents(source.info.id)).data.filter(component => component.type === 'tool')
+        : (await getMcpServerTools(source.info.id)).data.filter(tool => tool.enabled)
+      return { ...source, tools }
+    }))
     results.forEach((result, index) => {
-      const plugin = plugins[index]!
       if (result.status === 'rejected') {
-        errors.push(`${plugin.name || plugin.id}: ${errorDetail(result.reason)}`)
+        errors.push(`${sourceName(sources[index]!)}: ${errorDetail(result.reason)}`)
         return
       }
-      const tools = result.value.data.filter(component => component.type === 'tool')
-      if (tools.length) groups.value.push({ plugin, tools })
+      if (result.value.tools.length) groups.value.push(result.value)
     })
     if (errors.length) loadError.value = `${t('plugin.subagents.tools_load_failed')}\n${errors.join('\n')}`
   } catch (error) {
@@ -188,9 +211,9 @@ function setTool(name: string, checked: boolean) {
   draft.value = checked ? [...new Set([...draft.value, name])] : draft.value.filter(item => item !== name)
 }
 
-function setGroupCollapsed(pluginId: string, collapsed: boolean) {
-  if (collapsed) expandedGroups.value.delete(pluginId)
-  else expandedGroups.value.add(pluginId)
+function setGroupCollapsed(key: string, collapsed: boolean) {
+  if (collapsed) expandedGroups.value.delete(key)
+  else expandedGroups.value.add(key)
 }
 
 function setGroup(group: ToolGroup, checked: boolean) {

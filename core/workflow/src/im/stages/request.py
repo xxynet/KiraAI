@@ -35,7 +35,7 @@ class BuildRequestStage(BaseStage[IMBatchContext]):
         # Generate agent prompt
         agent_prompt_list = await services.prompt_manager.get_agent_prompt(chat_env)
 
-        # Build scoped Skills and enabled subagent preset prompts.
+        # Build scoped Skills and subagent preset prompts.
         allowed_skills = []
         for s in services.skills_manager.skills_info:
             if not s.enabled:
@@ -45,7 +45,7 @@ class BuildRequestStage(BaseStage[IMBatchContext]):
         capability_prompts = []
         if allowed_skills:
             capability_prompts.append(services.skills_manager.build_skills_prompt(allowed_skills))
-        subagent_prompt = services.subagent_manager.presets.build_presets_prompt()
+        subagent_prompt = services.subagent_manager.presets.build_presets_prompt(sid)
         if subagent_prompt is not None:
             capability_prompts.append(subagent_prompt)
         if capability_prompts:

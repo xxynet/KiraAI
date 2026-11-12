@@ -39,12 +39,11 @@ class ScopeRoutes(Routes):
         if self.lifecycle.mcp_manager:
             mcp_scopes = dict(self.lifecycle.mcp_manager.mcp_config.get("_scope", {}))
             for server in self.lifecycle.mcp_manager.servers:
-                if server.enabled:
-                    mcp_servers.append({
-                        "id": server.id,
-                        "name": server.name,
-                        "enabled": True,
-                    })
+                mcp_servers.append({
+                    "id": server.id,
+                    "name": server.name,
+                    "enabled": server.enabled,
+                })
 
         # Gather skills scopes: {skill_name: {"allow": [...]} or {"deny": [...]}}
         skill_scopes: dict[str, Any] = {}
@@ -52,11 +51,20 @@ class ScopeRoutes(Routes):
         if self.lifecycle.skills_manager:
             skill_scopes = dict(self.lifecycle.skills_manager._raw_config.get("_scope", {}))
             for skill in self.lifecycle.skills_manager.skills_info:
-                if skill.enabled:
-                    skills.append({
-                        "name": skill.name,
-                        "enabled": True,
-                    })
+                skills.append({
+                    "name": skill.name,
+                    "enabled": skill.enabled,
+                })
+
+        manager = getattr(self.lifecycle, "subagent_manager", None)
+        subagent_presets = []
+        subagent_scopes = {}
+        if manager is not None:
+            subagent_presets = [
+                {"id": item["id"], "name": item["name"], "enabled": item["enabled"]}
+                for item in manager.presets.list()
+            ]
+            subagent_scopes = manager.presets.get_scopes()
 
         # Gather sessions
         sessions: list[dict[str, Any]] = []
@@ -75,17 +83,20 @@ class ScopeRoutes(Routes):
         return {
             "mcp_scopes": mcp_scopes,
             "skill_scopes": skill_scopes,
+            "subagent_scopes": subagent_scopes,
             "sessions": sessions,
             "mcp_servers": mcp_servers,
             "skills": skills,
+            "subagent_presets": subagent_presets,
         }
 
     async def update_scope(self, payload: dict):
-        """Update scope configuration for MCP servers and skills.
+        """Update scope configuration for MCP servers, skills, and subagent presets.
         Payload format:
         {
           "mcp_scopes": { "server_id": {"allow": [...]} or {"deny": [...]} },
-          "skill_scopes": { "skill_name": {"allow": [...]} or {"deny": [...]} }
+          "skill_scopes": { "skill_name": {"allow": [...]} or {"deny": [...]} },
+          "subagent_scopes": { "preset_id": {"allow": [...]} or {"deny": [...]} }
         }
         """
         if not self.lifecycle:
@@ -98,6 +109,15 @@ class ScopeRoutes(Routes):
             raise HTTPException(status_code=400, detail="Invalid payload format")
 
         try:
+            if "subagent_scopes" in payload:
+                manager = getattr(self.lifecycle, "subagent_manager", None)
+                if manager is None:
+                    raise HTTPException(status_code=503, detail="Subagent manager unavailable")
+                try:
+                    await manager.presets.replace_scopes(payload["subagent_scopes"])
+                except ValueError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc)) from exc
+
             # Update MCP scopes
             if self.lifecycle.mcp_manager:
                 existing_mcp = self.lifecycle.mcp_manager.mcp_config.get("_scope", {})
@@ -123,6 +143,8 @@ class ScopeRoutes(Routes):
                     self.lifecycle.skills_manager.set_skill_scope(skill_name, mode, sessions)
 
             return {"success": True}
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Failed to update scope: {e}")
             raise HTTPException(status_code=500, detail="Failed to update scope configuration")

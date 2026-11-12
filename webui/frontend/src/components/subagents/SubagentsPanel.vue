@@ -202,7 +202,6 @@
             <SubagentToolPicker v-model="form.tools" :label="$t(form.tool_mode === 'exclude' ? 'plugin.subagents.excluded_tools' : 'plugin.subagents.custom_tools')" :disabled="saving" />
             <p class="mt-1 text-xs text-theme-subtle">{{ $t('plugin.subagents.tools_hint') }}</p>
           </div>
-          <p class="text-xs text-theme-subtle">{{ $t('plugin.subagents.apply_hint') }}</p>
           <p v-if="saveError" role="alert" class="whitespace-pre-wrap break-words text-sm text-red-600 dark:text-red-400">{{ saveError }}</p>
         </fieldset>
       </div>
