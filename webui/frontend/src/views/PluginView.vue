@@ -420,12 +420,14 @@
                 <p class="text-xs text-theme-faint mb-1.5">
                   {{ resource.mode === 'allow' ? $t('plugin.scope_mode_allow_hint') : $t('plugin.scope_mode_deny_hint') }}
                 </p>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5">
+                <div v-if="scopeSessions.length" class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5">
                   <div v-for="s in scopeSessions" :key="s.id" class="flex items-center justify-between py-0.5">
                     <span class="text-xs text-theme-supporting truncate mr-2">{{ s.title ? `${s.title} | ${s.id}` : s.id }}</span>
                     <button
                       type="button"
-                      class="ml-2 relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none"
+                      :aria-label="s.title ? `${s.title} | ${s.id}` : s.id"
+                      :aria-pressed="resource.sessions.has(s.id)"
+                      class="ml-2 relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                       :class="resource.sessions.has(s.id) ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500' : 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600'"
                       @click="onScopeSessionToggle(resource, s.id)"
                     >
@@ -436,6 +438,7 @@
                     </button>
                   </div>
                 </div>
+                <p v-else class="text-xs text-theme-supporting">{{ $t('plugin.scope_no_sessions') }}</p>
               </div>
             </div>
           </div>
@@ -2128,7 +2131,6 @@ function handleDeleteSkill(skill: any) {
         await apiDeleteSkill(skill.id)
         notify(t('plugin.skills_delete_success'), 'success')
         await loadSkills()
-        await loadScope()
       } catch (e: any) {
         const detail = e?.response?.data?.detail
         notify(detail ? `${t('plugin.skills_delete_error')}: ${detail}` : t('plugin.skills_delete_error'), 'error')
@@ -2182,11 +2184,19 @@ async function handleSkillUpload() {
 }
 
 // Scope
+let scopeLoadId = 0
+
+watch(activeTab, (tab) => {
+  if (tab === 'scope') void loadScope()
+})
+
 async function loadScope() {
+  const loadId = ++scopeLoadId
   scopeLoading.value = true
   scopeError.value = null
   try {
     const { data } = await getScope()
+    if (loadId !== scopeLoadId) return
     scopeSessions.value = Array.isArray(data.sessions) ? data.sessions : []
     const mcp = Array.isArray(data.mcp_servers) ? data.mcp_servers : []
     const skills = Array.isArray(data.skills) ? data.skills : []
@@ -2199,10 +2209,10 @@ async function loadScope() {
       ),
       subagent: buildScopeResources(subagents, data.subagent_scopes ?? {}),
     }
-  } catch (e: any) {
-    scopeError.value = t('plugin.scope_load_failed')
+  } catch {
+    if (loadId === scopeLoadId) scopeError.value = t('plugin.scope_load_failed')
   } finally {
-    scopeLoading.value = false
+    if (loadId === scopeLoadId) scopeLoading.value = false
   }
 }
 
@@ -2604,7 +2614,6 @@ onMounted(async () => {
   await loadPlugins()
   loadMcpServers()
   loadSkills()
-  loadScope()
   // Plugin Store: load saved sources and current source from backend
   loadSourcesFromBackend().then(() => {
     if (currentStoreSource.value) {
