@@ -268,6 +268,7 @@ class KiraLifecycle:
             message_history=self.message_history,
             event_bus=self.event_bus,
             persona_manager=self.persona_manager,
+            skills_manager=self.skills_manager,
         )
         await self.subagent_manager.initialize()
         self.message_router.register_route(

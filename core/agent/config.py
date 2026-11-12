@@ -48,7 +48,7 @@ class AgentExecutionConfig:
 
 @dataclass(frozen=True)
 class SubAgentConfig:
-    """Independent execution settings and tool selection for a child session."""
+    """Independent execution settings and capability selection for a child session."""
 
     execution: AgentExecutionConfig = field(default_factory=lambda: AgentExecutionConfig(max_steps=-1))
     tool_mode: Literal["inherit", "exclude", "custom"] = "inherit"
@@ -57,6 +57,7 @@ class SubAgentConfig:
     instruction: str = "Complete the delegated task. Return your findings to the delegating agent in plain text."
     instruction_source: Literal["custom", "persona"] = "custom"
     persona_id: str | None = None
+    skill_names: tuple[str, ...] = ()
 
     def __post_init__(self):
         if self.tool_mode not in {"inherit", "exclude", "custom"}:
@@ -74,3 +75,8 @@ class SubAgentConfig:
                 raise ValueError("Tool names must be non-empty strings")
         object.__setattr__(self, "tool_names", tuple(self.tool_names))
         object.__setattr__(self, "excluded_tools", tuple(self.excluded_tools))
+        if not isinstance(self.skill_names, (tuple, list)) or any(
+            not isinstance(name, str) or not name.strip() for name in self.skill_names
+        ):
+            raise ValueError("Skill names must be non-empty strings")
+        object.__setattr__(self, "skill_names", tuple(self.skill_names))

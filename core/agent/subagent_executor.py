@@ -20,6 +20,7 @@ from .hook_context import ToolCallContext
 from .hooks import AgentExecutionHooks
 from .im_tool_executor import IMToolExecutor
 from .message import OpenAIMessage
+from .skills_mgr import SkillsManager
 from .subagent_event import SubAgentEvent
 
 if TYPE_CHECKING:
@@ -51,14 +52,37 @@ class SubAgentExecutionHooks(AgentExecutionHooks[SubAgentExecutionContext]):
         *,
         config: SubAgentConfig | None = None,
         persona_manager: PersonaManager | None = None,
+        skills_manager: SkillsManager | None = None,
     ):
         self.config = config or SubAgentConfig()
         self.persona_manager = persona_manager
+        self.skills_manager = skills_manager
         self._persona_message: OpenAIMessage | None = None
+        self._request_system_message: OpenAIMessage | None = None
 
     async def on_llm_request(self, ctx: SubAgentExecutionContext, request: LLMRequest) -> None:
-        if self.config.instruction_source != "persona":
-            return
+        if self.config.instruction_source == "persona":
+            original = self._persona_message
+            system = await self._refresh_persona(ctx)
+        else:
+            system = ctx.messages[0] if ctx.messages and ctx.messages[0].role == "system" else None
+            original = system
+        skills_prompt = self._skills_prompt(ctx.event.sid)
+        if skills_prompt is not None:
+            instruction = system.content if system is not None else None
+            content = f"{instruction}\n\n{skills_prompt}" if instruction else skills_prompt
+            system = OpenAIMessage(role="system", content=content)
+
+        # The Skills listing belongs to the current model request only.
+        if request.messages and (
+            request.messages[0] is original or request.messages[0] is self._request_system_message
+        ):
+            request.messages.pop(0)
+        if system is not None:
+            request.messages.insert(0, system)
+        self._request_system_message = system
+
+    async def _refresh_persona(self, ctx: SubAgentExecutionContext) -> OpenAIMessage:
         if self.persona_manager is None:
             raise ValueError("Persona manager unavailable")
         persona = await self.persona_manager.get_persona(self.config.persona_id)
@@ -68,10 +92,26 @@ class SubAgentExecutionHooks(AgentExecutionHooks[SubAgentExecutionContext]):
             role="system",
             content=persona.content or "",
         )
-        for messages in (ctx.messages, request.messages):
-            messages[:] = [item for item in messages if item is not self._persona_message]
-            messages.insert(0, message)
+        ctx.messages[:] = [item for item in ctx.messages if item is not self._persona_message]
+        ctx.messages.insert(0, message)
         self._persona_message = message
+        return message
+
+    def _skills_prompt(self, session_id: str) -> str | None:
+        manager = self.skills_manager
+        if manager is None:
+            return None
+
+        names = set(self.config.skill_names)
+        mode = self.config.tool_mode
+        skills = [
+            skill for skill in manager.skills_info
+            if skill.enabled
+            and manager.is_skill_allowed(skill.name, session_id)
+            and (mode != "exclude" or skill.name not in names)
+            and (mode != "custom" or skill.name in names)
+        ]
+        return manager.build_skills_prompt(skills).to_string() if skills else None
 
     async def on_tool_call(self, ctx: ToolCallContext) -> None:
         for handler in event_handler_reg.get_handlers(EventType.ON_TOOL_CALL):

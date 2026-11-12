@@ -202,6 +202,20 @@
             <SubagentToolPicker v-model="form.tools" :label="$t(form.tool_mode === 'exclude' ? 'plugin.subagents.excluded_tools' : 'plugin.subagents.custom_tools')" :disabled="saving" />
             <p class="mt-1 text-xs text-theme-subtle">{{ $t('plugin.subagents.tools_hint') }}</p>
           </div>
+          <div v-if="form.tool_mode !== 'inherit'">
+            <p class="block text-sm font-medium text-theme-body mb-1">
+              {{ $t(form.tool_mode === 'exclude' ? 'plugin.subagents.excluded_skills' : 'plugin.subagents.custom_skills') }}
+            </p>
+            <CustomMultiSelect
+              v-model="form.skills"
+              :options="skillOptions"
+              :placeholder="$t(skillsLoading ? 'plugin.status_loading' : 'plugin.subagents.choose_skills')"
+              :disabled="saving || skillsLoading"
+            />
+            <p v-if="skillsError" role="alert" class="mt-1 text-xs text-red-600 dark:text-red-400">{{ skillsError }}</p>
+            <p v-else-if="!skillsLoading && !skillOptions.length" class="mt-1 text-xs text-theme-subtle">{{ $t('plugin.no_skills') }}</p>
+            <p class="mt-1 text-xs text-theme-subtle">{{ $t('plugin.subagents.skills_hint') }}</p>
+          </div>
           <p v-if="saveError" role="alert" class="whitespace-pre-wrap break-words text-sm text-red-600 dark:text-red-400">{{ saveError }}</p>
         </fieldset>
       </div>
@@ -229,11 +243,13 @@ import { createSubagentPreset, deleteSubagentPreset, getSubagentPresets, updateS
 import type { SubagentPreset, SubagentPresetInput } from '@/api/subagents'
 import { getModels, getProviders } from '@/api/provider'
 import { getPersonas } from '@/api/persona'
+import { getSkills } from '@/api/skills'
 import { notify } from '@/composables/useNotification'
 import { IconClose, IconRefresh, IconSearch, IconSpinner } from '@/components/icons'
 import Modal from '@/components/common/Modal.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
+import CustomMultiSelect from '@/components/common/CustomMultiSelect.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import SubagentToolPicker from './SubagentToolPicker.vue'
@@ -265,6 +281,13 @@ const modelsError = ref('')
 const availablePersonas = ref<{ value: string; label: string }[]>([])
 const personasLoading = ref(false)
 const personasError = ref('')
+const skillsLoading = ref(false)
+const skillsError = ref('')
+const availableSkills = ref<{ name: string; enabled: boolean }[]>([])
+const skillOptions = computed(() => availableSkills.value.map(({ name, enabled }) => ({
+  value: name,
+  label: enabled ? name : t('plugin.subagents.skill_disabled', { name }),
+})))
 const instructionSourceOptions = computed(() => ['persona', 'custom'].map(value => ({
   value,
   label: t('plugin.subagents.source_' + value),
@@ -298,6 +321,7 @@ function newForm(): SubagentPresetInput {
     max_steps: -1,
     tool_mode: 'inherit',
     tools: [],
+    skills: [],
     enabled: true,
     model: null,
   }
@@ -308,7 +332,7 @@ function openEditor(preset?: SubagentPreset) {
   editingId.value = preset?.id || null
   if (preset) {
     const { id, ...settings } = preset
-    form.value = { ...settings, tools: [...settings.tools] }
+    form.value = { ...settings, tools: [...settings.tools], skills: [...settings.skills] }
   } else {
     form.value = newForm()
   }
@@ -316,6 +340,7 @@ function openEditor(preset?: SubagentPreset) {
   editorVisible.value = true
   void loadModelOptions()
   void loadPersonaOptions()
+  void loadSkillOptions()
 }
 
 function errorDetail(error: any, fallback: string) {
@@ -338,6 +363,21 @@ async function loadPersonaOptions() {
     personasError.value = errorDetail(error, t('plugin.subagents.personas_load_failed'))
   } finally {
     personasLoading.value = false
+  }
+}
+
+async function loadSkillOptions() {
+  if (skillsLoading.value) return
+  skillsLoading.value = true
+  skillsError.value = ''
+  availableSkills.value = []
+  try {
+    const { data } = await getSkills()
+    availableSkills.value = data
+  } catch (error) {
+    skillsError.value = errorDetail(error, t('plugin.skills_load_failed'))
+  } finally {
+    skillsLoading.value = false
   }
 }
 
@@ -403,6 +443,7 @@ async function savePreset() {
       persona_id: form.value.instruction_source === 'persona' ? form.value.persona_id : null,
       instruction: form.value.instruction_source === 'custom' ? form.value.instruction : '',
       tools: form.value.tool_mode === 'inherit' ? [] : [...new Set(form.value.tools.map(name => name.trim()).filter(Boolean))],
+      skills: form.value.tool_mode === 'inherit' ? [] : form.value.skills,
     }
     const response = editingId.value
       ? await updateSubagentPreset(editingId.value, payload)

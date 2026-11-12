@@ -1,7 +1,16 @@
 import apiClient from './client'
 
+interface SkillItem {
+  id: string
+  name: string
+  description: string
+  enabled: boolean
+  path: string
+  size_bytes: number
+}
+
 export function getSkills() {
-  return apiClient.get<any[]>('/skills')
+  return apiClient.get<SkillItem[]>('/skills')
 }
 
 export function toggleSkill(skillName: string, enabled: boolean) {

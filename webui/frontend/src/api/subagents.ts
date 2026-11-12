@@ -10,6 +10,7 @@ export interface SubagentPreset {
   max_steps: number
   tool_mode: 'inherit' | 'exclude' | 'custom'
   tools: string[]
+  skills: string[]
   enabled: boolean
   model: string | null
 }
