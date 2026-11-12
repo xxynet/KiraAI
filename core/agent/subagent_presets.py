@@ -49,6 +49,10 @@ class SubAgentPreset(BaseModel):
         default_factory=list,
         max_length=500,
     )
+    skills: list[str] = Field(
+        default_factory=list,
+        max_length=500,
+    )
     enabled: bool = True
     model: str | None = None
 
@@ -84,11 +88,11 @@ class SubAgentPreset(BaseModel):
             raise ValueError("Preset name must not be blank")
         return value.strip()
 
-    @field_validator("tools")
+    @field_validator("tools", "skills")
     @classmethod
-    def validate_tools(cls, value: list[str]) -> list[str]:
+    def validate_names(cls, value: list[str]) -> list[str]:
         if any(not name.strip() for name in value):
-            raise ValueError("Tool names must not be blank")
+            raise ValueError("Names must not be blank")
         return list(dict.fromkeys(name.strip() for name in value))
 
     def execution_config(
@@ -106,6 +110,7 @@ class SubAgentPreset(BaseModel):
             tool_mode=self.tool_mode,
             tool_names=tuple(self.tools) if self.tool_mode == "custom" else (),
             excluded_tools=tuple(self.tools) if self.tool_mode == "exclude" else (),
+            skill_names=tuple(self.skills) if self.tool_mode != "inherit" else (),
         )
 
 
@@ -183,7 +188,7 @@ class SubAgentPresetStore:
             "You can delegate independent tasks to background subagents.\n"
             "Before delegating, scan the preset names and descriptions below and choose a suitable preset.\n"
             "Use `spawn_agent` with the exact `preset_name` from this list and a complete, self-contained `task`.\n"
-            "The selected preset supplies the system prompt, model and tool settings.\n"
+            "The selected preset supplies the system prompt, model, tools and Skills.\n"
             "Delegation returns immediately. Completed turns are delivered to this session as system notices.\n\n"
             "Available subagent presets:\n"
         )

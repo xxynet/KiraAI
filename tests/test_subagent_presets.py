@@ -25,11 +25,13 @@ async def test_preset_crud_survives_restart_without_exposing_mutable_settings(tm
         instruction="Study carefully",
         tool_mode="custom",
         tools=[" search ", "search"],
+        skills=[" review ", "review"],
         model="provider:model",
         max_steps=100,
     ))
     assert item["name"] == "Research"
     assert item["tools"] == ["search"]
+    assert item["skills"] == ["review"]
     assert item["max_steps"] == 100
     item["tools"].append("mutated")
     store.get(item["id"]).tools.append("mutated")
@@ -82,6 +84,8 @@ async def test_concurrent_preset_creates_do_not_overwrite_each_other(tmp_path):
     {"tool_mode": "unknown"},
     {"tools": [None]},
     {"tools": [" "]},
+    {"skills": [None]},
+    {"skills": [" "]},
     {"enabled": "true"},
     {"model": "missing-provider"},
     {"model": ":model"},
@@ -120,9 +124,12 @@ async def test_presets_routes_validate_persist_edit_delete_and_require_auth(tmp_
             "name": "Preset",
             "instruction": "Focus",
             "model": "provider:model",
+            "tool_mode": "custom",
+            "skills": ["review"],
         })
         assert created.status_code == 201
         assert created.json()["model"] == "provider:model"
+        assert created.json()["skills"] == ["review"]
         assert created.json()["instruction_source"] == "persona"
         assert created.json()["persona_id"] is None
         identity = created.json()["id"]
@@ -144,6 +151,7 @@ async def test_presets_routes_validate_persist_edit_delete_and_require_auth(tmp_
         assert not changed.json()["enabled"]
         assert changed.json()["model"] is None
         assert changed.json()["max_steps"] == 100
+        assert changed.json()["skills"] == []
         missing = await client.put("/api/subagents/presets/missing", json={"name": "Unknown"})
         assert missing.status_code == 404
         deleted = await client.delete(f"/api/subagents/presets/{identity}")

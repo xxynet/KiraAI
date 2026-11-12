@@ -194,6 +194,76 @@ async def test_tool_selection_uses_an_independent_tool_list(agents, mode):
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(("mode", "selected", "can_read", "expected"), [
+    ("inherit", ["first"], True, {"first", "second"}),
+    ("exclude", ["first"], True, {"second"}),
+    ("custom", ["first", "disabled", "outside"], True, {"first"}),
+    ("custom", [], True, set()),
+    ("custom", ["first"], False, {"first"}),
+])
+async def test_subagent_skill_selection_uses_tool_mode_and_parent_scope(
+    agents, tmp_path, monkeypatch, mode, selected, can_read, expected,
+):
+    from core.agent import skills_mgr
+    from core.agent.config import ToolExecutionConfig
+    from core.agent.subagent_presets import SubAgentPreset
+
+    manager, sessions, parent, model = agents
+    monkeypatch.setattr(skills_mgr, "get_config_path", lambda: tmp_path)
+    monkeypatch.setattr(skills_mgr, "get_data_path", lambda: tmp_path)
+    (tmp_path / "skills").mkdir()
+    manager.skills_manager = skills_mgr.SkillsManager()
+    manager.skills_manager.skills_info = [
+        skills_mgr.SkillInfo(name, f"Use {name}", tmp_path / "skills" / name, enabled=name != "disabled")
+        for name in ("first", "second", "disabled", "outside")
+    ]
+    manager.skills_manager.set_skill_scope("second", "allow", [parent.sid])
+    manager.skills_manager.set_skill_scope("outside", "deny", [parent.sid])
+
+    class ReadFileTool(RecordingTool):
+        name = "read_file"
+
+    tools = ToolSet([ReadFileTool()]) if can_read else ToolSet()
+    preset = SubAgentPreset(
+        name="Skills agent",
+        instruction_source="custom",
+        instruction="Keep this instruction",
+        tool_mode=mode,
+        tools=["read_file"] if mode == "custom" and can_read else [],
+        skills=selected,
+    )
+    info = await manager.spawn(
+        "task",
+        parent_id=parent.internal_id,
+        config=preset.execution_config(ToolExecutionConfig()),
+        parent_tools=tools,
+        tools=tools,
+    )
+    assert (await manager.wait(info["id"], timeout=2))["status"] == "done"
+    request = model.chat.await_args.args[0]
+    system = [message.content for message in request.messages if message.role == "system"]
+    assert len(system) == 1
+    assert system[0].startswith("Keep this instruction")
+    assert ("## Skills" in system[0]) == bool(expected)
+    assert {skill.name for skill in manager.skills_manager.skills_info if f"- **{skill.name}**:" in system[0]} == expected
+    context = manager._agents[info["id"]].executor.context
+    assert all("## Skills" not in str(message.content) for message in context.messages)
+
+    if mode == "custom" and expected:
+        manager._agents.clear()
+        await manager.followup(info["id"], "continue", caller_id=parent.internal_id, tools=tools)
+        assert (await manager.wait(info["id"], timeout=2))["status"] == "done"
+        assert "- **first**:" in model.chat.await_args.args[0].messages[0].content
+
+        manager.skills_manager.set_skill_enabled("first", False)
+        await manager.followup(info["id"], "continue again", caller_id=parent.internal_id, tools=tools)
+        assert (await manager.wait(info["id"], timeout=2))["status"] == "done"
+        assert model.chat.await_args.args[0].messages[0].content == "Keep this instruction"
+        child = await sessions.resolve_session(info["id"])
+        assert all("## Skills" not in str(message["content"]) for message in child.flatten_content())
+
+
+@pytest.mark.anyio
 async def test_followup_starts_a_fresh_turn_and_persists_each_turn_once(agents):
     manager, sessions, parent, model = agents
     info = await manager.spawn(

@@ -25,6 +25,7 @@ from core.utils.path_utils import get_data_path
 from .base_agent_executor import AgentStepResult
 from .config import AgentExecutionConfig, SubAgentConfig, ToolExecutionConfig
 from .message import OpenAIMessage
+from .skills_mgr import SkillsManager
 from .subagent_event import SubAgentEvent
 from .subagent_executor import (
     SubAgentExecutionContext,
@@ -67,6 +68,7 @@ class SubAgentManager:
         message_history: MessageHistoryService,
         event_bus: EventBus,
         persona_manager: PersonaManager | None = None,
+        skills_manager: SkillsManager | None = None,
         max_concurrent: int = 4,
         max_agents: int = 128,
     ):
@@ -77,6 +79,7 @@ class SubAgentManager:
         self.message_history = message_history
         self.event_bus = event_bus
         self.persona_manager = persona_manager
+        self.skills_manager = skills_manager
         self.presets = SubAgentPresetStore()
         self.semaphore = asyncio.Semaphore(max_concurrent)
         self.max_agents = max_agents
@@ -107,6 +110,7 @@ class SubAgentManager:
             "tool_mode": config.tool_mode,
             "tool_names": list(config.tool_names),
             "excluded_tools": list(config.excluded_tools),
+            "skill_names": list(config.skill_names),
             "instruction": config.instruction,
             "instruction_source": config.instruction_source,
             "persona_id": config.persona_id,
@@ -126,6 +130,7 @@ class SubAgentManager:
             tool_mode=settings.get("tool_mode", "inherit"),
             tool_names=tuple(settings.get("tool_names", ())),
             excluded_tools=tuple(settings.get("excluded_tools", ())),
+            skill_names=tuple(settings.get("skill_names", ())),
             instruction=settings.get("instruction", SubAgentConfig().instruction),
             instruction_source=settings.get("instruction_source", "custom"),
             persona_id=settings.get("persona_id"),
@@ -428,6 +433,7 @@ class SubAgentManager:
             hooks=SubAgentExecutionHooks(
                 config=agent.config,
                 persona_manager=self.persona_manager,
+                skills_manager=self.skills_manager,
             ),
             semaphore=self.semaphore,
             on_turn_start=begin,
