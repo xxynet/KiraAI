@@ -5,6 +5,7 @@ import json
 import os
 import tempfile
 import uuid
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Literal
 
@@ -14,6 +15,9 @@ from core.prompt_manager import Prompt
 from core.utils.path_utils import get_config_path
 
 from .config import AgentExecutionConfig, SubAgentConfig, ToolExecutionConfig
+
+
+_PresetScopes = dict[str, dict[str, list[str]]]
 
 
 class SubAgentPreset(BaseModel):
@@ -113,6 +117,7 @@ class SubAgentPresetStore:
     def __init__(self, path: Path | None = None):
         self.path = path if path is not None else get_config_path() / "subagent_presets.json"
         self._items: dict[str, SubAgentPreset] = {}
+        self._scopes: _PresetScopes = {}
         self._lock = asyncio.Lock()
 
     async def initialize(self) -> None:
@@ -125,7 +130,10 @@ class SubAgentPresetStore:
             raw = await asyncio.to_thread(read)
             if not isinstance(raw, dict):
                 raise TypeError("Subagent presets must be an object")
-            self._items = {identity: SubAgentPreset.model_validate(item) for identity, item in raw.items()}
+            scopes = raw.pop("_scope", {})
+            items = {identity: SubAgentPreset.model_validate(item) for identity, item in raw.items()}
+            self._scopes = self._validate_scopes(scopes, items)
+            self._items = items
 
     def list(self, *, enabled_only: bool = False) -> list[dict]:
         return [
@@ -137,19 +145,37 @@ class SubAgentPresetStore:
     def get(self, identity: str) -> SubAgentPreset:
         return self._items[identity].model_copy(deep=True)
 
-    def get_enabled_by_name(self, name: str) -> tuple[str, SubAgentPreset]:
+    def get_enabled_by_name(self, name: str, *, session_id: str) -> tuple[str, SubAgentPreset]:
         for identity, preset in self._items.items():
             if preset.name == name:
                 if not preset.enabled:
                     raise ValueError(f"Subagent preset is disabled: {name}")
+                if not self.is_preset_allowed(identity, session_id):
+                    raise PermissionError(f"Subagent preset is not allowed for the calling session: {name}")
                 return identity, preset.model_copy(deep=True)
         raise ValueError(f"Unknown subagent preset: {name}")
 
-    def has_available_presets(self) -> bool:
-        return any(preset.enabled for preset in self._items.values())
+    def is_preset_allowed(self, identity: str, session_id: str | None) -> bool:
+        scope = self._scopes.get(identity)
+        if scope is None:
+            return True
+        if session_id is None:
+            return False
+        if "allow" in scope:
+            return session_id in scope["allow"]
+        return session_id not in scope["deny"]
 
-    def build_presets_prompt(self) -> Prompt | None:
-        presets = [preset for preset in self._items.values() if preset.enabled]
+    def _available_presets(self, session_id: str) -> Iterator[SubAgentPreset]:
+        return (
+            preset for identity, preset in self._items.items()
+            if preset.enabled and self.is_preset_allowed(identity, session_id)
+        )
+
+    def has_available_presets(self, session_id: str) -> bool:
+        return next(self._available_presets(session_id), None) is not None
+
+    def build_presets_prompt(self, session_id: str) -> Prompt | None:
+        presets = list(self._available_presets(session_id))
         if not presets:
             return None
         content = (
@@ -170,13 +196,51 @@ class SubAgentPresetStore:
             persist=False,
         )
 
-    def _write(self, items: dict[str, SubAgentPreset]) -> None:
+    def get_scopes(self) -> _PresetScopes:
+        return {
+            identity: {mode: list(sessions) for mode, sessions in scope.items()}
+            for identity, scope in self._scopes.items()
+        }
+
+    @staticmethod
+    def _validate_scopes(scopes: object, items: dict[str, SubAgentPreset]) -> _PresetScopes:
+        if not isinstance(scopes, dict):
+            raise ValueError("Subagent scopes must be an object")
+        validated = {}
+        for identity, scope in scopes.items():
+            if identity not in items:
+                raise ValueError(f"Unknown subagent preset ID: {identity}")
+            if not isinstance(scope, dict) or len(scope) != 1:
+                raise ValueError(f"Subagent scope must have one allow or deny rule: {identity}")
+            mode, sessions = next(iter(scope.items()))
+            if mode not in ("allow", "deny") or not isinstance(sessions, list):
+                raise ValueError(f"Invalid subagent scope: {identity}")
+            if any(not isinstance(sid, str) or not sid.strip() for sid in sessions):
+                raise ValueError(f"Subagent scope session IDs must be non-empty strings: {identity}")
+            validated[identity] = {mode: list(dict.fromkeys(sessions))}
+        return validated
+
+    async def replace_scopes(self, scopes: object) -> None:
+        async with self._lock:
+            validated = self._validate_scopes(scopes, self._items)
+            if validated != self._scopes:
+                await self._commit(self._items, validated)
+
+    async def remove_session_from_scopes(self, session_id: str) -> None:
+        async with self._lock:
+            scopes = {
+                identity: {mode: [sid for sid in sessions if sid != session_id] for mode, sessions in scope.items()}
+                for identity, scope in self._scopes.items()
+            }
+            if scopes != self._scopes:
+                await self._commit(self._items, scopes)
+
+    def _write(self, items: dict[str, SubAgentPreset], scopes: _PresetScopes) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        contents = json.dumps(
-            {identity: preset.model_dump() for identity, preset in items.items()},
-            ensure_ascii=False,
-            indent=2,
-        )
+        data = {identity: preset.model_dump() for identity, preset in items.items()}
+        if scopes:
+            data["_scope"] = scopes
+        contents = json.dumps(data, ensure_ascii=False, indent=2)
         temporary = None
         try:
             with tempfile.NamedTemporaryFile(
@@ -192,15 +256,17 @@ class SubAgentPresetStore:
             if temporary is not None and os.path.exists(temporary):
                 os.unlink(temporary)
 
-    async def _commit(self, items: dict[str, SubAgentPreset]) -> None:
-        write = asyncio.create_task(asyncio.to_thread(self._write, items))
+    async def _commit(self, items: dict[str, SubAgentPreset], scopes: _PresetScopes) -> None:
+        write = asyncio.create_task(asyncio.to_thread(self._write, items, scopes))
         try:
             await asyncio.shield(write)
         except asyncio.CancelledError:
             await write
             self._items = items
+            self._scopes = scopes
             raise
         self._items = items
+        self._scopes = scopes
 
     async def save(self, preset: SubAgentPreset, identity: str | None = None) -> dict:
         async with self._lock:
@@ -210,11 +276,13 @@ class SubAgentPresetStore:
                 raise DuplicatePresetNameError(f"A subagent preset named {preset.name!r} already exists")
             identity = identity or f"preset_{uuid.uuid4().hex}"
             items = {**self._items, identity: preset.model_copy(deep=True)}
-            await self._commit(items)
+            await self._commit(items, self._scopes)
             return {"id": identity, **preset.model_dump()}
 
     async def delete(self, identity: str) -> None:
         async with self._lock:
             items = dict(self._items)
             del items[identity]
-            await self._commit(items)
+            scopes = dict(self._scopes)
+            scopes.pop(identity, None)
+            await self._commit(items, scopes)

@@ -860,13 +860,23 @@ async def test_native_preset_discovery_and_spawn_use_saved_settings(agents, tmp_
     await plugin.inject_tools(event, request)
     await plugin.inject_tools(event, request)
     assert not request.system_prompt
-    prompt = manager.presets.build_presets_prompt()
+    prompt = manager.presets.build_presets_prompt(parent.sid)
     assert not prompt.persist
     assert preset["id"] not in prompt.content
     assert preset["name"] in prompt.content
     assert "Inspect performance" in prompt.content
     assert "Hidden" not in prompt.content
     spawn = request.tool_set.get("spawn_agent")
+    await manager.presets.replace_scopes({preset["id"]: {"deny": [parent.sid]}})
+    blocked_request = LLMRequest(tool_set=ToolSet())
+    await plugin.inject_tools(event, blocked_request)
+    assert blocked_request.tool_set.get("spawn_agent") is None
+    assert blocked_request.tool_set.get("followup_task") is not None
+    with pytest.raises(PermissionError, match="not allowed"):
+        await spawn.execute(event, task="inspect", preset_name=preset["name"])
+    with pytest.raises(PermissionError, match="not allowed"):
+        await manager.spawn("inspect", parent_id=parent.internal_id, preset_id=preset["id"])
+    await manager.presets.replace_scopes({preset["id"]: {"allow": [parent.sid]}})
     info = json.loads(await spawn.execute(
         event,
         task="inspect",

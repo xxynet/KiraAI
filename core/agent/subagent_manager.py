@@ -209,6 +209,11 @@ class SubAgentManager:
         scope = await self.session_manager.resolve_session(permission_session) if permission_session is not None else None
         if scope is not None and scope.internal_id is None:
             raise ValueError("Permission session must already be stored")
+        if preset_id is not None and not self.presets.is_preset_allowed(
+            preset_id,
+            scope.sid if scope else None,
+        ):
+            raise PermissionError("Subagent preset is not allowed for the calling session")
         config = config or SubAgentConfig()
         parent_tools = self._copy_tools(parent_tools)
         custom_tools = self._copy_tools(tools if tools is not None else parent_tools)
@@ -617,8 +622,9 @@ class SubAgentManager:
         return await self.get(session, caller_id=caller_id)
 
     async def on_session_deleted(self, event) -> None:
+        sid = event.payload["session"]
         async with self._creation_lock:
-            agents = [agent for agent in self._agents.values() if agent.session.sid == event.payload.get("session")]
+            agents = [agent for agent in self._agents.values() if agent.session.sid == sid]
             for agent in agents:
                 del self._agents[agent.session.internal_id]
         for agent in agents:
@@ -628,6 +634,7 @@ class SubAgentManager:
                     agent.status = "interrupted"
                     agent.task.cancel()
                 await asyncio.gather(agent.task, return_exceptions=True)
+        await self.presets.remove_session_from_scopes(sid)
 
     async def shutdown(self, timeout: float = 5) -> None:
         async with self._creation_lock:

@@ -389,107 +389,57 @@
       </div>
 
       <template v-else>
-        <!-- MCP Servers section -->
-        <div v-if="scopeMcpServers.length > 0" class="mb-6">
-          <h4 class="text-sm font-semibold text-theme-body mb-3">{{ $t('plugin.scope_mcp_section') }}</h4>
-          <div v-for="mcp in scopeMcpServers" :key="mcp.id" class="bg-white dark:bg-gray-900 rounded-lg shadow p-4 mb-3">
-            <div class="flex items-center justify-between mb-2">
-              <span class="text-sm font-medium text-theme-strong">{{ mcp.name }}</span>
-              <div class="flex items-center space-x-0.5 flex-shrink-0">
-                <button
-                  type="button"
-                  class="px-2.5 py-1 text-xs rounded-l-md border transition-colors"
-                  :class="scopeEditMcp[mcp.id]?.mode === 'global' ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700' : 'bg-white dark:bg-gray-800 text-theme-subtle border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'"
-                  @click="onScopeModeChange(mcp.id, 'mcp', 'global')"
-                >{{ $t('plugin.scope_global') }}</button>
-                <button
-                  type="button"
-                  class="px-2.5 py-1 text-xs border-t border-b transition-colors"
-                  :class="scopeEditMcp[mcp.id]?.mode === 'allow' ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700' : 'bg-white dark:bg-gray-800 text-theme-subtle border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'"
-                  @click="onScopeModeChange(mcp.id, 'mcp', 'allow')"
-                >{{ $t('plugin.scope_mode_allow') }}</button>
-                <button
-                  type="button"
-                  class="px-2.5 py-1 text-xs rounded-r-md border transition-colors"
-                  :class="scopeEditMcp[mcp.id]?.mode === 'deny' ? 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 border-red-300 dark:border-red-700' : 'bg-white dark:bg-gray-800 text-theme-subtle border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'"
-                  @click="onScopeModeChange(mcp.id, 'mcp', 'deny')"
-                >{{ $t('plugin.scope_mode_deny') }}</button>
-              </div>
-            </div>
-            <div v-if="scopeEditMcp[mcp.id]?.mode !== 'global'" class="mt-2 pt-2 border-t border-gray-100 dark:border-gray-800">
-              <p class="text-xs text-theme-faint mb-1.5">
-                {{ scopeEditMcp[mcp.id]?.mode === 'allow' ? $t('plugin.scope_mode_allow_hint') : $t('plugin.scope_mode_deny_hint') }}
-              </p>
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5">
-                <div v-for="s in scopeSessions" :key="s.id" class="flex items-center justify-between py-0.5">
-                  <span class="text-xs text-theme-supporting truncate mr-2">{{ s.title ? `${s.title} | ${s.id}` : s.id }}</span>
+        <template v-for="(resources, type) in scopeResources" :key="type">
+          <div v-if="resources.length > 0" class="mb-6">
+            <h4 class="text-sm font-semibold text-theme-body mb-3">{{ $t(scopeSectionLabels[type]) }}</h4>
+            <div v-for="resource in resources" :key="resource.id" class="bg-white dark:bg-gray-900 rounded-lg shadow p-4 mb-3">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-sm font-medium text-theme-strong">{{ resource.name }}</span>
+                <div class="flex items-center space-x-0.5 flex-shrink-0">
                   <button
                     type="button"
-                    class="ml-2 relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none"
-                    :class="scopeEditMcp[mcp.id]?.sessions.has(s.id) ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500' : 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600'"
-                    @click="onScopeSessionToggle(mcp.id, 'mcp', s.id)"
-                  >
-                    <span
-                      class="pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
-                      :class="scopeEditMcp[mcp.id]?.sessions.has(s.id) ? 'translate-x-3.5' : 'translate-x-0'"
-                    />
-                  </button>
+                    class="px-2.5 py-1 text-xs rounded-l-md border transition-colors"
+                    :class="resource.mode === 'global' ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700' : 'bg-white dark:bg-gray-800 text-theme-subtle border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                    @click="onScopeModeChange(resource, 'global')"
+                  >{{ $t('plugin.scope_global') }}</button>
+                  <button
+                    type="button"
+                    class="px-2.5 py-1 text-xs border-t border-b transition-colors"
+                    :class="resource.mode === 'allow' ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700' : 'bg-white dark:bg-gray-800 text-theme-subtle border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                    @click="onScopeModeChange(resource, 'allow')"
+                  >{{ $t('plugin.scope_mode_allow') }}</button>
+                  <button
+                    type="button"
+                    class="px-2.5 py-1 text-xs rounded-r-md border transition-colors"
+                    :class="resource.mode === 'deny' ? 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 border-red-300 dark:border-red-700' : 'bg-white dark:bg-gray-800 text-theme-subtle border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                    @click="onScopeModeChange(resource, 'deny')"
+                  >{{ $t('plugin.scope_mode_deny') }}</button>
+                </div>
+              </div>
+              <div v-if="resource.mode !== 'global'" class="mt-2 pt-2 border-t border-gray-100 dark:border-gray-800">
+                <p class="text-xs text-theme-faint mb-1.5">
+                  {{ resource.mode === 'allow' ? $t('plugin.scope_mode_allow_hint') : $t('plugin.scope_mode_deny_hint') }}
+                </p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5">
+                  <div v-for="s in scopeSessions" :key="s.id" class="flex items-center justify-between py-0.5">
+                    <span class="text-xs text-theme-supporting truncate mr-2">{{ s.title ? `${s.title} | ${s.id}` : s.id }}</span>
+                    <button
+                      type="button"
+                      class="ml-2 relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none"
+                      :class="resource.sessions.has(s.id) ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500' : 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600'"
+                      @click="onScopeSessionToggle(resource, s.id)"
+                    >
+                      <span
+                        class="pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+                        :class="resource.sessions.has(s.id) ? 'translate-x-3.5' : 'translate-x-0'"
+                      />
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-
-        <!-- Skills section -->
-        <div v-if="scopeSkills.length > 0" class="mb-6">
-          <h4 class="text-sm font-semibold text-theme-body mb-3">{{ $t('plugin.scope_skills_section') }}</h4>
-          <div v-for="skill in scopeSkills" :key="skill.name" class="bg-white dark:bg-gray-900 rounded-lg shadow p-4 mb-3">
-            <div class="flex items-center justify-between mb-2">
-              <span class="text-sm font-medium text-theme-strong">{{ skill.name }}</span>
-              <div class="flex items-center space-x-0.5 flex-shrink-0">
-                <button
-                  type="button"
-                  class="px-2.5 py-1 text-xs rounded-l-md border transition-colors"
-                  :class="scopeEditSkill[skill.name]?.mode === 'global' ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700' : 'bg-white dark:bg-gray-800 text-theme-subtle border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'"
-                  @click="onScopeModeChange(skill.name, 'skill', 'global')"
-                >{{ $t('plugin.scope_global') }}</button>
-                <button
-                  type="button"
-                  class="px-2.5 py-1 text-xs border-t border-b transition-colors"
-                  :class="scopeEditSkill[skill.name]?.mode === 'allow' ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700' : 'bg-white dark:bg-gray-800 text-theme-subtle border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'"
-                  @click="onScopeModeChange(skill.name, 'skill', 'allow')"
-                >{{ $t('plugin.scope_mode_allow') }}</button>
-                <button
-                  type="button"
-                  class="px-2.5 py-1 text-xs rounded-r-md border transition-colors"
-                  :class="scopeEditSkill[skill.name]?.mode === 'deny' ? 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 border-red-300 dark:border-red-700' : 'bg-white dark:bg-gray-800 text-theme-subtle border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'"
-                  @click="onScopeModeChange(skill.name, 'skill', 'deny')"
-                >{{ $t('plugin.scope_mode_deny') }}</button>
-              </div>
-            </div>
-            <div v-if="scopeEditSkill[skill.name]?.mode !== 'global'" class="mt-2 pt-2 border-t border-gray-100 dark:border-gray-800">
-              <p class="text-xs text-theme-faint mb-1.5">
-                {{ scopeEditSkill[skill.name]?.mode === 'allow' ? $t('plugin.scope_mode_allow_hint') : $t('plugin.scope_mode_deny_hint') }}
-              </p>
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5">
-                <div v-for="s in scopeSessions" :key="s.id" class="flex items-center justify-between py-0.5">
-                  <span class="text-xs text-theme-supporting truncate mr-2">{{ s.title ? `${s.title} | ${s.id}` : s.id }}</span>
-                  <button
-                    type="button"
-                    class="ml-2 relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none"
-                    :class="scopeEditSkill[skill.name]?.sessions.has(s.id) ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500' : 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600'"
-                    @click="onScopeSessionToggle(skill.name, 'skill', s.id)"
-                  >
-                    <span
-                      class="pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
-                      :class="scopeEditSkill[skill.name]?.sessions.has(s.id) ? 'translate-x-3.5' : 'translate-x-0'"
-                    />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        </template>
 
         <!-- Save button -->
         <div class="flex justify-end">
@@ -1245,7 +1195,7 @@ import {
   IconPuzzle, IconInfoCircle, IconServer, IconUpload, IconRefresh,
   IconLightbulb, IconCog, IconSpinner, IconInfo, IconPackage, IconBox, IconClose, IconSearch, IconDownload, IconTrash,
 } from '@/components/icons'
-import type { PluginComponent, PluginItem, McpServerItem, McpToolItem, PluginStoreSource, PluginStoreItem, PluginUpdateCheckItem, PluginTask, PluginUpdateQueueItem } from '@/types'
+import type { PluginComponent, PluginItem, McpServerItem, McpToolItem, PluginStoreSource, PluginStoreItem, PluginUpdateCheckItem, PluginTask, PluginUpdateQueueItem, ScopeEntry, ScopeResponse } from '@/types'
 import { getSources, addSource as apiAddSource, deleteSource as apiDeleteSource, setCurrentSource as apiSetCurrentSource, fetchPluginsFromSource } from '@/api/pluginStore'
 
 const { t } = useI18n()
@@ -1403,16 +1353,27 @@ const uploadingSkill = ref(false)
 const skillsDropzoneRef = ref<InstanceType<typeof FileDropzone> | null>(null)
 
 // Scope state
+type ScopeMode = 'global' | 'allow' | 'deny'
+type ScopeResource = {
+  id: string
+  name: string
+  mode: ScopeMode
+  sessions: Set<string>
+}
+
+const scopeSectionLabels = {
+  mcp: 'plugin.scope_mcp_section',
+  skill: 'plugin.scope_skills_section',
+  subagent: 'plugin.scope_subagents_section',
+}
 const scopeLoading = ref(false)
 const scopeError = ref<string | null>(null)
-const scopeSessions = ref<{ id: string; adapter: string; type: string; session_id: string; title: string }[]>([])
-const scopeMcpServers = ref<{ id: string; name: string; enabled: boolean }[]>([])
-const scopeSkills = ref<{ name: string; enabled: boolean }[]>([])
-const mcpScopes = ref<Record<string, any>>({})
-const skillScopes = ref<Record<string, any>>({})
-// Per-resource edit state: { resourceId: { mode: 'global'|'allow'|'deny', sessions: Set<string> } }
-const scopeEditMcp = ref<Record<string, { mode: string; sessions: Set<string> }>>({})
-const scopeEditSkill = ref<Record<string, { mode: string; sessions: Set<string> }>>({})
+const scopeSessions = ref<ScopeResponse['sessions']>([])
+const scopeResources = ref<Record<keyof typeof scopeSectionLabels, ScopeResource[]>>({
+  mcp: [],
+  skill: [],
+  subagent: [],
+})
 const savingScope = ref(false)
 
 // Confirm modal state
@@ -2225,14 +2186,19 @@ async function loadScope() {
   scopeLoading.value = true
   scopeError.value = null
   try {
-    const res = await getScope()
-    const data = res.data
+    const { data } = await getScope()
     scopeSessions.value = Array.isArray(data.sessions) ? data.sessions : []
-    scopeMcpServers.value = Array.isArray(data.mcp_servers) ? data.mcp_servers : []
-    scopeSkills.value = Array.isArray(data.skills) ? data.skills : []
-    mcpScopes.value = data.mcp_scopes || {}
-    skillScopes.value = data.skill_scopes || {}
-    initScopeEditState()
+    const mcp = Array.isArray(data.mcp_servers) ? data.mcp_servers : []
+    const skills = Array.isArray(data.skills) ? data.skills : []
+    const subagents = Array.isArray(data.subagent_presets) ? data.subagent_presets : []
+    scopeResources.value = {
+      mcp: buildScopeResources(mcp, data.mcp_scopes ?? {}),
+      skill: buildScopeResources(
+        skills.map(({ name }) => ({ id: name, name })),
+        data.skill_scopes ?? {},
+      ),
+      subagent: buildScopeResources(subagents, data.subagent_scopes ?? {}),
+    }
   } catch (e: any) {
     scopeError.value = t('plugin.scope_load_failed')
   } finally {
@@ -2240,77 +2206,54 @@ async function loadScope() {
   }
 }
 
-function initScopeEditState() {
-  const mcpState: Record<string, { mode: string; sessions: Set<string> }> = {}
-  for (const mcp of scopeMcpServers.value) {
-    const entry = mcpScopes.value[mcp.id]
-    if (!entry) {
-      mcpState[mcp.id] = { mode: 'global', sessions: new Set() }
-    } else if ('allow' in entry) {
-      mcpState[mcp.id] = { mode: 'allow', sessions: new Set((entry as any).allow) }
-    } else if ('deny' in entry) {
-      mcpState[mcp.id] = { mode: 'deny', sessions: new Set((entry as any).deny) }
-    } else {
-      mcpState[mcp.id] = { mode: 'global', sessions: new Set() }
+function buildScopeResources(
+  items: { id: string; name: string }[],
+  scopes: Record<string, ScopeEntry>,
+): ScopeResource[] {
+  return items.map(({ id, name }) => {
+    const entry = scopes[id]
+    if (entry && 'allow' in entry) {
+      return { id, name, mode: 'allow', sessions: new Set(entry.allow) }
     }
-  }
-  scopeEditMcp.value = mcpState
-
-  const skillState: Record<string, { mode: string; sessions: Set<string> }> = {}
-  for (const skill of scopeSkills.value) {
-    const entry = skillScopes.value[skill.name]
-    if (!entry) {
-      skillState[skill.name] = { mode: 'global', sessions: new Set() }
-    } else if ('allow' in entry) {
-      skillState[skill.name] = { mode: 'allow', sessions: new Set((entry as any).allow) }
-    } else if ('deny' in entry) {
-      skillState[skill.name] = { mode: 'deny', sessions: new Set((entry as any).deny) }
-    } else {
-      skillState[skill.name] = { mode: 'global', sessions: new Set() }
+    if (entry && 'deny' in entry) {
+      return { id, name, mode: 'deny', sessions: new Set(entry.deny) }
     }
-  }
-  scopeEditSkill.value = skillState
+    return { id, name, mode: 'global', sessions: new Set() }
+  })
 }
 
-function onScopeModeChange(resourceId: string, type: 'mcp' | 'skill', newMode: string) {
-  const state = type === 'mcp' ? scopeEditMcp : scopeEditSkill
-  if (state.value[resourceId]) {
-    state.value[resourceId].mode = newMode
-    if (newMode === 'global') {
-      state.value[resourceId].sessions = new Set()
-    }
+function onScopeModeChange(resource: ScopeResource, mode: ScopeMode) {
+  resource.mode = mode
+  if (mode === 'global') {
+    resource.sessions.clear()
   }
 }
 
-function onScopeSessionToggle(resourceId: string, type: 'mcp' | 'skill', sessionId: string) {
-  const state = type === 'mcp' ? scopeEditMcp : scopeEditSkill
-  if (!state.value[resourceId]) return
-  const sessions = state.value[resourceId].sessions
-  if (sessions.has(sessionId)) {
-    sessions.delete(sessionId)
+function onScopeSessionToggle(resource: ScopeResource, sessionId: string) {
+  if (resource.sessions.has(sessionId)) {
+    resource.sessions.delete(sessionId)
   } else {
-    sessions.add(sessionId)
+    resource.sessions.add(sessionId)
   }
+}
+
+function buildScopePayload(resources: ScopeResource[], keepEmptyRules = false): Record<string, ScopeEntry> {
+  const entries: [string, ScopeEntry][] = []
+  for (const { id, mode, sessions } of resources) {
+    if (mode === 'global' || (!keepEmptyRules && sessions.size === 0)) continue
+    entries.push([id, mode === 'allow' ? { allow: [...sessions] } : { deny: [...sessions] }])
+  }
+  return Object.fromEntries(entries)
 }
 
 async function saveScope() {
   savingScope.value = true
   try {
-    const newMcpScopes: Record<string, any> = {}
-    for (const [serverId, state] of Object.entries(scopeEditMcp.value)) {
-      if (state.mode !== 'global' && state.sessions.size > 0) {
-        newMcpScopes[serverId] = { [state.mode]: Array.from(state.sessions) }
-      }
-    }
-
-    const newSkillScopes: Record<string, any> = {}
-    for (const [skillName, state] of Object.entries(scopeEditSkill.value)) {
-      if (state.mode !== 'global' && state.sessions.size > 0) {
-        newSkillScopes[skillName] = { [state.mode]: Array.from(state.sessions) }
-      }
-    }
-
-    await updateScope({ mcp_scopes: newMcpScopes, skill_scopes: newSkillScopes })
+    await updateScope({
+      mcp_scopes: buildScopePayload(scopeResources.value.mcp),
+      skill_scopes: buildScopePayload(scopeResources.value.skill),
+      subagent_scopes: buildScopePayload(scopeResources.value.subagent, true),
+    })
     notify(t('plugin.scope_save_success'), 'success')
     await loadScope()
   } catch (e: any) {

@@ -48,6 +48,7 @@ class SubAgentsPlugin(BasePlugin):
     async def inject_tools(self, event, request: LLMRequest, *_):
         if request.tool_set is None:
             request.tool_set = ToolSet()
+        can_spawn = self.ctx.subagent_mgr.presets.has_available_presets(event.session.sid)
         for tool_type in (
             SpawnAgentTool,
             ListAgentsTool,
@@ -55,7 +56,7 @@ class SubAgentsPlugin(BasePlugin):
             FollowupTaskTool,
             InterruptAgentTool,
         ):
-            if tool_type is SpawnAgentTool and not self.ctx.subagent_mgr.presets.has_available_presets():
+            if tool_type is SpawnAgentTool and not can_spawn:
                 continue
             request.tool_set.add(tool_type(
                 ctx=self.ctx,

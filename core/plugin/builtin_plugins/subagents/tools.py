@@ -72,7 +72,10 @@ class SpawnAgentTool(SubAgentTool):
     async def execute(self, event, *, task: str, preset_name: str, name: str | None = None):
         if not isinstance(preset_name, str) or not preset_name.strip():
             raise ValueError("preset_name must be a non-empty string")
-        preset_id, preset = self.ctx.subagent_mgr.presets.get_enabled_by_name(preset_name.strip())
+        preset_id, preset = self.ctx.subagent_mgr.presets.get_enabled_by_name(
+            preset_name.strip(),
+            session_id=self.source.sid,
+        )
         source = await self._get_source()
         config = preset.execution_config(build_tool_execution_config(self.ctx.config))
         tools = self._custom_tools(list(config.tool_names)) if config.tool_mode == "custom" else None

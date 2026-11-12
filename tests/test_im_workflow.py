@@ -105,6 +105,8 @@ async def test_subagent_presets_are_built_with_skills_after_tools(processor, tmp
         instruction="Private system prompt",
     ))
     await store.save(SubAgentPreset(name="Hidden", enabled=False))
+    restricted = await store.save(SubAgentPreset(name="Other session only"))
+    await store.replace_scopes({restricted["id"]: {"allow": [batch("other").sid]}})
     services.subagent_manager = SimpleNamespace(presets=store)
     services.prompt_manager.get_agent_prompt.side_effect = lambda *_: [
         Prompt("Tools\n", name="tools"),
@@ -135,6 +137,7 @@ async def test_subagent_presets_are_built_with_skills_after_tools(processor, tmp
     assert "preset_name" in catalog.content
     assert "spawn_agent" in catalog.content
     assert "Hidden" not in catalog.content
+    assert "Other session only" not in catalog.content
     assert "Private system prompt" not in catalog.content
     assert await AssembleRequestStage().run(ctx)
     assert any("Inspect performance" in (message.content or "") for message in ctx.request.messages)
