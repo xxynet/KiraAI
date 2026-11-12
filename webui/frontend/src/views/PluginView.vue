@@ -1164,6 +1164,7 @@ import { CircleCheck } from '@element-plus/icons-vue'
 import { useLocalized } from '@/composables/useLocalized'
 import { notify } from '@/composables/useNotification'
 import { useTheme } from '@/composables/useTheme'
+import { usePluginMenuStore } from '@/stores/pluginMenu'
 import Modal from '@/components/common/Modal.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import FileDropzone from '@/components/common/FileDropzone.vue'
@@ -1204,6 +1205,7 @@ import { getSources, addSource as apiAddSource, deleteSource as apiDeleteSource,
 const { t } = useI18n()
 const { localize } = useLocalized()
 const { isDark } = useTheme()
+const pluginMenuStore = usePluginMenuStore()
 const activeTab = ref('plugins')
 
 // Plugins
@@ -1476,6 +1478,7 @@ async function loadPlugins(): Promise<boolean> {
   try {
     const res = await getPlugins()
     plugins.value = Array.isArray(res.data) ? res.data : []
+    pluginMenuStore.syncMenus(plugins.value)
     const installedIds = new Set(plugins.value.map(plugin => plugin.id))
     for (const item of storePlugins.value) {
       item.installed = installedIds.has(item.id)
@@ -1676,7 +1679,7 @@ async function refreshPluginTasks() {
     pluginTasks.value = response.data
     taskQueueLoadError.value = false
     taskPollFailures = 0
-    if (response.data.some(task => ['completed', 'failed'].includes(task.status) && previous.has(task.task_id) && previous.get(task.task_id) !== task.status)) {
+    if (lostTasks || response.data.some(task => ['completed', 'failed'].includes(task.status) && previous.has(task.task_id) && previous.get(task.task_id) !== task.status)) {
       await loadPlugins()
       for (const task of response.data.filter(task => task.status === 'completed')) {
         if (task.operation === 'update' && task.plugin_id && pluginUpdates.value.get(task.plugin_id)?.commit_sha === task.commit_sha) {
@@ -1723,7 +1726,10 @@ watch(hasTransientPlugins, (hasTransient) => {
     pluginPollTimer = setInterval(async () => {
       try {
         const res = await getPlugins()
-        plugins.value = Array.isArray(res.data) ? res.data : plugins.value
+        if (Array.isArray(res.data)) {
+          plugins.value = res.data
+          pluginMenuStore.syncMenus(plugins.value)
+        }
       } catch { /* keep stale data during poll */ }
     }, 5000)
   } else if (!hasTransient && pluginPollTimer) {
