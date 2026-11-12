@@ -1,4 +1,5 @@
 import asyncio
+import time
 from types import SimpleNamespace
 from typing import ClassVar
 from unittest.mock import AsyncMock, Mock
@@ -44,7 +45,7 @@ class RecordingTool(BaseTool):
 
 
 @pytest.fixture
-async def agents(session_db):
+async def agents(session_db, request):
     sessions = SessionManager(session_db, {"bot_config": {"bot": {"max_memory_length": 100}}})
     parent = await sessions.get_session("platform:dm:parent", ensure_session=True)
     model = SimpleNamespace(
@@ -57,6 +58,7 @@ async def agents(session_db):
         message_history=MessageHistoryService(session_db, sessions),
         event_bus=Mock(publish=AsyncMock()),
         persona_manager=PersonaManager(sessions.db),
+        max_concurrent=getattr(request, "param", None),
     )
     try:
         yield manager, sessions, parent, model
@@ -468,28 +470,102 @@ async def test_abort_finishes_current_call_and_discards_queued_turns(agents):
 
 
 @pytest.mark.anyio
-async def test_concurrency_and_abort_while_waiting_for_a_slot(agents):
-    manager, _, parent, model = agents
-    manager.semaphore = asyncio.Semaphore(1)
+@pytest.mark.parametrize("agents", [1], indirect=True)
+@pytest.mark.parametrize("abort_waiter", [False, True])
+async def test_concurrency_is_scoped_to_parent_sessions(agents, abort_waiter):
+    manager, sessions, parent, model = agents
+    other_parent = await sessions.get_session("platform:dm:other", ensure_session=True)
     entered, release = asyncio.Event(), asyncio.Event()
 
     async def chat(request):
-        entered.set()
-        await release.wait()
+        if request.messages[-1].content == "first":
+            entered.set()
+            await release.wait()
         return LLMResponse("finished")
 
     model.chat.side_effect = chat
+    if not abort_waiter:
+        saved = await manager.spawn("initial turn", parent_id=parent.internal_id, permission_session=other_parent)
+        assert (await manager.wait(saved["id"], timeout=2))["status"] == "done"
+        manager._agents.pop(saved["id"])
+        model.chat.reset_mock()
+
     first = await manager.spawn("first", parent_id=parent.internal_id)
     await asyncio.wait_for(entered.wait(), 2)
-    second = await manager.spawn("second", parent_id=parent.internal_id)
-    await asyncio.sleep(0)
-    assert model.chat.await_count == 1
-    await manager.interrupt(second["id"])
-    assert (await manager.wait(second["id"], timeout=2))["status"] == "stopped"
-    assert model.chat.await_count == 1
+    if abort_waiter:
+        second = await manager.spawn("second", parent_id=parent.internal_id, permission_session=other_parent)
+    else:
+        second = await manager.followup(saved["id"], "second")
+
+    other = await manager.spawn("other", parent_id=other_parent.internal_id, permission_session=parent)
+    standalone = await manager.spawn("standalone", permission_session=parent)
+    assert (await manager.wait(other["id"], timeout=2))["status"] == "done"
+    assert (await manager.wait(standalone["id"], timeout=2))["status"] == "done"
+    assert (await manager.get(second["id"]))["status"] == "queued"
+    assert model.chat.await_count == 3
+
+    if abort_waiter:
+        await manager.interrupt(second["id"])
+        assert (await manager.wait(second["id"], timeout=2))["status"] == "stopped"
+        assert model.chat.await_count == 3
     release.set()
-    await manager.wait(first["id"], timeout=2)
-    assert manager.semaphore._value == 1
+    assert (await manager.wait(first["id"], timeout=2))["status"] == "done"
+    if not abort_waiter:
+        assert (await manager.wait(second["id"], timeout=2))["status"] == "done"
+        assert model.chat.await_count == 4
+
+
+@pytest.mark.anyio
+async def test_webui_concurrency_changes_apply_to_queued_subagents(agents, monkeypatch, tmp_path):
+    from fastapi import FastAPI
+
+    from core.config import config_loader
+    from webui.routes.config import ConfigRoutes
+
+    manager, sessions, parent, model = agents
+    monkeypatch.setattr(config_loader, "CONFIG_PATH", tmp_path / "system_config.json")
+    config = config_loader.KiraConfig()
+    sessions.kira_config = config
+    routes = ConfigRoutes(FastAPI(), SimpleNamespace(kira_config=config))
+
+    async def save_limit(limit):
+        bot_config = config["bot_config"]
+        subagent = {**bot_config["subagent"], "max_concurrent_per_session": limit}
+        await routes.update_configuration({"bot_config": {**bot_config, "subagent": subagent}})
+
+    started = {task: asyncio.Event() for task in ("first", "second", "third")}
+    release = {task: asyncio.Event() for task in started}
+
+    async def chat(request):
+        task = request.messages[-1].content
+        started[task].set()
+        await release[task].wait()
+        return LLMResponse("finished")
+
+    model.chat.side_effect = chat
+    await save_limit(1)
+    first = await manager.spawn("first", parent_id=parent.internal_id)
+    await asyncio.wait_for(started["first"].wait(), 2)
+    second = await manager.spawn("second", parent_id=parent.internal_id)
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(started["second"].wait(), 0.1)
+
+    await save_limit(2)
+    await asyncio.wait_for(started["second"].wait(), 3)
+    assert (await manager.get(first["id"]))["status"] == "running"
+
+    await save_limit(1)
+    third = await manager.spawn("third", parent_id=parent.internal_id)
+    release["first"].set()
+    assert (await manager.wait(first["id"], timeout=2))["status"] == "done"
+    assert (await manager.get(second["id"]))["status"] == "running"
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(started["third"].wait(), 0.1)
+
+    release["second"].set()
+    await asyncio.wait_for(started["third"].wait(), 2)
+    release["third"].set()
+    assert (await manager.wait(third["id"], timeout=2))["status"] == "done"
 
 
 @pytest.mark.anyio
@@ -555,6 +631,107 @@ async def test_restart_retains_results_and_continues_the_saved_conversation(agen
         assert len([message for message in model.chat.await_args.args[0].messages if message.role == "system"]) == 1
     finally:
         await restored.shutdown(timeout=0)
+
+
+@pytest.mark.anyio
+async def test_subagent_retention_deletes_expired_sessions_and_archives(agents):
+    from sqlalchemy import update
+
+    from core.db.models import ChatSessionRecord
+    from core.event_bus import EventBus
+
+    manager, sessions, parent, _ = agents
+    bus = EventBus(Mock(), asyncio.Queue())
+    bus.subscribe("session_deleted", manager.on_session_deleted)
+    bus.subscribe("session_deleted", manager.message_history.on_session_deleted)
+    sessions.event_bus = bus
+    child = await manager.spawn("archived task", parent_id=parent.internal_id)
+    await manager.wait(child["id"], timeout=2)
+    fresh = await sessions.create_subagent_session(title="Fresh")
+    now = int(time.time())
+    async with sessions.db.db.transaction() as db:
+        await db.execute(update(ChatSessionRecord).where(
+            ChatSessionRecord.id.in_([child["id"], parent.internal_id]),
+        ).values(updated_at=now - 8 * 3600))
+        await db.execute(update(ChatSessionRecord).where(
+            ChatSessionRecord.id == fresh.internal_id,
+        ).values(updated_at=now - 6 * 3600))
+
+    config = {"bot_config": {}}
+    await manager.cleanup_expired_sessions(config)
+    assert await sessions.get_session(child["sid"]) is not None
+    assert await manager.message_history.list_sessions(session_id=child["sid"])
+
+    config["bot_config"]["subagent"] = {"session_retention_hours": 7}
+    await manager.cleanup_expired_sessions(config)
+    await asyncio.gather(*tuple(sessions._background_tasks))
+    while not bus.event_queue.empty():
+        await bus._process_event(await bus.event_queue.get())
+
+    assert await sessions.get_session(child["sid"]) is None
+    assert not await manager.message_history.list_sessions(session_id=child["sid"])
+    assert child["id"] not in manager._agents
+    assert await sessions.get_session(parent.sid) is not None
+    assert await sessions.get_session(fresh.sid) is not None
+
+
+@pytest.mark.anyio
+async def test_subagent_session_retention_overrides_current_default(agents):
+    from sqlalchemy import update
+
+    from core.db.models import ChatSessionRecord
+
+    manager, sessions, _, _ = agents
+    expiring = await manager.spawn("short-lived", session_retention_hours=2)
+    longer = await manager.spawn("long-lived", session_retention_hours=6)
+    permanent = await manager.spawn("permanent", session_retention_hours=0)
+    inherited = await manager.spawn("inherits default")
+    for info in (expiring, longer, permanent, inherited):
+        assert (await manager.wait(info["id"], timeout=2))["status"] == "done"
+
+    async with sessions.db.db.transaction() as db:
+        await db.execute(update(ChatSessionRecord).where(
+            ChatSessionRecord.kind == "subagent",
+        ).values(updated_at=int(time.time()) - 3 * 3600))
+
+    config = {"bot_config": {"subagent": {"session_retention_hours": 0}}}
+    await manager.cleanup_expired_sessions(config)
+    assert await sessions.get_session(expiring["sid"]) is None
+    assert await sessions.get_session(inherited["sid"]) is not None
+
+    config["bot_config"]["subagent"]["session_retention_hours"] = 1
+    await manager.cleanup_expired_sessions(config)
+    assert await sessions.get_session(inherited["sid"]) is None
+    assert await sessions.get_session(longer["sid"]) is not None
+    assert await sessions.get_session(permanent["sid"]) is not None
+
+
+@pytest.mark.anyio
+async def test_subagent_retention_skips_active_sessions(agents):
+    from sqlalchemy import update
+
+    from core.db.models import ChatSessionRecord
+
+    manager, sessions, _, model = agents
+    entered = asyncio.Event()
+
+    async def chat(request):
+        entered.set()
+        await asyncio.Event().wait()
+
+    model.chat.side_effect = chat
+    active = await manager.spawn("running task")
+    await asyncio.wait_for(entered.wait(), 2)
+    expired = await sessions.create_subagent_session()
+    async with sessions.db.db.transaction() as db:
+        await db.execute(update(ChatSessionRecord).where(
+            ChatSessionRecord.id.in_([active["id"], expired.internal_id]),
+        ).values(updated_at=1))
+
+    await manager.cleanup_expired_sessions({"bot_config": {"subagent": {"session_retention_hours": 1}}})
+
+    assert (await manager.get(active["id"]))["status"] == "running"
+    assert await sessions.get_session(expired.sid) is None
 
 
 @pytest.mark.anyio
@@ -661,7 +838,10 @@ async def test_native_tools_bind_the_caller_and_inherit_actual_request_tools(age
         assert function["parameters"]["type"] == "object"
     spawn_schema = next(tool["function"] for tool in controls if tool["function"]["name"] == "spawn_agent")
     assert spawn_schema["parameters"]["required"] == ["task", "preset_name"]
-    assert set(spawn_schema["parameters"]["properties"]) == {"task", "preset_name", "name"}
+    properties = spawn_schema["parameters"]["properties"]
+    assert set(properties) == {"task", "preset_name", "name", "session_retention_hours"}
+    assert properties["session_retention_hours"]["type"] == "integer"
+    assert properties["session_retention_hours"]["minimum"] == 0
     spawn = request.tool_set.get("spawn_agent")
     with pytest.raises(TypeError, match="preset_name"):
         await spawn.execute(event, task="delegate")
@@ -672,10 +852,20 @@ async def test_native_tools_bind_the_caller_and_inherit_actual_request_tools(age
                 task="delegate",
                 preset_name=invalid,
             )
+    for invalid in (-1, True, 1.5, "2"):
+        with pytest.raises(ValueError, match="session_retention_hours"):
+            await spawn.execute(
+                event,
+                task="delegate",
+                preset_name=preset["name"],
+                session_retention_hours=invalid,
+            )
+    assert await manager.list_agents(caller_id=parent.internal_id) == []
     info = json.loads(await spawn.execute(
         event,
         task="delegate",
         preset_name=preset["name"],
+        session_retention_hours=2,
     ))
     assert request.tool_set.get("wait_agent") is None
     result = await manager.wait(info["id"], timeout=2)
@@ -689,6 +879,7 @@ async def test_native_tools_bind_the_caller_and_inherit_actual_request_tools(age
     await request.tool_set.get("followup_task").execute(event, agent_id=info["id"], message="again")
     await manager.wait(info["id"], timeout=2)
     assert model.chat.await_count == 2
+    assert (await sessions.resolve_session(info["id"])).data["subagent"]["session_retention_hours"] == 2
 
 
 @pytest.mark.anyio

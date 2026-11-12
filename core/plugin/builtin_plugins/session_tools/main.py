@@ -295,8 +295,8 @@ class SessionPlugin(BasePlugin):
             return f"failed to send: {e}"
 
     async def get_session_list_prompt(self) -> str:
-        """List LLM session records using the original metadata-only discovery path."""
-        sessions = await self.ctx.session_mgr.get_sessions(include_content=False)
+        """List stored IM sessions for the cross-session tools."""
+        sessions = await self.ctx.session_mgr.get_sessions(include_content=False, kind="im")
         session_list = "\n".join(
             f"{session.sid}(title: {session.session_title})"
             for session in sessions if isinstance(session.data, dict)

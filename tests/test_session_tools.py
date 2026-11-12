@@ -78,6 +78,31 @@ async def test_history_only_session_is_queryable_but_excluded_from_prompt(sessio
 
 
 @pytest.mark.anyio
+async def test_sessions_prompt_excludes_subagent_sessions(session_plugin, history, monkeypatch):
+    from core.provider import LLMRequest
+    from core.prompt_manager import Prompt
+
+    parent = await history.session_manager.get_session(SID)
+    child = await history.session_manager.create_subagent_session(
+        title="Delegated task",
+        parent_id=parent.internal_id,
+    )
+    standalone = await history.session_manager.create_subagent_session(title="Standalone task")
+    list_sessions = AsyncMock(wraps=history.db.list_chat_sessions)
+    monkeypatch.setattr(history.db, "list_chat_sessions", list_sessions)
+    prompt = Prompt("# Sessions\n", name="sessions")
+    request = LLMRequest(system_prompt=[prompt])
+
+    await session_plugin.inject_session_prompt(SimpleNamespace(sid=SID), request)
+
+    list_sessions.assert_awaited_once_with(include_content=False, kind="im")
+    assert SID in prompt.content
+    for session in (child, standalone):
+        assert session.sid not in prompt.content
+        assert session.session_title not in prompt.content
+
+
+@pytest.mark.anyio
 async def test_nonexistent_session_has_empty_history_and_no_metadata(session_plugin, history):
     """Read-only tools must not create sessions when no matching history or metadata exists."""
     sid = "nonexistent:dm:user"

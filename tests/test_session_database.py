@@ -306,7 +306,7 @@ async def test_session_listing_uses_two_bulk_queries(session_db, tmp_path, monke
     routes = SessionsRoutes(FastAPI(), SimpleNamespace(session_manager=manager))
     result = await routes.list_sessions()
     assert len(result["sessions"]) == 2
-    listing.assert_awaited_once_with(include_content=False)
+    listing.assert_awaited_once_with(include_content=False, kind=None)
     counts.assert_awaited_once_with()
 
 

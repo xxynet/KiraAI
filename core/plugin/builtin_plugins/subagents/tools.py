@@ -64,12 +64,25 @@ class SpawnAgentTool(SubAgentTool):
                 "minLength": 1,
                 "description": "Exact name of an available subagent preset",
             },
+            "session_retention_hours": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Hours to retain this idle session since its last update. Use 0 to keep it indefinitely, or omit to use the configured default.",
+            },
         },
         "required": ["task", "preset_name"],
         "additionalProperties": False,
     }
 
-    async def execute(self, event, *, task: str, preset_name: str, name: str | None = None):
+    async def execute(
+        self,
+        event,
+        *,
+        task: str,
+        preset_name: str,
+        name: str | None = None,
+        session_retention_hours: int | None = None,
+    ):
         if not isinstance(preset_name, str) or not preset_name.strip():
             raise ValueError("preset_name must be a non-empty string")
         preset_id, preset = self.ctx.subagent_mgr.presets.get_enabled_by_name(
@@ -89,6 +102,7 @@ class SpawnAgentTool(SubAgentTool):
             tools=tools,
             preset_id=preset_id,
             source_event=event,
+            session_retention_hours=session_retention_hours,
         )
         return json.dumps(result, ensure_ascii=False)
 

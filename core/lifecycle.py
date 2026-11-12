@@ -334,6 +334,12 @@ class KiraLifecycle:
             self.message_history, self.kira_config
         )
         self.message_history_cleanup.start()
+        self.tasks.append(
+            asyncio.create_task(
+                self.subagent_manager.run_session_cleanup(self.kira_config),
+                name="subagent_session_cleanup",
+            )
+        )
         self.event_bus.subscribe(
             KiraMessageEvent,
             self.message_router.handle_event,

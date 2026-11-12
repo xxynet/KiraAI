@@ -78,11 +78,12 @@ class SessionManager:
         return records
 
     async def get_sessions(
-        self, *, include_content: bool = True,
+        self, *, include_content: bool = True, kind: str | None = None,
     ) -> list[Session]:
-        """Query session snapshots, optionally omitting message content."""
+        """Query session snapshots, optionally filtering by kind or omitting content."""
         rows = await self.db.list_chat_sessions(
             include_content=include_content,
+            kind=kind,
         )
         return [Session.from_record(row) for row in rows
                 if len(row["session_key"].split(":", 2)) == 3]
