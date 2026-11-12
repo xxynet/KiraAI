@@ -764,6 +764,8 @@ async def test_startup_preserves_configured_adapter_and_disables_conflicting_web
         for method in ("init", "initialize", "init_tables", "init_persona", "init_mcp",
                        "cleanup_task", "start_monitoring", "dispatch"):
             setattr(component, method, AsyncMock())
+        if name == "SubAgentManager":
+            component.run_session_cleanup = AsyncMock()
         monkeypatch.setattr(lifecycle_module, name, Mock(return_value=component))
     sessions = Sessions()
     monkeypatch.setattr(lifecycle_module, "SessionManager", Mock(return_value=sessions))
