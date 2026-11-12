@@ -120,6 +120,32 @@ class SubAgentExecutionHooks(AgentExecutionHooks[SubAgentExecutionContext]):
                 return
 
 
+class SubAgentConcurrency:
+    """Admit turns in arrival order using the current concurrency limit."""
+
+    def __init__(self, get_limit: Callable[[], int]):
+        self._get_limit = get_limit
+        self._running = 0
+        self._admission = asyncio.Lock()
+        self._released = asyncio.Event()
+
+    async def acquire(self) -> bool:
+        async with self._admission:
+            while self._running >= self._get_limit():
+                self._released.clear()
+                try:
+                    # Only the first waiter needs to check for a higher limit.
+                    await asyncio.wait_for(self._released.wait(), timeout=1)
+                except asyncio.TimeoutError:
+                    pass
+            self._running += 1
+        return True
+
+    def release(self) -> None:
+        self._running -= 1
+        self._released.set()
+
+
 class SubAgentExecutor(BaseAgentExecutor[SubAgentExecutionContext]):
     """Reuse the agent loop with bounded concurrency and per-turn persistence."""
 
@@ -128,7 +154,7 @@ class SubAgentExecutor(BaseAgentExecutor[SubAgentExecutionContext]):
         model_group,
         *,
         context: SubAgentExecutionContext,
-        semaphore: asyncio.Semaphore,
+        semaphore: asyncio.Semaphore | SubAgentConcurrency,
         on_turn_end: Callable[[SubAgentExecutionContext, BaseException | None], Awaitable[None]],
         on_turn_start: Callable[[], Awaitable[list[LLMModelClient] | None]],
         **kwargs,
@@ -162,7 +188,8 @@ class SubAgentExecutor(BaseAgentExecutor[SubAgentExecutionContext]):
         async with session_media_scope():
             error = None
             iterator = None
-            slot = asyncio.create_task(self.semaphore.acquire())
+            semaphore = self.semaphore
+            slot = asyncio.create_task(semaphore.acquire())
             stopped = asyncio.create_task(run_state.abort_requested.wait())
             try:
                 done, _ = await asyncio.wait({slot, stopped}, return_when=asyncio.FIRST_COMPLETED)
@@ -189,7 +216,7 @@ class SubAgentExecutor(BaseAgentExecutor[SubAgentExecutionContext]):
                         pending.cancel()
                 await asyncio.gather(slot, stopped, return_exceptions=True)
                 if not slot.cancelled() and slot.exception() is None and slot.result():
-                    self.semaphore.release()
+                    semaphore.release()
                 if iterator is not None:
                     await iterator.aclose()
                 task = asyncio.create_task(self.on_turn_end(ctx, error))

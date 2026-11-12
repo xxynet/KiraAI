@@ -295,11 +295,11 @@ class SessionPlugin(BasePlugin):
             return f"failed to send: {e}"
 
     async def get_session_list_prompt(self) -> str:
-        """List LLM session records using the original metadata-only discovery path."""
+        """List stored IM sessions for the cross-session tools."""
         sessions = await self.ctx.session_mgr.get_sessions(include_content=False)
         session_list = "\n".join(
             f"{session.sid}(title: {session.session_title})"
-            for session in sessions if isinstance(session.data, dict)
+            for session in sessions if session.kind == "im" and isinstance(session.data, dict)
         )
         return (
             "以下为当前存在会话的完整标识；调用会话工具时必须逐字复制其中一项。跨会话读取需要单独授权，列表不代表读取权限。"

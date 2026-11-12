@@ -4,6 +4,7 @@ import asyncio
 import json
 import time
 from dataclasses import dataclass, replace
+from weakref import WeakValueDictionary
 
 from core.chat.message_elements import Image, Text
 from core.chat.message_history import MessageHistoryService
@@ -15,6 +16,7 @@ from core.chat.message_utils import (
 )
 from core.chat.session import Session, User
 from core.chat.session_manager import SessionManager
+from core.config import DEFAULT_CONFIG, KiraConfig
 from core.event_bus import EventBus
 from core.logging_manager import get_logger
 from core.persona.persona_manager import PersonaManager
@@ -28,6 +30,7 @@ from .message import OpenAIMessage
 from .skills_mgr import SkillsManager
 from .subagent_event import SubAgentEvent
 from .subagent_executor import (
+    SubAgentConcurrency,
     SubAgentExecutionContext,
     SubAgentExecutionHooks,
     SubAgentExecutor,
@@ -69,10 +72,11 @@ class SubAgentManager:
         event_bus: EventBus,
         persona_manager: PersonaManager | None = None,
         skills_manager: SkillsManager | None = None,
-        max_concurrent: int = 4,
+        max_concurrent: int | None = None,
         max_agents: int = 128,
     ):
-        if any(not isinstance(value, int) or isinstance(value, bool) or value < 1 for value in (max_concurrent, max_agents)):
+        limits = (max_agents,) if max_concurrent is None else (max_agents, max_concurrent)
+        if any(not isinstance(value, int) or isinstance(value, bool) or value < 1 for value in limits):
             raise ValueError("Subagent limits must be positive")
         self.session_manager = session_manager
         self.provider_manager = provider_manager
@@ -81,7 +85,9 @@ class SubAgentManager:
         self.persona_manager = persona_manager
         self.skills_manager = skills_manager
         self.presets = SubAgentPresetStore()
-        self.semaphore = asyncio.Semaphore(max_concurrent)
+        self._max_concurrent_override = max_concurrent
+        self._standalone_semaphore = SubAgentConcurrency(self._get_max_concurrent)
+        self._parent_semaphores: WeakValueDictionary[str, SubAgentConcurrency] = WeakValueDictionary()
         self.max_agents = max_agents
         self._agents: dict[str, _Agent] = {}
         self._closing = False
@@ -103,6 +109,44 @@ class SubAgentManager:
                     session.sid,
                     data={**session.data, "subagent": state},
                 )
+
+    async def run_session_cleanup(self, config: KiraConfig) -> None:
+        """Periodically apply the current retention setting."""
+        while not self._closing:
+            try:
+                await self.cleanup_expired_sessions(config)
+            except Exception:
+                logger.exception("Unable to clean up expired subagent sessions")
+            await asyncio.sleep(3600)
+
+    async def cleanup_expired_sessions(self, config: KiraConfig) -> None:
+        """Delete idle subagent sessions that have reached their retention limit."""
+        if self._closing:
+            return
+        for session in await self.session_manager.get_sessions(include_content=False, kind="subagent"):
+            if session.updated_at is None:
+                continue
+            metadata = session.data.get("subagent") if isinstance(session.data, dict) else None
+            override = metadata.get("session_retention_hours") if isinstance(metadata, dict) else None
+            async with self._creation_lock:
+                if self._closing:
+                    return
+                hours = override
+                if hours is None:
+                    subagent_config = config.get("bot_config", {}).get("subagent", {})
+                    hours = subagent_config.get(
+                        "session_retention_hours",
+                        DEFAULT_CONFIG["bot_config"]["subagent"]["session_retention_hours"],
+                    )
+                if type(hours) is not int or hours < 0:
+                    logger.warning("Invalid retention hours for subagent session %s: %r", session.sid, hours)
+                    continue
+                if not hours or session.updated_at > int(time.time()) - hours * 3600:
+                    continue
+                agent = self._agents.get(session.internal_id)
+                if agent is not None and agent.task is not None and not agent.task.done():
+                    continue
+                await self.session_manager.delete_session(session.sid)
 
     @staticmethod
     def _settings(config: SubAgentConfig) -> dict:
@@ -154,6 +198,27 @@ class SubAgentManager:
         blocked = SUBAGENT_TOOL_NAMES | set(config.excluded_tools)
         return ToolSet([tool for tool in tools if tool.name not in blocked])
 
+    def _get_max_concurrent(self) -> int:
+        if self._max_concurrent_override is not None:
+            return self._max_concurrent_override
+        subagent_config = self.session_manager.kira_config.get("bot_config", {}).get("subagent", {})
+        limit = subagent_config.get(
+            "max_concurrent_per_session",
+            DEFAULT_CONFIG["bot_config"]["subagent"]["max_concurrent_per_session"],
+        )
+        if type(limit) is not int or limit < 1:
+            raise ValueError("subagent.max_concurrent_per_session must be a positive integer")
+        return limit
+
+    def _semaphore_for(self, parent_id: str | None) -> SubAgentConcurrency:
+        if parent_id is None:
+            return self._standalone_semaphore
+        semaphore = self._parent_semaphores.get(parent_id)
+        if semaphore is None:
+            semaphore = SubAgentConcurrency(self._get_max_concurrent)
+            self._parent_semaphores[parent_id] = semaphore
+        return semaphore
+
     def _reserve(self) -> None:
         if self._closing:
             raise RuntimeError("Subagent manager is shutting down")
@@ -178,7 +243,12 @@ class SubAgentManager:
         model_group: list[LLMModelClient] | None = None,
         preset_id: str | None = None,
         source_event: KiraMessageBatchEvent | None = None,
+        session_retention_hours: int | None = None,
     ) -> dict:
+        if session_retention_hours is not None and (
+            type(session_retention_hours) is not int or session_retention_hours < 0
+        ):
+            raise ValueError("session_retention_hours must be a non-negative integer")
         async with self._creation_lock:
             return await self._spawn(
                 task,
@@ -191,6 +261,7 @@ class SubAgentManager:
                 model_group=model_group,
                 preset_id=preset_id,
                 source_event=source_event,
+                session_retention_hours=session_retention_hours,
             )
 
     async def _spawn(
@@ -238,6 +309,9 @@ class SubAgentManager:
         }
         if preset_id is not None:
             metadata["preset_id"] = preset_id
+        session_retention_hours = options["session_retention_hours"]
+        if session_retention_hours is not None:
+            metadata["session_retention_hours"] = session_retention_hours
         session = await self.session_manager.create_subagent_session(
             title=title or (task if isinstance(task, str) else "Subagent")[:100],
             parent_id=parent_id,
@@ -435,7 +509,7 @@ class SubAgentManager:
                 persona_manager=self.persona_manager,
                 skills_manager=self.skills_manager,
             ),
-            semaphore=self.semaphore,
+            semaphore=self._semaphore_for(agent.session.parent_id),
             on_turn_start=begin,
             on_turn_end=finish,
             on_result=result,
@@ -596,6 +670,7 @@ class SubAgentManager:
         agent.executor.request.tool_set = selected
         agent.executor.request.tool_choice = "auto" if selected.tools else "none"
         agent.executor.context.event.set_source_batch(source_event)
+        agent.executor.semaphore = self._semaphore_for(session.parent_id)
         if steer and agent.executor.steer(message):
             return self._info(session, agent)
         agent.error = ""

@@ -104,12 +104,12 @@ class ChatSessionMixin:
             return dict(row) if row is not None else None
 
     async def list_chat_sessions(
-        self, *, include_content: bool = True,
+        self, *, include_content: bool = True, kind: str | None = None,
     ) -> list[dict]:
-        """Read session snapshots with optional message content."""
-        query = self._chat_session_query(
-            include_content=include_content,
-        )
+        """Read session snapshots with optional filtering and message content."""
+        query = self._chat_session_query(include_content=include_content)
+        if kind is not None:
+            query = query.where(ChatSessionRecord.kind == kind)
         async with self.db.get_session() as session:
             result = await session.execute(query)
             return [dict(row) for row in result.mappings()]

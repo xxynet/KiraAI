@@ -92,6 +92,19 @@ class ConfigRoutes(Routes):
                 validate_cleanup_config(bot_config["message_history_cleanup"])
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if isinstance(bot_config, dict) and "subagent" in bot_config:
+            subagent_config = bot_config["subagent"]
+            if not isinstance(subagent_config, dict):
+                raise HTTPException(status_code=400, detail="subagent must be an object")
+            for key, minimum in (("session_retention_hours", 0), ("max_concurrent_per_session", 1)):
+                if key not in subagent_config:
+                    continue
+                value = subagent_config[key]
+                if type(value) is not int or value < minimum:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"subagent.{key} must be an integer greater than or equal to {minimum}",
+                    )
         models = payload.get("models")
         logging_config = payload.get("logging")
         adapters_config = payload.get("adapters")

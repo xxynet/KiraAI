@@ -355,7 +355,7 @@ import CustomSelect from '@/components/common/CustomSelect.vue'
 import InfoCallout from '@/components/common/InfoCallout.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import {
-  IconMonitor, IconCog, IconImage, IconDatabase, IconFileText, IconFlask, IconGlobe, IconChat,
+  IconMonitor, IconCog, IconRobot, IconImage, IconDatabase, IconFileText, IconFlask, IconGlobe, IconChat,
   IconSearch, IconUndo, IconRedo, IconRefresh, IconExpand, IconCollapse, IconCheck, IconChevronDown, IconClock,
 } from '@/components/icons'
 
@@ -482,6 +482,36 @@ const allGroups: ConfigGroup[] = [
     ],
   },
   {
+    id: 'subagent',
+    labelKey: 'configuration.groups.subagent',
+    labelFallback: 'Subagent Settings',
+    descKey: 'configuration.groups.subagent_desc',
+    descFallback: 'Concurrent execution and session cleanup',
+    icon: IconRobot,
+    fields: [
+      {
+        key: 'bot_config.subagent.max_concurrent_per_session',
+        labelKey: 'configuration.message.subagent_max_concurrent_per_session',
+        labelFallback: 'Max Concurrent Subagents per Parent Session',
+        hintKey: 'configuration.hints.subagent_max_concurrent_per_session',
+        hintFallback: 'Additional subagents wait in a queue. Standalone subagents share a separate pool of the same size. Changes apply after saving.',
+        type: 'integer',
+        default: 4,
+        validation: { min: 1, required: true },
+      },
+      {
+        key: 'bot_config.subagent.session_retention_hours',
+        labelKey: 'configuration.message.subagent_session_retention_hours',
+        labelFallback: 'Default Session Retention (hours)',
+        hintKey: 'configuration.hints.subagent_session_retention_hours',
+        hintFallback: 'Used for subagent sessions without their own retention setting. Counts from the last update. 0 keeps them indefinitely.',
+        type: 'integer',
+        default: 0,
+        validation: { min: 0, required: true },
+      },
+    ],
+  },
+  {
     id: 'image-compression',
     labelKey: 'configuration.groups.image_compression',
     labelFallback: 'Image Compression',
@@ -600,7 +630,7 @@ interface CategoryTab {
 }
 
 const categoryTabs: CategoryTab[] = [
-  { id: 'life', labelKey: 'config_tab.life', labelFallback: '数字生命', icon: IconMonitor, groupIds: ['chat', 'capabilities', 'agent', 'image-compression'] },
+  { id: 'life', labelKey: 'config_tab.life', labelFallback: '数字生命', icon: IconMonitor, groupIds: ['chat', 'capabilities', 'agent', 'subagent', 'image-compression'] },
   { id: 'system', labelKey: 'config_tab.system', labelFallback: '系统', icon: IconCog, groupIds: ['locale', 'network', 'cache', 'message-history-cleanup', 'logging'] },
   { id: 'models', labelKey: 'config_tab.models', labelFallback: '模型', icon: IconFlask, groupIds: ['models'] },
 ]

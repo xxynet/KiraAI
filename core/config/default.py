@@ -18,6 +18,10 @@ DEFAULT_CONFIG = {
             "tool_call_timeout": 60,
             "max_tool_output_tokens": 10000
         },
+        "subagent": {
+            "session_retention_hours": 0,
+            "max_concurrent_per_session": 4,
+        },
         "cache": {
             "max_size_mb": 50,
             "max_files": 50,

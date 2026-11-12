@@ -100,6 +100,38 @@ def test_default_config_merged():
     assert c["b"]["x"] == 10
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize(("field", "default", "value"), [
+    ("session_retention_hours", 0, 7),
+    ("max_concurrent_per_session", 4, 2),
+])
+async def test_subagent_settings_are_validated_and_saved(monkeypatch, tmp_path, field, default, value):
+    from types import SimpleNamespace
+
+    from fastapi import FastAPI, HTTPException
+
+    from core.config import config_loader
+    from webui.routes.config import ConfigRoutes
+
+    monkeypatch.setattr(config_loader, "CONFIG_PATH", tmp_path / "config.json")
+    config = KiraConfig()
+    routes = ConfigRoutes(FastAPI(), SimpleNamespace(kira_config=config))
+    assert config["bot_config"]["subagent"][field] == default
+
+    invalid_sections = [None, {field: -1}, {field: True}, {field: 1.5}, {field: "7"}]
+    if field == "max_concurrent_per_session":
+        invalid_sections.append({field: 0})
+    for invalid in invalid_sections:
+        with pytest.raises(HTTPException) as exc:
+            await routes.update_configuration({"bot_config": {**config["bot_config"], "subagent": invalid}})
+        assert exc.value.status_code == 400
+        assert config["bot_config"]["subagent"][field] == default
+
+    payload = {**config["bot_config"], "subagent": {**config["bot_config"]["subagent"], field: value}}
+    await routes.update_configuration({"bot_config": payload})
+    assert KiraConfig()["bot_config"]["subagent"][field] == value
+
+
 def test_save_config_opt_in_errors_preserve_existing_caller_behavior(monkeypatch, tmp_path):
     from core.config import ConfigError, config_loader
 
