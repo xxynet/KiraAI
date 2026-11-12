@@ -390,9 +390,8 @@
 
       <template v-else>
         <!-- MCP Servers section -->
-        <div class="mb-6">
+        <div v-if="scopeMcpServers.length > 0" class="mb-6">
           <h4 class="text-sm font-semibold text-theme-body mb-3">{{ $t('plugin.scope_mcp_section') }}</h4>
-          <div v-if="scopeMcpServers.length === 0" class="text-xs text-theme-faint">-</div>
           <div v-for="mcp in scopeMcpServers" :key="mcp.id" class="bg-white dark:bg-gray-900 rounded-lg shadow p-4 mb-3">
             <div class="flex items-center justify-between mb-2">
               <span class="text-sm font-medium text-theme-strong">{{ mcp.name }}</span>
@@ -442,9 +441,8 @@
         </div>
 
         <!-- Skills section -->
-        <div class="mb-6">
+        <div v-if="scopeSkills.length > 0" class="mb-6">
           <h4 class="text-sm font-semibold text-theme-body mb-3">{{ $t('plugin.scope_skills_section') }}</h4>
-          <div v-if="scopeSkills.length === 0" class="text-xs text-theme-faint">-</div>
           <div v-for="skill in scopeSkills" :key="skill.name" class="bg-white dark:bg-gray-900 rounded-lg shadow p-4 mb-3">
             <div class="flex items-center justify-between mb-2">
               <span class="text-sm font-medium text-theme-strong">{{ skill.name }}</span>

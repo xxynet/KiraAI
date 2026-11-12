@@ -39,12 +39,11 @@ class ScopeRoutes(Routes):
         if self.lifecycle.mcp_manager:
             mcp_scopes = dict(self.lifecycle.mcp_manager.mcp_config.get("_scope", {}))
             for server in self.lifecycle.mcp_manager.servers:
-                if server.enabled:
-                    mcp_servers.append({
-                        "id": server.id,
-                        "name": server.name,
-                        "enabled": True,
-                    })
+                mcp_servers.append({
+                    "id": server.id,
+                    "name": server.name,
+                    "enabled": server.enabled,
+                })
 
         # Gather skills scopes: {skill_name: {"allow": [...]} or {"deny": [...]}}
         skill_scopes: dict[str, Any] = {}
@@ -52,11 +51,10 @@ class ScopeRoutes(Routes):
         if self.lifecycle.skills_manager:
             skill_scopes = dict(self.lifecycle.skills_manager._raw_config.get("_scope", {}))
             for skill in self.lifecycle.skills_manager.skills_info:
-                if skill.enabled:
-                    skills.append({
-                        "name": skill.name,
-                        "enabled": True,
-                    })
+                skills.append({
+                    "name": skill.name,
+                    "enabled": skill.enabled,
+                })
 
         # Gather sessions
         sessions: list[dict[str, Any]] = []
