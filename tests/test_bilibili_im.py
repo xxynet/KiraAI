@@ -170,13 +170,13 @@ async def test_image_download_keeps_cookie_auth_and_timeout_without_logging_secr
     manager.__aenter__.return_value = client
     factory = Mock(return_value=manager)
     monkeypatch.setattr(im_module.httpx, "AsyncClient", factory)
-    assert await adapter.im._download_image_as_base64_url("https://image.test/a") == "data:image/png;base64,aW1hZ2U="
+    assert await adapter.im._download_image_as_base64_url("https://i0.hdslb.com/a") == "data:image/png;base64,aW1hZ2U="
     factory.assert_called_once_with(follow_redirects=True, timeout=30.0)
     assert client.get.await_args.kwargs["cookies"] == {
         "SESSDATA": "test-session", "bili_jct": "test-csrf", "buvid3": "test-device", "DedeUserID": "99",
     }
     client.get.side_effect = RuntimeError("private-cookie-and-message")
-    assert await adapter.im._download_image_as_base64_url("https://image.test/private") == ""
+    assert await adapter.im._download_image_as_base64_url("https://i0.hdslb.com/private") == ""
     assert "private" not in str(adapter.logger.mock_calls)
 
 

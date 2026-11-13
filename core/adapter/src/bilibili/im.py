@@ -69,7 +69,7 @@ class BiliBiliIMCapability(IMCapability["BiliBiliAdapter"]):
     def _is_trusted_media_host(url: str) -> bool:
         host = (urlparse(url).hostname or "").lower()
         return (
-            host == "bilibili.com"
+            host in {"bilibili.com", "biliimg.com"}
             or host.endswith(".bilibili.com")
             or host.endswith(".hdslb.com")
             or host.endswith(".biliimg.com")
