@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from core.chat.message_elements import _infer_mime_from_bytes
 from core.chat.session import Session
 from core.logging_manager import get_logger
-from core.provider import ProviderAPIError
+from core.provider import ModelType
 from core.utils.media_refs import MEDIA_ROOT_NAME
 from core.utils.path_utils import get_data_path, is_within_directory
 from webui.routes.auth import require_auth
@@ -250,13 +250,15 @@ class SessionsRoutes(Routes):
             if reference is not None:
                 if not isinstance(reference, str):
                     raise HTTPException(status_code=400, detail="LLM model must be a string or null")
+                provider_id, separator, model_id = reference.partition(":")
+                if not separator or not provider_id or not model_id:
+                    raise HTTPException(status_code=400, detail="Invalid LLM model reference")
                 provider_manager = self.lifecycle.provider_manager
                 if provider_manager is None:
                     raise HTTPException(status_code=503, detail="Provider manager unavailable")
-                try:
-                    model = provider_manager.get_llm(reference).model
-                except (ValueError, ProviderAPIError) as exc:
-                    raise HTTPException(status_code=400, detail=str(exc)) from exc
+                model = provider_manager.get_model_info(provider_id, model_id, ModelType.LLM)
+                if model is None:
+                    raise HTTPException(status_code=400, detail=f"LLM model not found: {reference}")
                 reference = f"{model.provider_id}:{model.model_id}"
             changes["llm_model"] = reference
         if messages is not None:

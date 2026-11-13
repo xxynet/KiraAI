@@ -8,7 +8,7 @@ from httpx import ASGITransport, AsyncClient
 from core.chat.message_history import MessageHistorySession
 from core.chat.session import Session
 from core.chat.session_manager import SessionManager
-from core.provider import LLMModelClient, ModelType, ProviderManager
+from core.provider import LLMModelClient, ModelType, ProviderAPIError, ProviderManager
 from webui.routes.sessions import SessionsRoutes
 
 
@@ -100,7 +100,7 @@ async def test_update_session_llm_validates_and_persists_only_for_target_session
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         path = f"/api/sessions/{sid}"
         assert (await client.get(path)).json()["llm_model"] is None
-        for invalid in (42, "provider:", "provider:missing", "provider:tts-id"):
+        for invalid in (42, "provider:", "unknown:model-id", "provider:missing", "provider:tts-id"):
             rejected = await client.put(path, json={"title": "Rejected", "llm_model": invalid})
             assert rejected.status_code == 400
         assert (await client.get(path)).json()["title"] == "Before"
@@ -116,7 +116,14 @@ async def test_update_session_llm_validates_and_persists_only_for_target_session
         assert (await manager.get_session(child.sid)).session_title == ""
 
         provider["status"] = "inactive"
-        assert (await client.put(path, json={"llm_model": "provider:model-id"})).status_code == 400
+        other_path = f"/api/sessions/{other_sid}"
+        selected = await client.put(other_path, json={"llm_model": "provider:model-id"})
+        assert selected.status_code == 200
+        assert (await client.get(other_path)).json()["llm_model"] == "provider:model-id"
+        with pytest.raises(ProviderAPIError, match="Provider provider is disabled"):
+            providers.get_llm("provider:model-id")
+        provider["status"] = "active"
+        assert providers.get_llm("provider:model-id").model.model_id == "model-id"
         assert (await client.put(path, json={"title": "Renamed"})).json()["llm_model"] == "provider:model-id"
         cleared = await client.put(path, json={"llm_model": None})
         assert cleared.json()["llm_model"] is None

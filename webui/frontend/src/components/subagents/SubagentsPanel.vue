@@ -241,7 +241,7 @@ import { useI18n } from 'vue-i18n'
 import { ChatLineRound } from '@element-plus/icons-vue'
 import { createSubagentPreset, deleteSubagentPreset, getSubagentPresets, updateSubagentPreset } from '@/api/subagents'
 import type { SubagentPreset, SubagentPresetInput } from '@/api/subagents'
-import { getModels, getProviders } from '@/api/provider'
+import { getProviders } from '@/api/provider'
 import { getPersonas } from '@/api/persona'
 import { getSkills } from '@/api/skills'
 import { notify } from '@/composables/useNotification'
@@ -387,22 +387,15 @@ async function loadModelOptions() {
   modelsError.value = ''
   availableModels.value = []
   try {
-    const response = await getProviders()
-    const providers = response.data.filter(provider => provider.status === 'active')
-    const results = await Promise.allSettled(providers.map(provider => getModels(provider.id)))
-    const failures: string[] = []
-    results.forEach((result, index) => {
-      const provider = providers[index]!
-      if (result.status === 'rejected') {
-        failures.push(`${provider.name || provider.id}: ${errorDetail(result.reason, t('plugin.subagents.models_load_failed'))}`)
-        return
-      }
-      availableModels.value.push(...Object.entries(result.value.data.llm || {}).map(([id, entry]: [string, any]) => ({
+    const { data: providers } = await getProviders()
+    availableModels.value = providers.flatMap(provider => {
+      const providerName = provider.name || provider.id
+      const providerLabel = provider.status === 'inactive' ? `${providerName} · ${t('provider.inactive')}` : providerName
+      return Object.entries<{ model_name?: string }>(provider.model_config.llm || {}).map(([id, entry]) => ({
         value: `${provider.id}:${id}`,
-        label: `${entry.model_name || id} (${provider.name || provider.id})`,
-      })))
+        label: `${entry.model_name || id} (${providerLabel})`,
+      }))
     })
-    modelsError.value = failures.join('\n')
   } catch (error) {
     modelsError.value = errorDetail(error, t('plugin.subagents.models_load_failed'))
   } finally {

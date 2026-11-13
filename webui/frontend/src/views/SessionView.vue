@@ -427,12 +427,14 @@ async function editSession(session: SessionItem) {
     editingChatSession.value = data.kind === 'im'
     sessionModel.value = savedSessionModel.value = data.llm_model || ''
     modelsLoadFailed.value = editingChatSession.value && !providersRes
-    availableModels.value = (providersRes?.data || [])
-      .filter(provider => provider.status === 'active' && provider.supported_model_types.includes('llm'))
-      .flatMap(provider => Object.entries<{ model_name?: string }>(provider.model_config.llm || {}).map(([id, model]) => ({
+    availableModels.value = (providersRes?.data || []).flatMap(provider => {
+      const providerName = provider.name || provider.id
+      const providerLabel = provider.status === 'inactive' ? `${providerName} · ${t('provider.inactive')}` : providerName
+      return Object.entries<{ model_name?: string }>(provider.model_config.llm || {}).map(([id, model]) => ({
         value: `${provider.id}:${id}`,
-        label: `${model.model_name || id} (${provider.name || provider.id})`,
-      })))
+        label: `${model.model_name || id} (${providerLabel})`,
+      }))
+    })
     const globalCapabilities = configRes.data.configuration.bot_config?.capabilities as SessionCapabilities | undefined
     capabilityMode.value = data.capabilities ? 'custom' : 'global'
     sessionCapabilities.value = cloneCapabilities(data.capabilities || globalCapabilities || createDefaultCapabilities())
