@@ -29,6 +29,7 @@ MCP_CONNECT_TIMEOUT = 30.0
 MCP_CLOSE_TIMEOUT = 10.0
 # Liveness probe sent only after a tool call already failed
 MCP_PING_TIMEOUT = 5.0
+DEFAULT_MCP_TIMEOUT = 10.0
 
 
 def _normalize_timeout(value) -> float | None:
@@ -55,7 +56,7 @@ class MCPServer:
     enabled: bool
     name: str
     description: str = ""
-    timeout: float = 10.0
+    timeout: float = DEFAULT_MCP_TIMEOUT
 
     url: str | None = ""
     headers: dict | None = field(default_factory=dict)
@@ -430,7 +431,7 @@ class MCPManager:
             if server_type:
                 server.type = server_type
             server.description = merged.get("description", server.description)
-            server.timeout = merged.get("timeout", 10.0)
+            server.timeout = merged.get("timeout", DEFAULT_MCP_TIMEOUT)
             if server.type == "stdio":
                 server.command = merged.get("command", server.command)
                 server.args = merged.get("args", server.args)

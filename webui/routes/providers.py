@@ -479,16 +479,17 @@ class ProvidersRoutes(Routes):
 
     async def delete_provider(self, provider_id: str):
         if self.lifecycle and self.lifecycle.provider_manager:
-            found = False
-            if provider_id in self.lifecycle.provider_manager._providers:
-                del self.lifecycle.provider_manager._providers[provider_id]
-                found = True
+            provider_manager = self.lifecycle.provider_manager
             if provider_id in self.lifecycle.kira_config.get("providers", {}):
-                self.lifecycle.provider_manager.clear_default_references(provider_id)
-                del self.lifecycle.kira_config["providers"][provider_id]
-                self.lifecycle.kira_config.save_config()
-                found = True
-            if not found:
+                try:
+                    provider_manager.delete_provider(provider_id)
+                except (ConfigError, OSError) as e:
+                    raise HTTPException(
+                        status_code=500, detail="Failed to save provider configuration"
+                    ) from e
+            elif provider_id in provider_manager._providers:
+                del provider_manager._providers[provider_id]
+            else:
                 raise HTTPException(status_code=404, detail="Provider not found")
             await self._clear_dangling_session_models()
             return

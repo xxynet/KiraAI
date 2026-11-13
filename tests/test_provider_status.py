@@ -434,6 +434,28 @@ async def test_delete_provider_clears_dangling_session_llm_references(manager, s
 
 
 @pytest.mark.anyio
+async def test_delete_provider_save_failure_returns_500_and_keeps_provider(
+    manager, session_db, monkeypatch,
+):
+    app, sessions = _session_api(manager, session_db)
+    await sessions.update_session('bili:dm:gone', llm_model='provider:model')
+
+    def fail_replace(*args, **kwargs):
+        raise PermissionError('Simulated configuration write failure')
+
+    monkeypatch.setattr(config_loader.os, 'replace', fail_replace)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        response = await client.delete('/api/providers/provider')
+
+    assert response.status_code == 500
+    assert 'provider' in manager.kira_config['providers']
+    assert 'provider' in manager._providers
+    # cleanup must not run: the session keeps its now-dangling reference
+    assert (await sessions.get_session('bili:dm:gone')).data['llm_model'] == 'provider:model'
+
+
+@pytest.mark.anyio
 async def test_delete_model_survives_session_cleanup_failure(manager):
     class FailingSessionManager:
         async def clear_llm_model_references(self, is_available):

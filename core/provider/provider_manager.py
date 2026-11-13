@@ -490,18 +490,26 @@ class ProviderManager:
             changed = True
         return models_config if changed else None
 
-    def clear_default_references(self, provider_id: str, model_ids: set[str] | None = None) -> bool:
-        """Persist removal of defaults matching the provider and optional model IDs."""
-        models_config = self._default_models_without_references(provider_id, model_ids)
-        if models_config is None:
+    def delete_provider(self, provider_id: str) -> bool:
+        """Remove a provider and its default-model references in one save."""
+        providers = self.kira_config.get("providers", {})
+        if provider_id not in providers:
             return False
-        original = self.kira_config["models"]
-        self.kira_config["models"] = models_config
+        items = list(providers.items())
+        original_defaults = self.kira_config.get("models")
+        defaults = self._default_models_without_references(provider_id)
+        del providers[provider_id]
+        if defaults is not None:
+            self.kira_config["models"] = defaults
         try:
             self.kira_config.save_config(raise_on_error=True)
         except Exception:
-            self.kira_config["models"] = original
+            providers.clear()
+            providers.update(items)
+            if defaults is not None:
+                self.kira_config["models"] = original_defaults
             raise
+        self._providers.pop(provider_id, None)
         return True
 
     def delete_model(self, provider_id: str, model_type: str, model_id: str) -> bool:
