@@ -460,6 +460,32 @@ class ProviderManager:
         self._save_provider_models(provider_id, provider)
         return True
 
+    def clear_default_references(self, provider_id: str, model_ids: set[str] | None = None) -> bool:
+        """Clear default-model references that no longer resolve.
+
+        model_ids limits the cleanup to one provider's deleted model IDs;
+        omitting it removes every default reference owned by the provider.
+        """
+        models_config = self.kira_config.get("models")
+        if not isinstance(models_config, dict):
+            return False
+        changed = False
+        for key in DEFAULT_MODEL_TYPES:
+            reference = models_config.get(key)
+            if not isinstance(reference, str) or ":" not in reference:
+                continue
+            referenced_provider, referenced_model = reference.split(":", 1)
+            if referenced_provider != provider_id:
+                continue
+            if model_ids is not None and referenced_model not in model_ids:
+                continue
+            models_config[key] = None
+            changed = True
+        if changed:
+            self.kira_config["models"] = models_config
+            self.kira_config.save_config()
+        return changed
+
     def delete_model(self, provider_id: str, model_type: str, model_id: str) -> bool:
         ModelType(model_type)
         original = self.kira_config.get("providers", {}).get(provider_id)
@@ -470,8 +496,10 @@ class ProviderManager:
         resolved = resolve_model_entry(provider, model_id, model_type)
         if not resolved:
             return False
+        deleted_ids = {model_id, resolved[1], resolved[2].get("model_name")}
         del provider["model_config"][model_type][resolved[1]]
         self._save_provider_models(provider_id, provider)
+        self.clear_default_references(provider_id, deleted_ids)
         return True
 
     def sync_models(
@@ -498,12 +526,17 @@ class ProviderManager:
             model_config.update(config or {})
             models[generate_model_id(provider)] = {"model_name": name, "config": model_config}
             added += 1
+        removed_ids: set[str] = set()
         for model_id, entry in list(models.items()):
             if entry["model_name"] in names_to_delete:
+                removed_ids.add(model_id)
+                removed_ids.add(entry["model_name"])
                 del models[model_id]
                 removed += 1
         if added or removed:
             self._save_provider_models(provider_id, provider)
+        if removed_ids:
+            self.clear_default_references(provider_id, removed_ids)
         return {"added": added, "removed": removed, "errors": []}
 
     async def health_check(self, provider_id: str, model_type: str, model_id: str) -> dict:

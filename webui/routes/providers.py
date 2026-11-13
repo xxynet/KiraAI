@@ -459,6 +459,7 @@ class ProvidersRoutes(Routes):
                 del self.lifecycle.provider_manager._providers[provider_id]
                 found = True
             if provider_id in self.lifecycle.kira_config.get("providers", {}):
+                self.lifecycle.provider_manager.clear_default_references(provider_id)
                 del self.lifecycle.kira_config["providers"][provider_id]
                 self.lifecycle.kira_config.save_config()
                 found = True
