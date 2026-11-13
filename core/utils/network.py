@@ -11,12 +11,20 @@ from core.logging_manager import get_logger
 
 logger = get_logger("network", "cyan")
 
+# Fake-IP proxies (Clash/Surge/sing-box TUN mode) answer every DNS query with an
+# address from the RFC 2544 benchmarking range and resolve the real host
+# themselves, so a local lookup cannot classify the destination. Rejecting the
+# range would block every domain URL on those hosts.
+_FAKE_IP_NETWORK = ipaddress.ip_network("198.18.0.0/15")
+
 
 def _is_public_address(host: str) -> bool:
     try:
         address = ipaddress.ip_address(host)
     except ValueError:
         return False
+    if address.version == 4 and address in _FAKE_IP_NETWORK:
+        return True
     return address.is_global
 
 
