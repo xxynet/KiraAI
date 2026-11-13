@@ -166,11 +166,13 @@ async def get_release_assets(
 async def download_asset(
     download_url: str,
     proxy: str | None = None,
+    max_bytes: int | None = None,
 ) -> bytes:
     """
     Download a release asset by its browser_download_url.
 
-    Raises ValueError on HTTP errors, ConnectionError on network failures.
+    Raises ValueError on HTTP errors, ConnectionError on network failures, and
+    ValueError when max_bytes is exceeded.
     """
     client_kwargs: dict = {"timeout": 120.0, "follow_redirects": True}
     if proxy:
@@ -178,15 +180,21 @@ async def download_asset(
 
     async with httpx.AsyncClient(**client_kwargs) as client:
         try:
-            resp = await client.get(download_url)
-            resp.raise_for_status()
+            async with client.stream("GET", download_url) as resp:
+                resp.raise_for_status()
+                chunks: list[bytes] = []
+                total = 0
+                async for chunk in resp.aiter_bytes():
+                    total += len(chunk)
+                    if max_bytes is not None and total > max_bytes:
+                        raise ValueError(f"Asset exceeds the {max_bytes} byte limit")
+                    chunks.append(chunk)
+                return b"".join(chunks)
         except httpx.HTTPStatusError as e:
             status = e.response.status_code
             raise ValueError(f"Failed to download asset (HTTP {status})") from e
         except httpx.HTTPError as e:
             raise ConnectionError(f"Network error while downloading asset: {e}") from e
-
-    return resp.content
 
 
 def verify_sha256(data: bytes, expected_sha: str) -> bool:
@@ -336,20 +344,24 @@ async def pick_fastest_source(
     direct_url: str,
     proxy: str | None = None,
     timeout: float = 5.0,
+    include_proxies: bool = True,
 ) -> list[str]:
     """
-    Speed-test all GitHub proxy candidates + direct GitHub for *direct_url*,
-    return a list of download URLs ranked by latency (best first).
-    Returns empty list if all fail.
+    Speed-test GitHub sources for *direct_url* and return them by latency.
+
+    include_proxies=False restricts candidates to direct GitHub. Update code
+    uses that mode because a third-party proxy would be able to replace the
+    application source archive.
     """
     # Carry the original base URL alongside each label so the fastest source
     # can be mapped back to the exact base it was derived from. Substring
     # matching on the bare host (e.g. "gh-proxy.org") is ambiguous because it
     # also matches "hk.gh-proxy.org" / "cdn.gh-proxy.org" / etc.
     candidates: list[tuple[str, str, str | None]] = [("direct", direct_url, None)]
-    for base in GH_PROXY_LIST:
-        label = base.rstrip("/").split("//", 1)[-1]
-        candidates.append((label, f"{base.rstrip('/')}/{direct_url}", base))
+    if include_proxies:
+        for base in GH_PROXY_LIST:
+            label = base.rstrip("/").split("//", 1)[-1]
+            candidates.append((label, f"{base.rstrip('/')}/{direct_url}", base))
 
     logger.info(f"Speed-testing {len(candidates)} GitHub sources ...")
 

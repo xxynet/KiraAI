@@ -131,3 +131,14 @@ def test_get_all_releases_propagates_page_failure_and_closes_client(
     assert pages == [1, 2]
     assert len(clients) == 1
     assert clients[0].is_closed
+
+
+@pytest.mark.anyio
+async def test_pick_fastest_source_can_skip_third_party_proxies(monkeypatch):
+    async def fast(url, proxy=None, timeout=5.0):
+        return {"latency": 0.1}
+
+    monkeypatch.setattr(github_api, "test_url_speed", fast)
+    url = "https://github.com/owner/repo/archive/refs/tags/v1.zip"
+    ranked = await github_api.pick_fastest_source(url, include_proxies=False)
+    assert ranked == [url]
