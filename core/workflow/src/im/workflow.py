@@ -61,7 +61,10 @@ class DefaultIMWorkflow(IMWorkflow):
                     return
 
     async def handle_batch_event(self, event: KiraMessageBatchEvent):
-        async with self._session_turn(event.sid):
+        turn_id = getattr(event, "sid", None)
+        if turn_id is None:
+            turn_id = getattr(getattr(event, "session", None), "sid", "") or ""
+        async with self._session_turn(turn_id):
             async with session_media_scope():
                 ctx = IMBatchContext(self.ctx, event)
                 for stage in self.batch_stages:
