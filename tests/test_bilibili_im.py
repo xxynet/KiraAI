@@ -60,6 +60,24 @@ async def test_missing_sessdata_does_not_schedule_dm_listener(monkeypatch):
         await task
 
 
+def test_media_cookie_host_allowlist():
+    trusted = (
+        "https://i0.hdslb.com/bfs/new_dyn/a.jpg",
+        "https://s1.hdslb.com/bfs/static/a.png",
+        "https://www.bilibili.com/a.png",
+        "https://biliimg.com/a.png",
+    )
+    untrusted = (
+        "https://evil.example/a.png",
+        "https://bilibili.com.evil.example/a.png",
+        "http://127.0.0.1/a.png",
+    )
+    for url in trusted:
+        assert im_module.BiliBiliIMCapability._is_trusted_media_host(url)
+    for url in untrusted:
+        assert not im_module.BiliBiliIMCapability._is_trusted_media_host(url)
+
+
 def test_schema_exposes_translated_im_settings_and_enabled_default():
     schema = json.loads(Path(adapter_module.__file__).with_name("schema.json").read_text(encoding="utf-8"))
     fields = {field.key: field for field in build_fields(schema)}

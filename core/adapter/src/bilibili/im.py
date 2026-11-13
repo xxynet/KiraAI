@@ -5,6 +5,7 @@ import base64
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 import httpx
 from bilibili_api.exceptions import ResponseCodeException
@@ -64,17 +65,30 @@ class BiliBiliIMCapability(IMCapability["BiliBiliAdapter"]):
             return str(uid)
 
     # ===== Image download with cookie =====
+    @staticmethod
+    def _is_trusted_media_host(url: str) -> bool:
+        host = (urlparse(url).hostname or "").lower()
+        return (
+            host == "bilibili.com"
+            or host.endswith(".bilibili.com")
+            or host.endswith(".hdslb.com")
+            or host.endswith(".biliimg.com")
+        )
+
     async def _download_image_as_base64_url(self, url: str) -> str:
         """Download an image from BiliBili with cookie auth and return as base64 data URL."""
         cookies = {}
-        if self.adapter.credential.sessdata:
-            cookies["SESSDATA"] = self.adapter.credential.sessdata
-        if self.adapter.credential.bili_jct:
-            cookies["bili_jct"] = self.adapter.credential.bili_jct
-        if self.adapter.credential.buvid3:
-            cookies["buvid3"] = self.adapter.credential.buvid3
-        if self.adapter.credential.dedeuserid:
-            cookies["DedeUserID"] = self.adapter.credential.dedeuserid
+        # Message payloads are sender-controlled; never attach session cookies
+        # to a host outside Bilibili's media domains.
+        if self._is_trusted_media_host(url):
+            if self.adapter.credential.sessdata:
+                cookies["SESSDATA"] = self.adapter.credential.sessdata
+            if self.adapter.credential.bili_jct:
+                cookies["bili_jct"] = self.adapter.credential.bili_jct
+            if self.adapter.credential.buvid3:
+                cookies["buvid3"] = self.adapter.credential.buvid3
+            if self.adapter.credential.dedeuserid:
+                cookies["DedeUserID"] = self.adapter.credential.dedeuserid
         try:
             async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
                 resp = await client.get(url, cookies=cookies, headers={
