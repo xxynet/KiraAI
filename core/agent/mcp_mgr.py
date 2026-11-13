@@ -34,7 +34,10 @@ MCP_PING_TIMEOUT = 5.0
 def _normalize_timeout(value) -> float | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    value = float(value)
+    try:
+        value = float(value)
+    except OverflowError:
+        return None
     return value if math.isfinite(value) and value > 0 else None
 
 
@@ -389,6 +392,16 @@ class MCPManager:
 
         merged = dict(base_without_meta)
         merged.update(editor_config)
+        for key, normalize in (("timeout", _normalize_timeout), ("env", _normalize_env)):
+            if key not in merged:
+                continue
+            value = normalize(merged[key])
+            if value is None:
+                value = normalize(existing.get(key))
+            if value is None:
+                merged.pop(key)
+            else:
+                merged[key] = value
         merged["enabled"] = enabled
         merged["name"] = final_name
         if description is not None:
@@ -417,15 +430,11 @@ class MCPManager:
             if server_type:
                 server.type = server_type
             server.description = merged.get("description", server.description)
-            timeout = _normalize_timeout(merged.get("timeout"))
-            if timeout is not None:
-                server.timeout = timeout
+            server.timeout = merged.get("timeout", 10.0)
             if server.type == "stdio":
                 server.command = merged.get("command", server.command)
                 server.args = merged.get("args", server.args)
-                env = _normalize_env(merged.get("env"))
-                if env is not None:
-                    server.env = env
+                server.env = merged.get("env", {})
             elif server.type in ("sse", "streamable_http"):
                 server.url = merged.get("url", server.url)
                 headers_val = merged.get("headers")

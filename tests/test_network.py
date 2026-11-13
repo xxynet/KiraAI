@@ -40,9 +40,13 @@ async def test_download_file_rejects_oversized_content_length(tmp_path, monkeypa
     ("not-a-url", False),
     ("https://1.1.1.1/", True),
     ("http://8.8.8.8/", True),
-    # fake-IP proxy range is allowed: the local resolver cannot classify it
-    ("http://198.18.1.121/", True),
-    ("http://198.19.255.254/", True),
+    # Fake-IP compatibility applies to DNS answers, never literal addresses.
+    ("http://198.18.1.121/", False),
+    ("http://198.19.255.254/", False),
+    ("http://0xc6120007/", False),
+    ("http://3323068423/", False),
+    ("http://2130706433/", False),
+    ("http://0x7f000001/", False),
     # just outside 198.18.0.0/15: ordinary public address, still allowed
     ("http://198.20.0.1/", True),
 ])

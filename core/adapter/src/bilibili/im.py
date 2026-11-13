@@ -67,8 +67,9 @@ class BiliBiliIMCapability(IMCapability["BiliBiliAdapter"]):
     # ===== Image download with cookie =====
     @staticmethod
     def _is_trusted_media_host(url: str) -> bool:
-        host = (urlparse(url).hostname or "").lower()
-        return (
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower()
+        return parsed.scheme == "https" and (
             host in {"bilibili.com", "biliimg.com"}
             or host.endswith(".bilibili.com")
             or host.endswith(".hdslb.com")
@@ -79,7 +80,7 @@ class BiliBiliIMCapability(IMCapability["BiliBiliAdapter"]):
         """Download an image from BiliBili with cookie auth and return as base64 data URL."""
         cookies = {}
         # Message payloads are sender-controlled; never attach session cookies
-        # to a host outside Bilibili's media domains.
+        # to a host outside Bilibili's media domains or over plaintext HTTP.
         if self._is_trusted_media_host(url):
             if self.adapter.credential.sessdata:
                 cookies["SESSDATA"] = self.adapter.credential.sessdata

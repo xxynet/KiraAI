@@ -1,5 +1,7 @@
 """Tests for MCPManager persistent connection handling."""
 
+from unittest.mock import AsyncMock
+
 import fastmcp
 import pytest
 from mcp.types import (
@@ -493,9 +495,10 @@ def test_load_servers_reads_env_and_timeout(manager):
     assert server.timeout == 42.0
 
 
-def test_load_servers_ignores_invalid_timeout(manager):
+@pytest.mark.parametrize("timeout", ["fast", True, -1, 0, float("inf"), float("nan"), 10**400])
+def test_load_servers_ignores_invalid_timeout(manager, timeout):
     manager.mcp_config = {
-        "mcpServers": {"srv1": {"command": "echo", "enabled": True, "timeout": "fast"}}
+        "mcpServers": {"srv1": {"command": "echo", "enabled": True, "timeout": timeout}}
     }
     manager.save_server_config()
     manager.load_servers()
@@ -537,10 +540,11 @@ async def test_update_server_from_editor_normalizes_env_and_timeout(manager):
     assert server.env == {"COUNT": "2", "A": "1"}
     assert server.timeout == 2.5
     assert server.name == "renamed"
+    assert manager.load_config()["mcpServers"]["srv1"]["env"] == server.env
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("bad_timeout", [True, float("inf"), -1])
+@pytest.mark.parametrize("bad_timeout", [True, float("inf"), -1, 10**400])
 async def test_update_server_from_editor_ignores_invalid_timeout(manager, bad_timeout):
     manager.mcp_config = {
         "mcpServers": {"srv1": {"command": "echo", "enabled": True, "timeout": 7}}
@@ -555,6 +559,30 @@ async def test_update_server_from_editor_ignores_invalid_timeout(manager, bad_ti
     )
 
     assert server.timeout == 7.0
+    assert manager.load_config()["mcpServers"]["srv1"]["timeout"] == 7.0
+    manager.load_servers()
+    assert manager.servers[0].timeout == 7.0
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("existing_env", [None, {"COUNT": 2, "DROP": None}])
+@pytest.mark.parametrize("invalid_env", [None, [], "invalid"])
+async def test_editor_preserves_valid_env_when_update_is_invalid(manager, existing_env, invalid_env):
+    manager.mcp_config = {"mcpServers": {"srv1": {
+        "command": "echo", "enabled": True, "env": existing_env,
+    }}}
+    manager.save_server_config()
+    manager.load_servers()
+    expected = manager.servers[0].env.copy()
+
+    await manager.update_server_from_editor(
+        "srv1", name=None, description="", editor_config={"env": invalid_env},
+    )
+
+    assert manager.servers[0].env == expected
+    assert manager.load_config()["mcpServers"]["srv1"].get("env", {}) == expected
+    manager.load_servers()
+    assert manager.servers[0].env == expected
 
 
 @pytest.mark.anyio
@@ -593,11 +621,11 @@ async def test_tool_result_rejects_private_attachment_urls(monkeypatch):
     async def private(url):
         return False
 
-    async def must_not_download(self):
-        raise AssertionError("private attachment URL was downloaded")
+    must_not_download = AsyncMock()
 
     monkeypatch.setattr("core.agent.tool.is_public_http_url", private)
     monkeypatch.setattr(File, "to_path", must_not_download)
     result = ToolResult(text="done", attachments=[File(file="http://127.0.0.1/secret")])
     text = await result.assemble_result()
+    must_not_download.assert_not_awaited()
     assert "127.0.0.1" not in text

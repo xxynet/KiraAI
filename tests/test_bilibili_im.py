@@ -71,6 +71,8 @@ def test_media_cookie_host_allowlist():
         "https://evil.example/a.png",
         "https://bilibili.com.evil.example/a.png",
         "http://127.0.0.1/a.png",
+        "http://i0.hdslb.com/a.png",
+        "http://www.bilibili.com/a.png",
     )
     for url in trusted:
         assert im_module.BiliBiliIMCapability._is_trusted_media_host(url)
@@ -161,7 +163,8 @@ async def test_nickname_cache_is_account_local(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_image_download_keeps_cookie_auth_and_timeout_without_logging_secrets(monkeypatch):
+@pytest.mark.parametrize("scheme", ["https", "http"])
+async def test_image_download_keeps_cookie_auth_and_timeout_without_logging_secrets(monkeypatch, scheme):
     adapter = make_im_adapter(bili_jct="test-csrf", buvid3="test-device", dedeuserid="99")
     adapter.logger = Mock()
     response = SimpleNamespace(headers={"content-type": "image/png"}, content=b"image", raise_for_status=Mock())
@@ -170,11 +173,12 @@ async def test_image_download_keeps_cookie_auth_and_timeout_without_logging_secr
     manager.__aenter__.return_value = client
     factory = Mock(return_value=manager)
     monkeypatch.setattr(im_module.httpx, "AsyncClient", factory)
-    assert await adapter.im._download_image_as_base64_url("https://i0.hdslb.com/a") == "data:image/png;base64,aW1hZ2U="
+    assert await adapter.im._download_image_as_base64_url(f"{scheme}://i0.hdslb.com/a") == "data:image/png;base64,aW1hZ2U="
     factory.assert_called_once_with(follow_redirects=True, timeout=30.0)
-    assert client.get.await_args.kwargs["cookies"] == {
+    expected = {
         "SESSDATA": "test-session", "bili_jct": "test-csrf", "buvid3": "test-device", "DedeUserID": "99",
     }
+    assert client.get.await_args.kwargs["cookies"] == (expected if scheme == "https" else {})
     client.get.side_effect = RuntimeError("private-cookie-and-message")
     assert await adapter.im._download_image_as_base64_url("https://i0.hdslb.com/private") == ""
     assert "private" not in str(adapter.logger.mock_calls)

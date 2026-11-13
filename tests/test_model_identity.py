@@ -234,7 +234,7 @@ def test_remote_sync_matches_names_and_preserves_existing_identity_and_config(ap
 
 
 @pytest.mark.parametrize("enabled", [True, False])
-@pytest.mark.parametrize("operation", ["create", "update", "delete", "sync"])
+@pytest.mark.parametrize("operation", ["create", "update", "delete", "sync", "sync_delete"])
 def test_model_save_failure_returns_error_without_changing_memory_or_disk(
     api, model_manager, monkeypatch, operation, enabled,
 ):
@@ -259,13 +259,46 @@ def test_model_save_failure_returns_error_without_changing_memory_or_disk(
         response = api.put(url, json={"model_name": "new", "config": {}})
     elif operation == "delete":
         response = api.delete(url)
-    else:
+    elif operation == "sync":
         response = api.post("/api/providers/provider/models/sync/llm", json={"add_ids": ["new"]})
+    else:
+        response = api.post("/api/providers/provider/models/sync/llm", json={"delete_ids": [NAME]})
     assert response.status_code == 500
     assert response.json()["detail"] == "Failed to save model configuration"
     assert dict(model_manager.kira_config) == original
     assert config_loader.CONFIG_PATH.read_bytes() == original_file
     assert model_manager.get_provider("provider") is runtime_provider
+
+
+@pytest.mark.parametrize("operation", ["delete", "sync"])
+@pytest.mark.parametrize("legacy_reference", [True, False])
+def test_model_removal_persists_defaults_in_one_save(model_manager, monkeypatch, operation, legacy_reference):
+    config = model_manager.kira_config
+    info = model_manager.get_model_info("provider", NAME, "llm")
+    reference = f"provider:{NAME if legacy_reference else info.model_id}"
+    config["models"]["default_llm"] = reference
+    config["models"]["default_fast_llm"] = reference
+    previous_tts = config["models"]["default_tts"]
+    saves = []
+    original_save = KiraConfig.save_config
+
+    def record_save(self, **kwargs):
+        saves.append(copy.deepcopy(dict(self)))
+        return original_save(self, **kwargs)
+
+    monkeypatch.setattr(KiraConfig, "save_config", record_save)
+    if operation == "delete":
+        assert model_manager.delete_model("provider", "llm", NAME if legacy_reference else info.model_id)
+    else:
+        assert model_manager.sync_models("provider", "llm", [], [NAME])["removed"] == 1
+
+    assert len(saves) == 1
+    persisted = json.loads(config_loader.CONFIG_PATH.read_text(encoding="utf-8"))
+    assert persisted == saves[0] == dict(config)
+    assert persisted["models"]["default_llm"] is None
+    assert persisted["models"]["default_fast_llm"] is None
+    assert persisted["models"]["default_tts"] == previous_tts
+    assert info.model_id not in persisted["providers"]["provider"]["model_config"]["llm"]
 
 
 def test_missing_and_ambiguous_legacy_references_are_preserved(model_manager):

@@ -151,3 +151,35 @@ def test_save_config_opt_in_errors_preserve_existing_caller_behavior(monkeypatch
         config.save_config(raise_on_error=True)
     assert isinstance(error.value.__cause__, OSError)
     assert config_loader.CONFIG_PATH.read_text(encoding='utf-8') == before
+
+
+def test_atomic_save_preserves_existing_file_mode(monkeypatch, tmp_path):
+    import stat
+
+    from core.config import config_loader
+
+    path = tmp_path / "config.json"
+    monkeypatch.setattr(config_loader, "CONFIG_PATH", path)
+    config = KiraConfig({"value": 1})
+    path.chmod(0o640)
+    config["value"] = 2
+    config.save_config(raise_on_error=True)
+    assert stat.S_IMODE(path.stat().st_mode) == 0o640
+
+
+def test_atomic_save_preserves_symlink_and_updates_target(monkeypatch, tmp_path):
+    import json
+
+    from core.config import config_loader
+
+    target = tmp_path / "mounted_config" / "config.json"
+    target.parent.mkdir()
+    target.write_text('{"value": 1}', encoding="utf-8")
+    path = tmp_path / "config.json"
+    path.symlink_to(target)
+    monkeypatch.setattr(config_loader, "CONFIG_PATH", path)
+    config = KiraConfig({"value": 1})
+    config["value"] = 2
+    config.save_config(raise_on_error=True)
+    assert path.is_symlink()
+    assert json.loads(target.read_text(encoding="utf-8")) == {"value": 2}

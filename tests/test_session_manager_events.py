@@ -373,3 +373,20 @@ async def test_clear_llm_model_references_drops_only_unresolvable(session_db):
     assert gone.data["capabilities"] == {"tts": {"enabled": False}}
     assert (await manager.get_session("adapter:dm:kept")).data["llm_model"] == "p1:kept"
     assert (await manager.get_session("adapter:dm:none")).data == {"note": "untouched"}
+
+
+@pytest.mark.anyio
+async def test_clear_llm_references_preserves_selection_changed_after_snapshot(session_db, monkeypatch):
+    manager = SessionManager(session_db, {})
+    sid = "adapter:dm:changed"
+    await manager.update_session(sid, llm_model="p1:gone", data={"note": "kept"})
+    get_sessions = manager.get_sessions
+
+    async def stale_snapshot(**kwargs):
+        sessions = await get_sessions(**kwargs)
+        await manager.update_session(sid, llm_model="p1:valid")
+        return sessions
+
+    monkeypatch.setattr(manager, "get_sessions", stale_snapshot)
+    assert await manager.clear_llm_model_references(lambda ref: ref == "p1:valid") == 0
+    assert (await manager.get_session(sid)).data == {"note": "kept", "llm_model": "p1:valid"}

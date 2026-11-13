@@ -352,14 +352,22 @@ class ProviderManager:
         else:
             return False
 
-    def _save_provider_models(self, provider_id: str, provider_config: dict):
+    def _save_provider_models(
+        self, provider_id: str, provider_config: dict, deleted_ids: set[str] | None = None,
+    ):
         """Persist model changes before applying them to runtime clients."""
         original = self.kira_config["providers"][provider_id]
+        original_defaults = self.kira_config.get("models")
+        defaults = self._default_models_without_references(provider_id, deleted_ids) if deleted_ids else None
         self.kira_config["providers"][provider_id] = provider_config
+        if defaults is not None:
+            self.kira_config["models"] = defaults
         try:
             self.kira_config.save_config(raise_on_error=True)
         except Exception:
             self.kira_config["providers"][provider_id] = original
+            if defaults is not None:
+                self.kira_config["models"] = original_defaults
             raise
         self.set_provider(provider_id, provider_config)
 
@@ -460,15 +468,14 @@ class ProviderManager:
         self._save_provider_models(provider_id, provider)
         return True
 
-    def clear_default_references(self, provider_id: str, model_ids: set[str] | None = None) -> bool:
-        """Clear default-model references that no longer resolve.
-
-        model_ids limits the cleanup to one provider's deleted model IDs;
-        omitting it removes every default reference owned by the provider.
-        """
+    def _default_models_without_references(
+        self, provider_id: str, model_ids: set[str] | None = None,
+    ) -> dict | None:
+        """Return cleaned defaults, or None when no references match."""
         models_config = self.kira_config.get("models")
         if not isinstance(models_config, dict):
-            return False
+            return None
+        models_config = copy.deepcopy(models_config)
         changed = False
         for key in DEFAULT_MODEL_TYPES:
             reference = models_config.get(key)
@@ -481,10 +488,21 @@ class ProviderManager:
                 continue
             models_config[key] = None
             changed = True
-        if changed:
-            self.kira_config["models"] = models_config
-            self.kira_config.save_config()
-        return changed
+        return models_config if changed else None
+
+    def clear_default_references(self, provider_id: str, model_ids: set[str] | None = None) -> bool:
+        """Persist removal of defaults matching the provider and optional model IDs."""
+        models_config = self._default_models_without_references(provider_id, model_ids)
+        if models_config is None:
+            return False
+        original = self.kira_config["models"]
+        self.kira_config["models"] = models_config
+        try:
+            self.kira_config.save_config(raise_on_error=True)
+        except Exception:
+            self.kira_config["models"] = original
+            raise
+        return True
 
     def delete_model(self, provider_id: str, model_type: str, model_id: str) -> bool:
         ModelType(model_type)
@@ -498,8 +516,7 @@ class ProviderManager:
             return False
         deleted_ids = {model_id, resolved[1], resolved[2].get("model_name")}
         del provider["model_config"][model_type][resolved[1]]
-        self._save_provider_models(provider_id, provider)
-        self.clear_default_references(provider_id, deleted_ids)
+        self._save_provider_models(provider_id, provider, deleted_ids)
         return True
 
     def sync_models(
@@ -534,9 +551,7 @@ class ProviderManager:
                 del models[model_id]
                 removed += 1
         if added or removed:
-            self._save_provider_models(provider_id, provider)
-        if removed_ids:
-            self.clear_default_references(provider_id, removed_ids)
+            self._save_provider_models(provider_id, provider, removed_ids)
         return {"added": added, "removed": removed, "errors": []}
 
     async def health_check(self, provider_id: str, model_type: str, model_id: str) -> dict:

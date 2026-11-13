@@ -127,6 +127,8 @@ def _rollback_from_data(root: Path, data: dict[str, Any], journal_name: str) -> 
         if not isinstance(name, str) or not name or Path(name).name != name:
             errors.append("Update recovery skipped an invalid item name.")
             continue
+        # This marker only deduplicates retries using the same in-memory data.
+        # Recovery after a crash relies on backup existence and had_original.
         if action.get("state") == "rolled_back":
             continue
         dst = root / name

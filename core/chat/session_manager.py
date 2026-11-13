@@ -291,8 +291,16 @@ class SessionManager:
             data = session.data if isinstance(session.data, dict) else {}
             reference = data.get("llm_model")
             if isinstance(reference, str) and not is_available(reference):
-                await self.update_session(session.sid, llm_model=None)
-                cleared += 1
+                async with self._write_lock:
+                    current = await self.db.get_chat_session(session.sid, include_content=False)
+                    if current is None or not isinstance(current["data"], dict):
+                        continue
+                    data = copy.deepcopy(current["data"])
+                    if data.get("llm_model") != reference or is_available(reference):
+                        continue
+                    data.pop("llm_model")
+                    await self._save_session(session.sid, {"data": data})
+                    cleared += 1
         return cleared
 
     async def update_memory(

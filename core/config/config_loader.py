@@ -1,6 +1,7 @@
 import copy
 import json
 import os
+import stat
 import tempfile
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
@@ -73,18 +74,25 @@ class KiraConfig(dict):
         to a sibling temporary file and replacing the target prevents a failed
         serialization or ENOSPC from truncating the live configuration.
         """
-        directory = os.path.dirname(CONFIG_PATH) or "."
-        os.makedirs(directory, exist_ok=True)
         temporary: str | None = None
         try:
+            target = os.path.realpath(CONFIG_PATH)
+            directory = os.path.dirname(target)
+            os.makedirs(directory, exist_ok=True)
+            try:
+                mode = stat.S_IMODE(os.stat(target).st_mode)
+            except FileNotFoundError:
+                mode = None
             fd, temporary = tempfile.mkstemp(
                 prefix=".system_config.", suffix=".tmp", dir=directory,
             )
             with os.fdopen(fd, "w", encoding="utf-8") as f:
+                if mode is not None:
+                    os.chmod(temporary, mode)
                 json.dump(self, f, indent=4, ensure_ascii=False)
                 f.flush()
                 os.fsync(f.fileno())
-            os.replace(temporary, CONFIG_PATH)
+            os.replace(temporary, target)
             temporary = None
         except Exception as e:
             logger.error(f"Failed to save config to JSON: {e}")
