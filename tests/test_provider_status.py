@@ -4,7 +4,9 @@ from types import SimpleNamespace
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 
+from core.chat.session_manager import SessionManager
 from core.config import config_loader
 from core.config.config_loader import KiraConfig
 from core.provider import (
@@ -349,3 +351,104 @@ async def test_health_check_delegates_to_provider_client_override(manager, monke
     assert result == {
         'success': False, 'latency': None, 'error': 'Custom probe failure',
     }
+
+
+def _session_api(manager, session_db):
+    app = FastAPI()
+    app.dependency_overrides[require_auth] = lambda: 'test'
+    session_manager = SessionManager(session_db, manager.kira_config)
+    ProvidersRoutes(app, SimpleNamespace(
+        kira_config=manager.kira_config,
+        provider_manager=manager,
+        session_manager=session_manager,
+    )).register()
+    return app, session_manager
+
+
+def _add_llm_model(manager, provider_id, model_id):
+    # providers are already migrated to model_config_version 2 by _load_providers,
+    # so new entries need the full versioned shape to pass validate_model_names.
+    manager.kira_config['providers'][provider_id]['model_config']['llm'][model_id] = {
+        'model_name': model_id, 'config': {}, 'legacy_ids': [model_id],
+    }
+
+
+async def _seed_llm_sessions(session_manager):
+    await session_manager.update_session('bili:dm:gone', llm_model='provider:model')
+    await session_manager.update_session('bili:dm:kept', llm_model='provider:keep')
+    await session_manager.update_session('bili:dm:none', data={'note': 'untouched'})
+
+
+async def _assert_session_cleanup(session_manager):
+    gone = await session_manager.get_session('bili:dm:gone')
+    assert gone.data.get('llm_model') is None
+    assert (await session_manager.get_session('bili:dm:kept')).data['llm_model'] == 'provider:keep'
+    assert (await session_manager.get_session('bili:dm:none')).data == {'note': 'untouched'}
+
+
+@pytest.mark.anyio
+async def test_delete_model_clears_dangling_session_llm_references(manager, session_db):
+    _add_llm_model(manager, 'provider', 'keep')
+    app, sessions = _session_api(manager, session_db)
+    await _seed_llm_sessions(sessions)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        response = await client.delete('/api/providers/provider/models/llm/model')
+
+    assert response.status_code == 200, response.text
+    await _assert_session_cleanup(sessions)
+
+
+@pytest.mark.anyio
+async def test_sync_models_removal_clears_dangling_session_llm_references(manager, session_db):
+    _add_llm_model(manager, 'provider', 'keep')
+    app, sessions = _session_api(manager, session_db)
+    await _seed_llm_sessions(sessions)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        response = await client.post('/api/providers/provider/models/sync/llm', json={
+            'delete_ids': ['model'],
+        })
+
+    assert response.status_code == 200, response.text
+    assert response.json()['removed'] == 1
+    await _assert_session_cleanup(sessions)
+
+
+@pytest.mark.anyio
+async def test_delete_provider_clears_dangling_session_llm_references(manager, session_db):
+    manager.kira_config['providers']['other'] = {
+        'format': 'stub', 'name': 'Other', 'provider_config': {},
+        'model_config': {'llm': {'m2': {}}},
+    }
+    app, sessions = _session_api(manager, session_db)
+    await sessions.update_session('bili:dm:gone', llm_model='provider:model')
+    await sessions.update_session('bili:dm:kept', llm_model='other:m2')
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        response = await client.delete('/api/providers/provider')
+
+    assert response.status_code == 204
+    assert (await sessions.get_session('bili:dm:gone')).data.get('llm_model') is None
+    assert (await sessions.get_session('bili:dm:kept')).data['llm_model'] == 'other:m2'
+
+
+@pytest.mark.anyio
+async def test_delete_model_survives_session_cleanup_failure(manager):
+    class FailingSessionManager:
+        async def clear_llm_model_references(self, is_available):
+            raise RuntimeError('cleanup boom')
+
+    app = FastAPI()
+    app.dependency_overrides[require_auth] = lambda: 'test'
+    ProvidersRoutes(app, SimpleNamespace(
+        kira_config=manager.kira_config,
+        provider_manager=manager,
+        session_manager=FailingSessionManager(),
+    )).register()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        response = await client.delete('/api/providers/provider/models/llm/model')
+
+    assert response.status_code == 200
+    assert response.json() == {'success': True}

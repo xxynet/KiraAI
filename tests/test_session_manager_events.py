@@ -353,3 +353,23 @@ async def test_delayed_cleanup_preserves_reference_restored_to_current_memory(
 
     assert (tmp_path / reference["path"]).read_bytes() == PNG_BYTES
     await wait_for_event_tasks(manager)
+
+
+@pytest.mark.anyio
+async def test_clear_llm_model_references_drops_only_unresolvable(session_db):
+    manager = SessionManager(session_db, {})
+    await manager.update_session(
+        "adapter:dm:gone", llm_model="p1:gone",
+        capabilities={"tts": {"enabled": False}},
+    )
+    await manager.update_session("adapter:dm:kept", llm_model="p1:kept")
+    await manager.update_session("adapter:dm:none", data={"note": "untouched"})
+
+    cleared = await manager.clear_llm_model_references(lambda ref: ref == "p1:kept")
+
+    assert cleared == 1
+    gone = await manager.get_session("adapter:dm:gone")
+    assert gone.data.get("llm_model") is None
+    assert gone.data["capabilities"] == {"tts": {"enabled": False}}
+    assert (await manager.get_session("adapter:dm:kept")).data["llm_model"] == "p1:kept"
+    assert (await manager.get_session("adapter:dm:none")).data == {"note": "untouched"}

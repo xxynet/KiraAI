@@ -5,7 +5,7 @@ import copy
 import json
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, overload
+from typing import TYPE_CHECKING, Callable, Literal, overload
 from uuid import uuid4
 
 from core.config import KiraConfig
@@ -283,6 +283,17 @@ class SessionManager:
 
     async def update_session_capabilities(self, session: str, capabilities: dict | None):
         await self.update_session(session, capabilities=capabilities)
+
+    async def clear_llm_model_references(self, is_available: Callable[[str], bool]) -> int:
+        """Drop per-session LLM selections that no longer resolve; return how many were cleared."""
+        cleared = 0
+        for session in await self.get_sessions(include_content=False, kind="im"):
+            data = session.data if isinstance(session.data, dict) else {}
+            reference = data.get("llm_model")
+            if isinstance(reference, str) and not is_available(reference):
+                await self.update_session(session.sid, llm_model=None)
+                cleared += 1
+        return cleared
 
     async def update_memory(
         self,
