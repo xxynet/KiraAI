@@ -474,6 +474,33 @@ def test_load_servers_reads_disabled_tools(manager):
     assert manager.servers[0].disabled_tools == ["tool_a"]
 
 
+def test_load_servers_reads_env_and_timeout(manager):
+    manager.mcp_config = {
+        "mcpServers": {
+            "srv1": {
+                "command": "echo",
+                "enabled": True,
+                "env": {"TOKEN": "secret", "COUNT": 2, "DROP": None},
+                "timeout": 42,
+            }
+        }
+    }
+    manager.save_server_config()
+    manager.load_servers()
+    server = manager.servers[0]
+    assert server.env == {"TOKEN": "secret", "COUNT": "2"}
+    assert server.timeout == 42.0
+
+
+def test_load_servers_ignores_invalid_timeout(manager):
+    manager.mcp_config = {
+        "mcpServers": {"srv1": {"command": "echo", "enabled": True, "timeout": "fast"}}
+    }
+    manager.save_server_config()
+    manager.load_servers()
+    assert manager.servers[0].timeout == 10.0
+
+
 @pytest.mark.anyio
 async def test_delete_server_cleans_up_disabled_tools_section(manager):
     _seed_server_with_tools(manager)

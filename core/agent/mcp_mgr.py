@@ -153,11 +153,26 @@ class MCPManager:
                 disabled_tools=[t for t in disabled_tools if isinstance(t, str)],
             )
 
+            timeout = server_config.get("timeout")
+            if (
+                isinstance(timeout, (int, float))
+                and not isinstance(timeout, bool)
+                and timeout > 0
+            ):
+                server.timeout = float(timeout)
+
             if server_type == "stdio":
                 command = server_config.get("command")
                 args = server_config.get("args", [])
                 server.command = command
                 server.args = args
+                env = server_config.get("env")
+                if isinstance(env, dict):
+                    server.env = {
+                        str(key): str(value)
+                        for key, value in env.items()
+                        if value is not None
+                    }
             elif server_type in ("sse", "streamable_http"):
                 url = server_config.get("url", "")
                 headers = server_config.get("headers", {})
