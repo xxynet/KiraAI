@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -28,6 +29,19 @@ MCP_CONNECT_TIMEOUT = 30.0
 MCP_CLOSE_TIMEOUT = 10.0
 # Liveness probe sent only after a tool call already failed
 MCP_PING_TIMEOUT = 5.0
+
+
+def _normalize_timeout(value) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    value = float(value)
+    return value if math.isfinite(value) and value > 0 else None
+
+
+def _normalize_env(value) -> dict[str, str] | None:
+    if not isinstance(value, dict):
+        return None
+    return {str(key): str(item) for key, item in value.items() if item is not None}
 
 
 @dataclass
@@ -66,9 +80,6 @@ class MCPServer:
                 server_cfg["url"] = self.url
             if self.headers:
                 server_cfg["headers"] = self.headers
-        if self.timeout:
-            server_cfg["timeout"] = self.timeout
-
         server_cfg.setdefault("type", self.type)
         server_cfg["name"] = self.name
         config = {"mcpServers": {self.id: server_cfg}}
@@ -153,26 +164,18 @@ class MCPManager:
                 disabled_tools=[t for t in disabled_tools if isinstance(t, str)],
             )
 
-            timeout = server_config.get("timeout")
-            if (
-                isinstance(timeout, (int, float))
-                and not isinstance(timeout, bool)
-                and timeout > 0
-            ):
-                server.timeout = float(timeout)
+            timeout = _normalize_timeout(server_config.get("timeout"))
+            if timeout is not None:
+                server.timeout = timeout
 
             if server_type == "stdio":
                 command = server_config.get("command")
                 args = server_config.get("args", [])
                 server.command = command
                 server.args = args
-                env = server_config.get("env")
-                if isinstance(env, dict):
-                    server.env = {
-                        str(key): str(value)
-                        for key, value in env.items()
-                        if value is not None
-                    }
+                env = _normalize_env(server_config.get("env"))
+                if env is not None:
+                    server.env = env
             elif server_type in ("sse", "streamable_http"):
                 url = server_config.get("url", "")
                 headers = server_config.get("headers", {})
@@ -414,13 +417,15 @@ class MCPManager:
             if server_type:
                 server.type = server_type
             server.description = merged.get("description", server.description)
-            timeout_val = merged.get("timeout")
-            if isinstance(timeout_val, (int, float)):
-                server.timeout = float(timeout_val)
+            timeout = _normalize_timeout(merged.get("timeout"))
+            if timeout is not None:
+                server.timeout = timeout
             if server.type == "stdio":
                 server.command = merged.get("command", server.command)
                 server.args = merged.get("args", server.args)
-                server.env = merged.get("env", server.env)
+                env = _normalize_env(merged.get("env"))
+                if env is not None:
+                    server.env = env
             elif server.type in ("sse", "streamable_http"):
                 server.url = merged.get("url", server.url)
                 headers_val = merged.get("headers")

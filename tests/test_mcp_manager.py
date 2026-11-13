@@ -1,5 +1,6 @@
 """Tests for MCPManager persistent connection handling."""
 
+import fastmcp
 import pytest
 from mcp.types import (
     AudioContent,
@@ -499,6 +500,61 @@ def test_load_servers_ignores_invalid_timeout(manager):
     manager.save_server_config()
     manager.load_servers()
     assert manager.servers[0].timeout == 10.0
+
+
+def test_to_dict_omits_timeout_so_fastmcp_accepts_fractional_seconds():
+    # fastmcp types timeout as int milliseconds; the app-level seconds value
+    # must stay out of the generated config or Client() raises ValidationError.
+    server = MCPServer(
+        type="stdio", id="x", enabled=True, name="x",
+        command="echo", args=[], timeout=2.5,
+    )
+    config = server.to_dict()
+    assert "timeout" not in config["mcpServers"]["x"]
+    fastmcp.Client(config)  # real client: construction must not raise
+
+
+@pytest.mark.anyio
+async def test_update_server_from_editor_normalizes_env_and_timeout(manager):
+    manager.mcp_config = {
+        "mcpServers": {
+            "srv1": {
+                "command": "echo",
+                "enabled": True,
+                "env": {"COUNT": 2, "DROP": None, "A": "1"},
+                "timeout": 2.5,
+            }
+        }
+    }
+    manager.save_server_config()
+    manager.load_servers()
+    server = manager.servers[0]
+
+    await manager.update_server_from_editor(
+        "srv1", name="renamed", description="d", editor_config={},
+    )
+
+    assert server.env == {"COUNT": "2", "A": "1"}
+    assert server.timeout == 2.5
+    assert server.name == "renamed"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("bad_timeout", [True, float("inf"), -1])
+async def test_update_server_from_editor_ignores_invalid_timeout(manager, bad_timeout):
+    manager.mcp_config = {
+        "mcpServers": {"srv1": {"command": "echo", "enabled": True, "timeout": 7}}
+    }
+    manager.save_server_config()
+    manager.load_servers()
+    server = manager.servers[0]
+    assert server.timeout == 7.0
+
+    await manager.update_server_from_editor(
+        "srv1", name=None, description="", editor_config={"timeout": bad_timeout},
+    )
+
+    assert server.timeout == 7.0
 
 
 @pytest.mark.anyio
