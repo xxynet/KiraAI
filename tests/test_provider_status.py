@@ -267,7 +267,7 @@ def test_status_api_without_lifecycle():
 
 
 @pytest.mark.parametrize('previous_status', [None, 'active', 'inactive'])
-@pytest.mark.parametrize('failure_stage', ['open', 'mkdir'])
+@pytest.mark.parametrize('failure_stage', ['replace', 'mkdir'])
 def test_status_save_failure_rolls_back_without_resetting_provider(
     api, manager, monkeypatch, tmp_path, previous_status, failure_stage,
 ):
@@ -281,11 +281,12 @@ def test_status_save_failure_rolls_back_without_resetting_provider(
     constructions = StubProvider.constructions
     requested_status = 'active' if previous_status == 'inactive' else 'inactive'
 
-    def fail_open(*args, **kwargs):
+    def fail_replace(*args, **kwargs):
         raise PermissionError('Simulated configuration write failure')
 
-    if failure_stage == 'open':
-        monkeypatch.setattr(config_loader, 'open', fail_open, raising=False)
+    original_replace = config_loader.os.replace
+    if failure_stage == 'replace':
+        monkeypatch.setattr(config_loader.os, 'replace', fail_replace)
     else:
         original_makedirs = config_loader.os.makedirs
 
@@ -307,8 +308,8 @@ def test_status_save_failure_rolls_back_without_resetting_provider(
     expected_status = 'inactive' if previous_status == 'inactive' else 'active'
     assert api.get('/api/providers/provider').json()['status'] == expected_status
 
-    if failure_stage == 'open':
-        monkeypatch.delattr(config_loader, 'open')
+    if failure_stage == 'replace':
+        monkeypatch.setattr(config_loader.os, 'replace', original_replace)
     else:
         monkeypatch.setattr(config_loader.os, 'makedirs', original_makedirs)
     assert config_loader.CONFIG_PATH == tmp_path / 'config.json'
