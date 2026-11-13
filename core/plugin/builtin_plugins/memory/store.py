@@ -154,6 +154,18 @@ class MemoryStore:
         predicate, params = scope.predicate()
         return f"(({predicate}) OR m.origin = 'legacy')", params
 
+    @staticmethod
+    def _writable(scope):
+        """Conversation callers may only mutate memories they own.
+
+        Legacy core.txt rows are shared read-only context: they are visible to
+        every session, so letting any conversation update or delete them would
+        poison the global memory prompt. Operator APIs use admin_update /
+        admin_remove instead.
+        """
+        predicate, params = scope.predicate()
+        return f"({predicate}) AND m.origin != 'legacy'", params
+
     async def add(self, scope: MemoryScope, *, text: str, owner_type="user", user_id=None,
                   source_message_id=None, kind="semantic", importance=3, core=False, expires_at=None):
         validate(text, kind, importance, core, expires_at)
@@ -196,7 +208,7 @@ class MemoryStore:
                      core=None, status=None, expires_at=None, clear_expiry=False, source_message_id=None):
         if type(revision) is not int or revision < 1:
             raise MemoryInputError("invalid_revision")
-        predicate, params = self._visible(scope)
+        predicate, params = self._writable(scope)
         async with self.connection(write=True) as db:
             async with db.execute(f"SELECT m.* FROM memories m WHERE m.id=? AND {predicate}",
                                   [memory_id, *params]) as cursor:
@@ -277,7 +289,7 @@ class MemoryStore:
     async def remove(self, scope, memory_id, revision, source_message_id=None):
         if type(revision) is not int or revision < 1:
             raise MemoryInputError("invalid_revision")
-        predicate, params = self._visible(scope)
+        predicate, params = self._writable(scope)
         async with self.connection(write=True) as db:
             async with db.execute(
                 f"SELECT m.* FROM memories m WHERE m.id=? AND {predicate}", [memory_id, *params],
