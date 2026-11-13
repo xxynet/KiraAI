@@ -46,6 +46,20 @@ async def test_im_enabled_by_default_and_correct_credential_field():
     assert make_im_adapter(sessdata="", sesdata="misspelled-session").credential.sessdata is None
 
 
+@pytest.mark.asyncio
+async def test_missing_sessdata_does_not_schedule_dm_listener(monkeypatch):
+    adapter = make_adapter(enable_im=True, sessdata="", enable_comment_notifications=False)
+    start_im = AsyncMock()
+    monkeypatch.setattr(adapter, "_start_im", start_im)
+
+    task = asyncio.create_task(adapter._run_listeners())
+    await asyncio.sleep(0.05)
+    start_im.assert_not_awaited()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
 def test_schema_exposes_translated_im_settings_and_enabled_default():
     schema = json.loads(Path(adapter_module.__file__).with_name("schema.json").read_text(encoding="utf-8"))
     fields = {field.key: field for field in build_fields(schema)}
