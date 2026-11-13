@@ -172,7 +172,7 @@ class ReleasesRoutes(Routes):
                 self._set_progress(task_id, "download", "Downloading release source...", 35)
                 if not zip_path.exists():
                     direct_url = f"https://github.com/KiraAI-Dev/KiraAI/archive/refs/tags/{tag}.zip"
-                    ranked_urls = await pick_fastest_source(direct_url, include_proxies=False)
+                    ranked_urls = await pick_fastest_source(direct_url)
                     if not ranked_urls:
                         raise RuntimeError("All download sources failed")
                     data = None

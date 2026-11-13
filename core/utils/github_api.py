@@ -344,24 +344,20 @@ async def pick_fastest_source(
     direct_url: str,
     proxy: str | None = None,
     timeout: float = 5.0,
-    include_proxies: bool = True,
 ) -> list[str]:
     """
-    Speed-test GitHub sources for *direct_url* and return them by latency.
-
-    include_proxies=False restricts candidates to direct GitHub. Update code
-    uses that mode because a third-party proxy would be able to replace the
-    application source archive.
+    Speed-test all GitHub proxy candidates + direct GitHub for *direct_url*,
+    return a list of download URLs ranked by latency (best first).
+    Returns empty list if all fail.
     """
     # Carry the original base URL alongside each label so the fastest source
     # can be mapped back to the exact base it was derived from. Substring
     # matching on the bare host (e.g. "gh-proxy.org") is ambiguous because it
     # also matches "hk.gh-proxy.org" / "cdn.gh-proxy.org" / etc.
     candidates: list[tuple[str, str, str | None]] = [("direct", direct_url, None)]
-    if include_proxies:
-        for base in GH_PROXY_LIST:
-            label = base.rstrip("/").split("//", 1)[-1]
-            candidates.append((label, f"{base.rstrip('/')}/{direct_url}", base))
+    for base in GH_PROXY_LIST:
+        label = base.rstrip("/").split("//", 1)[-1]
+        candidates.append((label, f"{base.rstrip('/')}/{direct_url}", base))
 
     logger.info(f"Speed-testing {len(candidates)} GitHub sources ...")
 

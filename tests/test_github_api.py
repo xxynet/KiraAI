@@ -134,11 +134,19 @@ def test_get_all_releases_propagates_page_failure_and_closes_client(
 
 
 @pytest.mark.anyio
-async def test_pick_fastest_source_can_skip_third_party_proxies(monkeypatch):
-    async def fast(url, proxy=None, timeout=5.0):
-        return {"latency": 0.1}
+async def test_download_asset_enforces_max_bytes(monkeypatch):
+    body = b"x" * 2048
 
-    monkeypatch.setattr(github_api, "test_url_speed", fast)
-    url = "https://github.com/owner/repo/archive/refs/tags/v1.zip"
-    ranked = await github_api.pick_fastest_source(url, include_proxies=False)
-    assert ranked == [url]
+    async def handler(request):
+        return httpx.Response(200, content=body, request=request)
+
+    real_async_client = httpx.AsyncClient
+
+    def mock_async_client(**kwargs):
+        return real_async_client(transport=httpx.MockTransport(handler), **kwargs)
+
+    monkeypatch.setattr(github_api.httpx, "AsyncClient", mock_async_client)
+
+    assert await github_api.download_asset("https://example.test/a.zip", max_bytes=4096) == body
+    with pytest.raises(ValueError, match="byte limit"):
+        await github_api.download_asset("https://example.test/a.zip", max_bytes=1024)
