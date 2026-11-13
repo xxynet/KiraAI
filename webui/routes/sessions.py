@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from core.chat.message_elements import _infer_mime_from_bytes
 from core.chat.session import Session
 from core.logging_manager import get_logger
+from core.provider import ProviderAPIError
 from core.utils.media_refs import MEDIA_ROOT_NAME
 from core.utils.path_utils import get_data_path, is_within_directory
 from webui.routes.auth import require_auth
@@ -172,6 +173,7 @@ class SessionsRoutes(Routes):
             "title": row.session_title if row else "",
             "description": row.session_description if row else "",
             "capabilities": row.data.get("capabilities") if row else None,
+            "llm_model": row.data.get("llm_model") if row else None,
             "messages": row.content if row else [],
             "message_count": len(row.content) if row and isinstance(row.content, list) else 0,
         }
@@ -235,14 +237,28 @@ class SessionsRoutes(Routes):
     async def update_session(self, session_id: str, payload: dict):
         if not self.lifecycle or not self.lifecycle.session_manager:
             raise HTTPException(status_code=404, detail="Memory manager not available")
+        if len(session_id.split(":", 2)) != 3:
+            raise HTTPException(status_code=400, detail="Invalid session id format")
 
         messages = payload.get("messages")
-        capabilities_provided = "capabilities" in payload
-        capabilities = payload.get("capabilities")
-        if capabilities_provided:
-            self._validate_capabilities_payload(capabilities)
-
         changes = {key: payload[key] for key in ("title", "description") if key in payload}
+        if "capabilities" in payload:
+            self._validate_capabilities_payload(payload["capabilities"])
+            changes["capabilities"] = payload["capabilities"]
+        if "llm_model" in payload:
+            reference = payload["llm_model"]
+            if reference is not None:
+                if not isinstance(reference, str):
+                    raise HTTPException(status_code=400, detail="LLM model must be a string or null")
+                provider_manager = self.lifecycle.provider_manager
+                if provider_manager is None:
+                    raise HTTPException(status_code=503, detail="Provider manager unavailable")
+                try:
+                    model = provider_manager.get_llm(reference).model
+                except (ValueError, ProviderAPIError) as exc:
+                    raise HTTPException(status_code=400, detail=str(exc)) from exc
+                reference = f"{model.provider_id}:{model.model_id}"
+            changes["llm_model"] = reference
         if messages is not None:
             changes["content"] = messages
         if changes:
@@ -250,10 +266,6 @@ class SessionsRoutes(Routes):
                 await self.lifecycle.session_manager.update_session(session_id, **changes)
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
-        if capabilities_provided:
-            await self.lifecycle.session_manager.update_session_capabilities(
-                session_id, capabilities
-            )
 
         try:
             row = await self.lifecycle.session_manager.get_session(session_id)

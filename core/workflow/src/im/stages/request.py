@@ -1,6 +1,6 @@
 from core.logging_manager import get_logger
 from core.prompt_manager import Prompt
-from core.provider import LLMModelClient, LLMRequest
+from core.provider import LLMModelClient, LLMRequest, ProviderAPIError
 from core.tag import TagSet
 from core.workflow.base_stage import BaseStage
 
@@ -57,6 +57,13 @@ class BuildRequestStage(BaseStage[IMBatchContext]):
         model_group: list[LLMModelClient] = []
         if event.model_group:
             model_group = [m for m in event.model_group if isinstance(m, LLMModelClient)]
+        session_model = session.data.get("llm_model")
+        if not model_group and session_model is not None:
+            try:
+                model_group = [services.provider_mgr.get_llm(session_model)]
+            except (ValueError, ProviderAPIError) as exc:
+                llm_logger.error("Session %s LLM %s is unavailable: %s", sid, session_model, exc)
+                return False
         if not model_group:
             # Get default LLM model client
             try:

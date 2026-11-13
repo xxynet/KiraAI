@@ -409,6 +409,7 @@ export interface SessionItem {
   title?: string
   description?: string
   capabilities?: SessionCapabilities | null
+  llm_model?: string | null
   message_count: number
 }
 

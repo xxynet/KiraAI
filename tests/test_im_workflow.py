@@ -845,6 +845,39 @@ async def test_stopped_response_does_not_overwrite_previous_assistant(processor,
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("selection", ["global", "session", "event", "unavailable"])
+async def test_build_request_selects_llm_for_session(processor, selection):
+    from core.provider import LLMModelClient
+    from core.workflow.src.im.context import IMBatchContext
+    from core.workflow.src.im.stages.request import BuildRequestStage
+
+    instance, default = processor
+    services = instance.im_workflow.ctx
+    event = batch()
+    event_model = LLMModelClient(None)
+    session_model = LLMModelClient(None)
+    if selection == "event":
+        event.model_group = [event_model]
+    data = {} if selection == "global" else {"llm_model": "provider:session-model"}
+    services.session_manager.get_session.side_effect = None
+    services.session_manager.get_session.return_value = Session("adapter", "dm", "user", data=data)
+    services.provider_mgr.get_default_llm = Mock(return_value=default)
+    services.provider_mgr.get_llm = Mock(return_value=session_model)
+    if selection == "unavailable":
+        services.provider_mgr.get_llm.side_effect = ValueError("Model unavailable")
+
+    ctx = IMBatchContext(services, event)
+    assert await BuildRequestStage().run(ctx) is (selection != "unavailable")
+    expected_models = {"global": [default], "session": [session_model], "event": [event_model], "unavailable": []}
+    assert ctx.model_group == expected_models[selection]
+    assert services.provider_mgr.get_default_llm.call_count == (selection == "global")
+    if selection in ("session", "unavailable"):
+        services.provider_mgr.get_llm.assert_called_once_with("provider:session-model")
+    else:
+        services.provider_mgr.get_llm.assert_not_called()
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("state", ["existing", "untitled", "missing"])
 async def test_build_request_loads_current_session(processor, session_db, tmp_path, monkeypatch, state):
     from core.chat.session_manager import SessionManager

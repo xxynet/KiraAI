@@ -205,6 +205,18 @@ def test_status_api_persists_toggle_and_preserves_models_and_config(api, manager
     assert manager.get_model_client('provider', model_id, 'llm') is not None
 
 
+def test_provider_responses_include_configured_models(api, manager):
+    providers = api.get('/api/providers')
+    provider = api.get('/api/providers/provider')
+    model_id = manager.get_model_info('provider', 'model', ModelType.LLM).model_id
+
+    assert providers.status_code == provider.status_code == 200
+    for item in (providers.json()[0], provider.json()):
+        assert item['status'] == 'active'
+        assert 'llm' in item['supported_model_types']
+        assert item['model_config']['llm'][model_id]['model_name'] == 'model'
+
+
 @pytest.mark.parametrize('status', ['active', 'inactive'])
 def test_create_provider_honors_status(api, manager, status):
     response = api.post('/api/providers', json={'name': 'New', 'type': 'stub', 'status': status})

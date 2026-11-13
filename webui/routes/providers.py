@@ -172,7 +172,7 @@ class ProvidersRoutes(Routes):
             type=provider_info.provider_type,
             status=status_value,
             config=provider_info.provider_config,
-            model_config_data=model_config,
+            model_config=model_config,
             supported_model_types=self._get_supported_model_types(provider_info.provider_id),
             locales=type_locales,
             type_display_name=type_display_name,
@@ -290,7 +290,7 @@ class ProvidersRoutes(Routes):
             provider_id = _generate_id()
             provider_data = payload.model_dump()
             provider_data["id"] = provider_id
-            provider_data["model_config_data"] = {}
+            provider_data["model_config"] = {}
             provider = ProviderResponse(**provider_data)
             self._providers[provider_id] = provider
             return provider
