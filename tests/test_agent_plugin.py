@@ -1,7 +1,11 @@
 import asyncio
+import sys
+from concurrent.futures import ThreadPoolExecutor
+from time import monotonic
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
+import psutil
 import pytest
 from PIL import Image as PILImage
 
@@ -321,17 +325,9 @@ async def test_filter_tools_disables_background_manager_without_exec(agent_plugi
 @pytest.mark.anyio
 async def test_exec_uses_resolved_work_dir(agent_plugin, tmp_path):
     event = SimpleNamespace(sid="test:dm:1")
-    completed = SimpleNamespace(stdout="ok", stderr="", returncode=0)
+    result = await agent_plugin.exec(event, 'python -B -c "import os; print(os.getcwd())"', str(tmp_path))
 
-    with patch(
-        "core.plugin.builtin_plugins.agent.main.subprocess.run",
-        return_value=completed,
-    ) as run:
-        result = await agent_plugin.exec(event, "echo test", str(tmp_path))
-
-    assert result == "Shell command output:\nok"
-    assert run.call_args.kwargs["cwd"] == tmp_path.resolve()
-    assert run.call_args.kwargs["timeout"] == 30
+    assert result == f"Shell command output:\n{tmp_path.resolve()}\n"
 
 
 @pytest.mark.anyio
@@ -339,11 +335,49 @@ async def test_exec_rejects_missing_work_dir(agent_plugin, tmp_path):
     event = SimpleNamespace(sid="test:dm:1")
     missing_dir = tmp_path / "missing"
 
-    with patch("core.plugin.builtin_plugins.agent.main.subprocess.run") as run:
+    with patch.object(agent_plugin, "_run_shell_command") as run:
         result = await agent_plugin.exec(event, "echo test", str(missing_dir))
 
     assert result == f"Working directory not found: {missing_dir}"
     run.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.skipif(sys.platform != "win32", reason="Requires Windows Job Objects")
+@pytest.mark.parametrize("parent_exits", [False, True])
+async def test_foreground_exec_timeout_kills_windows_descendants(agent_plugin, tmp_path, parent_exits):
+    event = SimpleNamespace(sid="test:dm:1")
+    agent_plugin._exec_timeout = 3
+    asyncio.get_running_loop().set_default_executor(ThreadPoolExecutor(max_workers=1))
+    pid_file = tmp_path / "child.pid"
+    script = tmp_path / "launch.py"
+    script.write_text(
+        "import subprocess, sys\n"
+        "from pathlib import Path\n"
+        "child = subprocess.Popen([sys._base_executable, '-B', '-c', 'import time; time.sleep(12)'])\n"
+        "Path('child.pid').write_text(str(child.pid), encoding='ascii')\n"
+        "if sys.argv[1] == 'wait':\n"
+        "    child.wait()\n",
+        encoding="utf-8",
+    )
+    started = monotonic()
+    mode = "exit" if parent_exits else "wait"
+    task = asyncio.create_task(agent_plugin.exec(event, f"python -B launch.py {mode}", str(tmp_path)))
+    child = None
+    try:
+        while not pid_file.exists() or not pid_file.stat().st_size:
+            assert not task.done(), task.result()
+            await asyncio.sleep(0.02)
+        child = psutil.Process(int(pid_file.read_text(encoding="ascii")))
+        assert await asyncio.wait_for(asyncio.to_thread(lambda: 42), timeout=1) == 42
+        result = await asyncio.wait_for(asyncio.shield(task), timeout=4)
+        assert result.startswith("Shell command timed out after 3 seconds:")
+        assert monotonic() - started < 5
+        await asyncio.to_thread(child.wait, timeout=1)
+    finally:
+        if child is not None and child.is_running():
+            child.kill()
+        await asyncio.gather(task, return_exceptions=True)
 
 
 @pytest.mark.anyio

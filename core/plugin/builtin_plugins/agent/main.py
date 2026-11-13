@@ -22,6 +22,8 @@ from core.utils.image_compression import compress_image_file
 from core.utils.media_refs import store_session_media
 from core.utils.path_utils import get_config_path, get_data_path, get_root_path
 
+from .windows_shell import run_windows_shell_command
+
 PLUGIN_ID = "agent"
 # Plugin id used before this plugin was renamed from "file" to "agent"
 LEGACY_PLUGIN_ID = "file"
@@ -391,19 +393,23 @@ class AgentPlugin(BasePlugin):
         self._background_notice_tasks.clear()
 
     @staticmethod
-    def _run_shell_command(
+    async def _run_shell_command(
         shell_command: str,
         exec_timeout: int,
         env: dict[str, str],
         exec_work_dir: Path,
     ) -> str:
         try:
-            result = subprocess.run(
-                shell_command, shell=True, capture_output=True,
-                stdin=subprocess.DEVNULL,
-                timeout=exec_timeout, env=env, cwd=exec_work_dir,
-                encoding='utf-8', errors='replace'
-            )
+            if os.name == "nt":
+                result = await run_windows_shell_command(shell_command, exec_timeout, env, exec_work_dir)
+            else:
+                result = await asyncio.to_thread(
+                    subprocess.run,
+                    shell_command, shell=True, capture_output=True, check=False,
+                    stdin=subprocess.DEVNULL,
+                    timeout=exec_timeout, env=env, cwd=exec_work_dir,
+                    encoding='utf-8', errors='replace',
+                )
             output = (result.stdout or '') + (result.stderr or '')
             if result.returncode == 0:
                 return f'Shell command output:\n{output}'
@@ -1410,8 +1416,7 @@ class AgentPlugin(BasePlugin):
 
         logger.info(f'Executing shell command: {shell_command} (cwd: {exec_work_dir})')
         if not background:
-            return await asyncio.to_thread(
-                self._run_shell_command,
+            return await self._run_shell_command(
                 shell_command,
                 self._exec_timeout,
                 env,
