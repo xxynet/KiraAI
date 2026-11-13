@@ -1,11 +1,45 @@
+import asyncio
+import ipaddress
+import socket
 import time
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
 from core.logging_manager import get_logger
 
 logger = get_logger("network", "cyan")
+
+
+def _is_public_address(host: str) -> bool:
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return address.is_global
+
+
+async def is_public_http_url(url: str) -> bool:
+    """Return True only when every resolved address of an HTTP URL is public.
+
+    This is a guard for URLs that originate from adapter messages or model
+    output. It deliberately rejects loopback, private, link-local, reserved and
+    metadata-style addresses before any request is made.
+    """
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            return False
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        infos = await asyncio.get_running_loop().getaddrinfo(
+            parsed.hostname, port, type=socket.SOCK_STREAM,
+        )
+    except (OSError, ValueError):
+        return False
+    if not infos:
+        return False
+    return all(_is_public_address(info[4][0]) for info in infos)
 
 
 async def get_json(url: str, timeout: float = 60.0) -> Any:
