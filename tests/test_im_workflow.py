@@ -309,6 +309,38 @@ async def test_request_only_prompts_and_step_edits_keep_memory_contract(processo
 
 
 @pytest.mark.anyio
+async def test_batch_turns_for_same_session_are_serialized(processor):
+    instance, _ = processor
+    workflow = instance.im_workflow
+
+    active = 0
+    max_active = 0
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def run(ctx):
+        nonlocal active, max_active
+        active += 1
+        max_active = max(max_active, active)
+        entered.set()
+        await release.wait()
+        active -= 1
+        return False
+
+    workflow.batch_stages = (SimpleNamespace(run=run),)
+
+    first = asyncio.create_task(workflow.handle_batch_event(batch("alice")))
+    await asyncio.wait_for(entered.wait(), timeout=1)
+    second = asyncio.create_task(workflow.handle_batch_event(batch("alice")))
+    await asyncio.sleep(0.05)
+
+    assert max_active == 1
+    release.set()
+    await asyncio.gather(first, second)
+    assert max_active == 1
+
+
+@pytest.mark.anyio
 async def test_concurrent_batches_keep_requests_links_and_results_separate(processor, monkeypatch):
     instance, model = processor
     ready = asyncio.Event()
