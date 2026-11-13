@@ -139,11 +139,15 @@ def test_save_config_opt_in_errors_preserve_existing_caller_behavior(monkeypatch
     config = KiraConfig({'test': True})
     assert config.save_config(raise_on_error=True) is None
 
-    def fail_open(*args, **kwargs):
-        raise PermissionError('Simulated write failure')
+    before = config_loader.CONFIG_PATH.read_text(encoding='utf-8')
 
-    monkeypatch.setattr(config_loader, 'open', fail_open, raising=False)
+    def fail_replace(*args, **kwargs):
+        raise OSError('Simulated write failure')
+
+    monkeypatch.setattr(config_loader.os, 'replace', fail_replace)
     assert config.save_config() is None
+    assert config_loader.CONFIG_PATH.read_text(encoding='utf-8') == before
     with pytest.raises(ConfigError, match='failed to save configuration') as error:
         config.save_config(raise_on_error=True)
-    assert isinstance(error.value.__cause__, PermissionError)
+    assert isinstance(error.value.__cause__, OSError)
+    assert config_loader.CONFIG_PATH.read_text(encoding='utf-8') == before

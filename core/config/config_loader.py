@@ -1,6 +1,7 @@
 import copy
 import json
 import os
+import tempfile
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
@@ -66,18 +67,35 @@ class KiraConfig(dict):
                 target[key] = value
 
     def save_config(self, *, raise_on_error: bool = False):
-        """Save configuration, optionally raising ConfigError on write failure.
+        """Save configuration atomically, optionally raising on write failure.
 
-        Existing callers retain log-only handling unless they opt in.
+        Existing callers retain log-only handling unless they opt in. Writing
+        to a sibling temporary file and replacing the target prevents a failed
+        serialization or ENOSPC from truncating the live configuration.
         """
-        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+        directory = os.path.dirname(CONFIG_PATH) or "."
+        os.makedirs(directory, exist_ok=True)
+        temporary: str | None = None
         try:
-            with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-                f.write(json.dumps(self, indent=4, ensure_ascii=False))
+            fd, temporary = tempfile.mkstemp(
+                prefix=".system_config.", suffix=".tmp", dir=directory,
+            )
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(self, f, indent=4, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temporary, CONFIG_PATH)
+            temporary = None
         except Exception as e:
             logger.error(f"Failed to save config to JSON: {e}")
             if raise_on_error:
                 raise ConfigError("failed to save configuration") from e
+        finally:
+            if temporary is not None:
+                try:
+                    os.unlink(temporary)
+                except OSError:
+                    pass
 
     def get_config(self, key: str, default: Optional = None, splitter: str = "."):
         keys = key.split(splitter)
