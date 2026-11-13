@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass, field
 
 from core.chat.message_elements import File, Image, Record
+from core.utils.network import is_public_http_url
 from core.utils.path_utils import get_data_path
 from core.utils.tool_utils import BaseTool
 
@@ -104,6 +105,14 @@ class ToolResult:
             for att in self.attachments:
                 if not hasattr(att, "to_path"):
                     continue
+                media_url = (
+                    getattr(att, "file", None)
+                    or getattr(att, "image", None)
+                    or getattr(att, "record", None)
+                )
+                if isinstance(media_url, str) and media_url.startswith(("http://", "https://")):
+                    if not await is_public_http_url(media_url):
+                        continue
                 try:
                     path = await att.to_path()
                 except Exception:

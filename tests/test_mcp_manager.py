@@ -529,3 +529,19 @@ def test_set_tool_enabled_rejects_unknown_tool(manager):
         manager.set_tool_enabled("srv1", "nonexistent_tool", False)
     # nothing was persisted
     assert "_disabledTools" not in manager.load_config()
+
+@pytest.mark.anyio
+async def test_tool_result_rejects_private_attachment_urls(monkeypatch):
+    from core.agent.tool import ToolResult
+
+    async def private(url):
+        return False
+
+    async def must_not_download(self):
+        raise AssertionError("private attachment URL was downloaded")
+
+    monkeypatch.setattr("core.agent.tool.is_public_http_url", private)
+    monkeypatch.setattr(File, "to_path", must_not_download)
+    result = ToolResult(text="done", attachments=[File(file="http://127.0.0.1/secret")])
+    text = await result.assemble_result()
+    assert "127.0.0.1" not in text
