@@ -7,6 +7,8 @@ from httpx import ASGITransport, AsyncClient
 
 from core.chat.message_history import MessageHistorySession
 from core.chat.session import Session
+from core.chat.session_manager import SessionManager
+from core.provider import LLMModelClient, ModelType, ProviderAPIError, ProviderManager
 from webui.routes.sessions import SessionsRoutes
 
 
@@ -71,6 +73,61 @@ def _make_routes(session_manager):
     return SessionsRoutes(
         FastAPI(), SimpleNamespace(session_manager=session_manager)
     )
+
+
+@pytest.mark.anyio
+async def test_update_session_llm_validates_and_persists_only_for_target_session(session_db):
+    manager = SessionManager(session_db, {})
+    providers = object.__new__(ProviderManager)
+    provider = {
+        "model_config_version": 2,
+        "model_config": {
+            "llm": {"model-id": {"model_name": "chat-model", "legacy_ids": ["old-name"]}},
+            "tts": {"tts-id": {"model_name": "tts-model"}},
+        },
+    }
+    providers.kira_config = {"providers": {"provider": provider}}
+    providers._providers = {"provider": SimpleNamespace(models={ModelType.LLM: LLMModelClient})}
+    app = FastAPI()
+    routes = SessionsRoutes(app, SimpleNamespace(session_manager=manager, provider_manager=providers))
+    app.add_api_route("/api/sessions/{session_id:path}", routes.update_session, methods=["PUT"])
+    app.add_api_route("/api/sessions/{session_id:path}", routes.get_session, methods=["GET"])
+    sid = "adapter:dm:user"
+    other_sid = "adapter:dm:other"
+    await manager.update_session(sid, title="Before", data={"metadata": 1})
+    await manager.update_session(other_sid, title="Other")
+    child = await manager.create_subagent_session()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        path = f"/api/sessions/{sid}"
+        assert (await client.get(path)).json()["llm_model"] is None
+        for invalid in (42, "provider:", "unknown:model-id", "provider:missing", "provider:tts-id"):
+            rejected = await client.put(path, json={"title": "Rejected", "llm_model": invalid})
+            assert rejected.status_code == 400
+        assert (await client.get(path)).json()["title"] == "Before"
+
+        capabilities = {"tts": {"enabled": False}}
+        updated = await client.put(path, json={"llm_model": "provider:old-name", "capabilities": capabilities})
+        assert updated.status_code == 200
+        assert updated.json()["llm_model"] == "provider:model-id"
+        assert (await client.get(f"/api/sessions/{other_sid}")).json()["llm_model"] is None
+        assert (await client.put(f"/api/sessions/{child.sid}", json={
+            "title": "Rejected", "llm_model": "provider:model-id",
+        })).status_code == 400
+        assert (await manager.get_session(child.sid)).session_title == ""
+
+        provider["status"] = "inactive"
+        other_path = f"/api/sessions/{other_sid}"
+        selected = await client.put(other_path, json={"llm_model": "provider:model-id"})
+        assert selected.status_code == 200
+        assert (await client.get(other_path)).json()["llm_model"] == "provider:model-id"
+        with pytest.raises(ProviderAPIError, match="Provider provider is disabled"):
+            providers.get_llm("provider:model-id")
+        provider["status"] = "active"
+        assert providers.get_llm("provider:model-id").model.model_id == "model-id"
+        assert (await client.put(path, json={"title": "Renamed"})).json()["llm_model"] == "provider:model-id"
+        cleared = await client.put(path, json={"llm_model": None})
+        assert cleared.json()["llm_model"] is None
+        assert (await manager.get_session(sid)).data == {"metadata": 1, "capabilities": capabilities}
 
 
 @pytest.mark.asyncio

@@ -192,6 +192,18 @@ class ProviderManager:
             return await method(*args, **kwargs)
         return guarded_call
 
+    def get_llm(self, reference: str) -> LLMModelClient:
+        """Resolve a configured LLM reference to an available client."""
+        if not isinstance(reference, str):
+            raise ValueError("Invalid LLM model reference")
+        provider_id, separator, model_id = reference.partition(":")
+        if not separator or not provider_id or not model_id:
+            raise ValueError("Invalid LLM model reference")
+        model_client = self.get_model_client(provider_id, model_id, ModelType.LLM)
+        if not isinstance(model_client, LLMModelClient):
+            raise ValueError(f"LLM model unavailable: {reference}")
+        return model_client
+
     def get_default_llm(self) -> LLMModelClient:
         model_info = self.get_default_model_info("default_llm")
         model_client = self.get_model_client(

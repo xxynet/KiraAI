@@ -214,26 +214,46 @@ class SessionManager:
 
     async def update_session(
         self, session: str, *, title=_FIELD_UNSET, description=_FIELD_UNSET,
-        content=_FIELD_UNSET, data=_FIELD_UNSET,
+        content=_FIELD_UNSET, data=_FIELD_UNSET, capabilities=_FIELD_UNSET,
+        llm_model=_FIELD_UNSET,
     ) -> None:
-        """Update supplied fields; content and data replace their entire values."""
+        """Update supplied fields and apply session overrides in one write."""
         changes = {name: value for name, value in (
             ("title", title), ("description", description), ("content", content), ("data", data),
         ) if value is not _FIELD_UNSET}
-        if not changes:
+        overrides = {name: value for name, value in (
+            ("capabilities", capabilities), ("llm_model", llm_model),
+        ) if value is not _FIELD_UNSET}
+        if not changes and not overrides:
             return
         for name in ("title", "description"):
             if name in changes and changes[name] is not None and not isinstance(changes[name], str):
                 raise ValueError(f"Session {name} must be a string or null")
         if data is not _FIELD_UNSET and not isinstance(data, dict):
             raise ValueError("Session data must be an object")
+        if "capabilities" in overrides and capabilities is not None and not isinstance(capabilities, dict):
+            raise ValueError("Session capabilities must be an object or null")
+        if "llm_model" in overrides and llm_model is not None and not isinstance(llm_model, str):
+            raise ValueError("Session LLM model must be a string or null")
         if content is not _FIELD_UNSET:
             normalize_memory(content)
         changes = copy.deepcopy(changes)
+        overrides = copy.deepcopy(overrides)
         async with self._write_lock:
             event_type, payload = None, None
+            if overrides or content is not _FIELD_UNSET:
+                previous = await self._session_data(session)
+            if overrides:
+                if "llm_model" in overrides and previous.get("kind") == "subagent":
+                    raise ValueError("Session LLM selection is only available for chat sessions")
+                session_data = changes.setdefault("data", previous["data"])
+                for name, value in overrides.items():
+                    if value is None:
+                        session_data.pop(name, None)
+                    else:
+                        session_data[name] = value
             if content is not _FIELD_UNSET:
-                old_memory = (await self._session_data(session))["content"]
+                old_memory = previous["content"]
                 changes["content"] = normalize_memory(changes["content"], previous=old_memory)
                 event_type = "session_memory_written"
                 payload = {
@@ -262,15 +282,7 @@ class SessionManager:
         return self._merge_capabilities(global_config, overrides)
 
     async def update_session_capabilities(self, session: str, capabilities: dict | None):
-        if capabilities is not None and not isinstance(capabilities, dict):
-            raise ValueError("Session capabilities must be an object or null")
-        async with self._write_lock:
-            data = await self._session_data(session)
-            if capabilities is None:
-                data["data"].pop("capabilities", None)
-            else:
-                data["data"]["capabilities"] = copy.deepcopy(capabilities)
-            await self._save_session(session, data)
+        await self.update_session(session, capabilities=capabilities)
 
     async def update_memory(
         self,

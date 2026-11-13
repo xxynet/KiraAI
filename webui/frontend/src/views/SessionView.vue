@@ -121,6 +121,19 @@
             class="w-full rounded-lg px-3 py-2 resize-none"
           />
         </div>
+        <div v-if="editingChatSession" class="mb-4">
+          <div class="block text-sm font-medium text-theme-body mb-2">{{ $t('sessions.llm_model') }}</div>
+          <CustomSelect
+            v-model="sessionModel"
+            :options="sessionModelOptions"
+            :disabled="saving"
+            height="42px"
+          />
+          <p v-if="modelsLoadFailed" class="text-xs text-theme-subtle mt-2">{{ $t('sessions.llm_models_load_failed') }}</p>
+          <p v-else-if="sessionModel && sessionModel === savedSessionModel && savedModelUnavailable" class="text-xs text-theme-subtle mt-2">
+            {{ $t('sessions.llm_model_unavailable_hint') }}
+          </p>
+        </div>
         <div class="mb-4">
           <label class="block text-sm font-medium text-theme-body mb-2">{{ $t('sessions.capabilities') }}</label>
           <div class="flex gap-2">
@@ -199,6 +212,7 @@ import { ArrowRight, ChatDotRound, ChatLineRound } from '@element-plus/icons-vue
 import { notify } from '@/composables/useNotification'
 import { getSessions, getSession, updateSession, deleteSession } from '@/api/session'
 import { getConfiguration } from '@/api/config'
+import { getProviders } from '@/api/provider'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import Modal from '@/components/common/Modal.vue'
 import SessionHistory from '@/components/sessions/SessionHistory.vue'
@@ -211,6 +225,23 @@ import type { SessionCapabilities, SessionItem } from '@/types'
 
 const { t } = useI18n()
 const sessions = ref<SessionItem[]>([])
+const editingChatSession = ref(false)
+const sessionModel = ref('')
+const savedSessionModel = ref('')
+const modelsLoadFailed = ref(false)
+const availableModels = ref<{ value: string; label: string }[]>([])
+const savedModelUnavailable = computed(() =>
+  Boolean(savedSessionModel.value) && !availableModels.value.some(option => option.value === savedSessionModel.value),
+)
+const sessionModelOptions = computed(() => {
+  const options = [{ value: '', label: t('sessions.llm_model_default') }, ...availableModels.value]
+  if (savedModelUnavailable.value) {
+    const reference = savedSessionModel.value
+    options.push({ value: reference, label: modelsLoadFailed.value ? reference : t('sessions.llm_model_unavailable', { model: reference }) })
+  }
+  return options
+})
+let savedEditorContent = ''
 const expandedSessionIds = ref(new Set<string>())
 const sessionRows = computed(() => {
   const ids = new Set(sessions.value.map(session => session.internal_id).filter(Boolean))
@@ -380,18 +411,36 @@ async function editSession(session: SessionItem) {
     notify(t('sessions.load_failed'), 'error')
     return
   }
-  currentSessionId.value = id
   try {
-    const [res, configRes] = await Promise.all([getSession(id), getConfiguration()])
+    const [res, configRes, providersRes] = await Promise.all([
+      getSession(id),
+      getConfiguration(),
+      session.kind === 'im' ? getProviders().catch(error => {
+        console.error('Failed to load session LLM models:', error)
+        return null
+      }) : null,
+    ])
     const data = res.data
+    currentSessionId.value = id
     sessionTitle.value = data.title || ''
     sessionDescription.value = data.description || ''
+    editingChatSession.value = data.kind === 'im'
+    sessionModel.value = savedSessionModel.value = data.llm_model || ''
+    modelsLoadFailed.value = editingChatSession.value && !providersRes
+    availableModels.value = (providersRes?.data || []).flatMap(provider => {
+      const providerName = provider.name || provider.id
+      const providerLabel = provider.status === 'inactive' ? `${providerName} · ${t('provider.inactive')}` : providerName
+      return Object.entries<{ model_name?: string }>(provider.model_config.llm || {}).map(([id, model]) => ({
+        value: `${provider.id}:${id}`,
+        label: `${model.model_name || id} (${providerLabel})`,
+      }))
+    })
     const globalCapabilities = configRes.data.configuration.bot_config?.capabilities as SessionCapabilities | undefined
     capabilityMode.value = data.capabilities ? 'custom' : 'global'
     sessionCapabilities.value = cloneCapabilities(data.capabilities || globalCapabilities || createDefaultCapabilities())
 
     messageCount.value = data.messages?.length || 0
-    editorContent.value = JSON.stringify(data.messages || [], null, 2)
+    editorContent.value = savedEditorContent = JSON.stringify(data.messages || [], null, 2)
     editorVisible.value = true
   } catch {
     notify(t('sessions.load_failed'), 'error')
@@ -418,7 +467,10 @@ async function handleSave() {
       title: sessionTitle.value,
       description: sessionDescription.value,
       capabilities: capabilityMode.value === 'custom' ? sessionCapabilities.value : null,
-      messages,
+      ...(editorContent.value !== savedEditorContent ? { messages } : {}),
+      ...(editingChatSession.value && sessionModel.value !== savedSessionModel.value
+        ? { llm_model: sessionModel.value || null }
+        : {}),
     })
     notify(t('sessions.save_success'), 'success')
     editorVisible.value = false

@@ -51,7 +51,7 @@ import { useI18n } from 'vue-i18n'
 import { useLocalized } from '@/composables/useLocalized'
 import ConfigFieldInput from '@/components/common/ConfigFieldInput.vue'
 import CollapsibleSection from '@/components/common/CollapsibleSection.vue'
-import { getProviders, getModels } from '@/api/provider'
+import { getProviders } from '@/api/provider'
 import { getPersonas } from '@/api/persona'
 import { getSessions } from '@/api/session'
 import { isInfoLike, isModelSelectLike, isPersonaSelectLike, isSessionSelectLike, isSectionLike } from '@/utils/configFieldTypes'
@@ -205,7 +205,8 @@ async function loadModelSelectOptions() {
     const { field } = schema[dk]
     if (!field) continue
     if (isModelSelectLike(field.type) || field.source === 'model') {
-      modelTypes.add(field.model_type || 'llm')
+      const modelType = field.model_type || 'llm'
+      if (!modelSelectOptions[modelType]?.length) modelTypes.add(modelType)
     }
   }
   if (modelTypes.size === 0) return
@@ -215,27 +216,15 @@ async function loadModelSelectOptions() {
     const providers = res.data || []
     for (const modelType of modelTypes) {
       if (modelSelectOptions[modelType]?.length) continue
-      const options: { value: string; label: string }[] = []
-      for (const provider of providers) {
-        try {
-          const mRes = await getModels(provider.id)
-          const modelConfig = mRes.data || {}
-          const typeModels = modelConfig[modelType] || {}
-          Object.entries(typeModels).forEach(([modelId, entry]: [string, any]) => {
-            options.push({
-              value: `${provider.id}:${modelId}`,
-              label: `${entry.model_name} (${provider.name || provider.id})`,
-            })
-          })
-        } catch {
-          // ignore provider model fetch errors
-        }
-      }
-      options.unshift({
-        value: '',
-        label: t('configuration.select_model'),
-      })
-      modelSelectOptions[modelType] = options
+      modelSelectOptions[modelType] = [
+        { value: '', label: t('configuration.select_model') },
+        ...providers.flatMap(provider => Object.entries<{ model_name?: string }>(
+          provider.model_config[modelType] || {},
+        ).map(([modelId, entry]) => ({
+          value: `${provider.id}:${modelId}`,
+          label: `${entry.model_name || modelId} (${provider.name || provider.id})`,
+        }))),
+      ]
     }
   } catch (e) {
     console.warn('Failed to load model options:', e)
