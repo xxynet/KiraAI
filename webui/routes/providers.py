@@ -5,6 +5,7 @@ from fastapi.responses import FileResponse
 
 from core.config import ConfigError
 from core.logging_manager import get_logger
+from core.provider import ModelType
 from webui.models import (
     HealthCheckResponse,
     ModelCreateRequest,
@@ -397,6 +398,29 @@ class ProvidersRoutes(Routes):
         except (ConfigError, OSError) as e:
             raise HTTPException(status_code=500, detail="Failed to save model configuration") from e
 
+    async def _clear_dangling_session_models(self) -> None:
+        """Drop per-session LLM picks that no longer resolve after a model change.
+
+        Runs after the mutation is persisted so get_model_info reflects the
+        new configuration; a cleanup failure must not fail the request.
+        """
+        session_manager = getattr(self.lifecycle, "session_manager", None)
+        provider_manager = getattr(self.lifecycle, "provider_manager", None)
+        if session_manager is None or provider_manager is None:
+            return
+
+        def is_available(reference: str) -> bool:
+            provider_id, _, model_id = reference.partition(":")
+            return provider_manager.get_model_info(provider_id, model_id, ModelType.LLM) is not None
+
+        try:
+            cleared = await session_manager.clear_llm_model_references(is_available)
+        except Exception as e:
+            logger.error(f"Failed to clear dangling session LLM model references: {e}")
+            return
+        if cleared:
+            logger.info(f"Cleared {cleared} dangling per-session LLM model reference(s)")
+
     async def add_model(self, provider_id: str, payload: ModelCreateRequest):
         if not self.lifecycle or not self.lifecycle.provider_manager:
             raise HTTPException(status_code=500, detail="Provider manager not available")
@@ -450,20 +474,24 @@ class ProvidersRoutes(Routes):
         )
         if not success:
             raise HTTPException(status_code=404, detail="Model not found")
+        await self._clear_dangling_session_models()
         return {"success": True}
 
     async def delete_provider(self, provider_id: str):
         if self.lifecycle and self.lifecycle.provider_manager:
-            found = False
-            if provider_id in self.lifecycle.provider_manager._providers:
-                del self.lifecycle.provider_manager._providers[provider_id]
-                found = True
+            provider_manager = self.lifecycle.provider_manager
             if provider_id in self.lifecycle.kira_config.get("providers", {}):
-                del self.lifecycle.kira_config["providers"][provider_id]
-                self.lifecycle.kira_config.save_config()
-                found = True
-            if not found:
+                try:
+                    provider_manager.delete_provider(provider_id)
+                except (ConfigError, OSError) as e:
+                    raise HTTPException(
+                        status_code=500, detail="Failed to save provider configuration"
+                    ) from e
+            elif provider_id in provider_manager._providers:
+                del provider_manager._providers[provider_id]
+            else:
                 raise HTTPException(status_code=404, detail="Provider not found")
+            await self._clear_dangling_session_models()
             return
         if provider_id not in self._providers:
             raise HTTPException(status_code=404, detail="Provider not found")
@@ -483,6 +511,8 @@ class ProvidersRoutes(Routes):
         )
         if result["errors"]:
             logger.warning(f"Sync models for {provider_id} had errors: {result['errors']}")
+        if result["removed"]:
+            await self._clear_dangling_session_models()
         return result
 
     async def health_check(self, provider_id: str, model_type: str, model_id: str):

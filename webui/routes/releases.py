@@ -26,6 +26,7 @@ logger = get_logger("releases", "green")
 RESTART_EXIT_CODE = 42
 RESTART_DELAY_SECONDS = 0.5  # Allow HTTP response to flush before hard exit
 RESTART_PROGRESS_GRACE_SECONDS = 2.0  # Let the browser observe the restarting state first
+MAX_UPDATE_SOURCE_BYTES = 200 * 1024 * 1024
 
 
 def _get_protected_source_update_items(root: Path) -> frozenset[str]:
@@ -178,7 +179,7 @@ class ReleasesRoutes(Routes):
                     for i, url in enumerate(ranked_urls):
                         logger.info(f"Trying source {i + 1}/{len(ranked_urls)}: {url}")
                         try:
-                            data = await download_asset(url)
+                            data = await download_asset(url, max_bytes=MAX_UPDATE_SOURCE_BYTES)
                             logger.info(f"Downloaded {len(data) / 1024 / 1024:.1f} MB from source {i + 1}")
                             break
                         except Exception as exc:

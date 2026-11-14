@@ -131,3 +131,22 @@ def test_get_all_releases_propagates_page_failure_and_closes_client(
     assert pages == [1, 2]
     assert len(clients) == 1
     assert clients[0].is_closed
+
+
+@pytest.mark.anyio
+async def test_download_asset_enforces_max_bytes(monkeypatch):
+    body = b"x" * 2048
+
+    async def handler(request):
+        return httpx.Response(200, content=body, request=request)
+
+    real_async_client = httpx.AsyncClient
+
+    def mock_async_client(**kwargs):
+        return real_async_client(transport=httpx.MockTransport(handler), **kwargs)
+
+    monkeypatch.setattr(github_api.httpx, "AsyncClient", mock_async_client)
+
+    assert await github_api.download_asset("https://example.test/a.zip", max_bytes=4096) == body
+    with pytest.raises(ValueError, match="byte limit"):
+        await github_api.download_asset("https://example.test/a.zip", max_bytes=1024)

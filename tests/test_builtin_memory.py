@@ -56,7 +56,9 @@ async def test_migration_preserves_original_backup_and_global_visibility_once(tm
     other = await store.search(scope(persona="other", adapter="other", account="other", target="bob", users=("bob",)))
     assert {r["id"] for r in first} == {r["id"] for r in other}
     assert all(row["owner_type"] == "legacy" and row["core"] for row in first)
-    await store.remove(scope(), first[0]["id"], 1)
+    with pytest.raises(MemoryInputError, match="not_found"):
+        await store.remove(scope(), first[0]["id"], 1)
+    await store.admin_remove(first[0]["id"], 1)
     assert await store.initialize(source) == 0
     restarted = MemoryStore(tmp_path / "memories.db")
     assert await restarted.initialize(source) == 0
@@ -122,6 +124,21 @@ async def test_scoped_ownership_and_legacy_exception(tmp_path):
             await store.update(other, private["id"], 1, text="stolen")
         with pytest.raises(MemoryInputError, match="not_found"):
             await store.remove(other, private["id"], 1)
+
+
+@pytest.mark.anyio
+async def test_legacy_memories_are_read_only_for_conversations(tmp_path):
+    store, _ = await store_at(tmp_path, "shared legacy")
+    legacy = (await store.search(scope()))[0]
+
+    with pytest.raises(MemoryInputError, match="not_found"):
+        await store.update(scope(), legacy["id"], legacy["revision"], text="poisoned")
+    with pytest.raises(MemoryInputError, match="not_found"):
+        await store.remove(scope(), legacy["id"], legacy["revision"])
+
+    # The operator/admin path remains able to edit legacy records.
+    changed = await store.admin_update(legacy["id"], legacy["revision"], text="operator edit")
+    assert changed["text"] == "operator edit"
 
 
 @pytest.mark.anyio

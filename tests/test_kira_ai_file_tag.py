@@ -1,3 +1,4 @@
+import base64
 import importlib
 import json
 import os
@@ -6,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from core.chat.message_elements import File, Image
+from tests.image_samples import PNG_DATA_URL
 
 kira_tags = importlib.import_module("core.plugin.builtin_plugins.kira-ai.tags")
 file_send_policy = importlib.import_module(
@@ -23,6 +25,7 @@ def sandbox(tmp_path, monkeypatch):
     (config_root / "plugins").mkdir(parents=True)
     monkeypatch.setattr(file_send_policy, "get_data_path", lambda: data_root)
     monkeypatch.setattr(file_send_policy, "get_config_path", lambda: config_root)
+    monkeypatch.setattr(kira_tags, "get_data_path", lambda: data_root)
     return data_root, config_root
 
 
@@ -36,6 +39,43 @@ def write_agent_config(config_root: Path, file_access: dict):
 
 def build_tag(sid: str = ""):
     return kira_tags.build_file_tag(sid=sid)()
+
+
+@pytest.mark.anyio
+async def test_reference_images_are_limited_to_data_root(sandbox, tmp_path):
+    data_root, _ = sandbox
+    image_bytes = base64.b64decode(PNG_DATA_URL.split(",", 1)[1])
+
+    outside = tmp_path / "secret.png"
+    outside.write_bytes(image_bytes)
+    assert await kira_tags._load_reference_images(str(outside)) == []
+
+    inside = data_root / "files" / "reference.png"
+    inside.write_bytes(image_bytes)
+    refs = await kira_tags._load_reference_images("data/files/reference.png")
+    assert len(refs) == 1
+    assert refs[0].image
+
+
+@pytest.mark.anyio
+async def test_file_url_rejects_private_address(sandbox, monkeypatch):
+    async def private(url):
+        return False
+
+    monkeypatch.setattr(kira_tags, "is_public_http_url", private)
+    assert await build_tag().handle("http://127.0.0.1/secret") == []
+
+
+@pytest.mark.anyio
+async def test_file_url_accepts_public_address(sandbox, monkeypatch):
+    async def public(url):
+        return True
+
+    monkeypatch.setattr(kira_tags, "is_public_http_url", public)
+    result = await build_tag().handle("https://example.com/file.bin")
+    assert len(result) == 1
+    assert isinstance(result[0], File)
+    assert result[0].file == "https://example.com/file.bin"
 
 
 @pytest.mark.anyio
@@ -169,7 +209,11 @@ async def test_missing_agent_config_keeps_base_paths(sandbox):
 
 
 @pytest.mark.anyio
-async def test_url_bypasses_path_checks(sandbox):
+async def test_url_bypasses_local_path_checks_but_requires_public_host(sandbox, monkeypatch):
+    async def public(url):
+        return True
+
+    monkeypatch.setattr(kira_tags, "is_public_http_url", public)
     result = await build_tag().handle("https://example.com/audio.mp3")
 
     assert len(result) == 1
