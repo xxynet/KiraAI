@@ -148,7 +148,7 @@
       },
       "endpoint": {
         "name": "Endpoint",
-        "type": "enum",
+        "type": "string",
         "default": "v1/image",
         "options": ["v1/image", "v1/chat"],
         "hint": "Endpoint to send image generation requests. Use v1/chat for multimodal chat models that return images via chat completions.",

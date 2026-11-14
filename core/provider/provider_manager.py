@@ -797,7 +797,7 @@ class ProviderManager:
         """
         provider = self._require_provider_available(provider_id)
         try:
-            models = await provider.get_llm_list()
+            models = await provider.get_model_list(model_type)
             return models
         except Exception as e:
             logger.error(f"Failed to fetch remote models for provider {provider_id}: {e}")

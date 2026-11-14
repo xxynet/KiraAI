@@ -268,6 +268,10 @@ class BaseProvider(ABC):
         if model_type not in self.models:
             raise ValueError(f"Model type {model_type.value} not implemented")
         return self.models[model_type]
+
+    async def get_model_list(self, model_type: str) -> list[dict]:
+        """List models for a capability, defaulting to the provider's existing catalog."""
+        return await self.get_llm_list()
     
     async def get_llm_list(self) -> list[dict]:
         """
