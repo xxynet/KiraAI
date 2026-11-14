@@ -31,9 +31,9 @@
           "name": "Custom Headers",
           "type": "json",
           "default": {},
-          "hint": "Custom headers passed to OpenAI Client",
+          "hint": "Custom headers for DeepSeek chat and speech requests",
           "locales": {
-            "zh": { "name": "自定义请求头", "hint": "传递给 OpenAI 客户端的自定义请求头" }
+            "zh": { "name": "自定义请求头", "hint": "DeepSeek 对话和语音请求使用的自定义请求头" }
           }
         }
       }
@@ -62,7 +62,7 @@
       },
       "reasoning_effort": {
         "name": "思考深度",
-        "type": "enum",
+        "type": "string",
         "default": "high",
         "options": ["high", "max"],
         "hint": "思考强度：high（默认）或 max（复杂 Agent 任务推荐）",
@@ -99,6 +99,49 @@
               "en": { "name": "Extra Body", "hint": "Additional fields merged into the request body (JSON object)" }
             }
           }
+        }
+      }
+    },
+    "tts": {
+      "voice_id": {
+        "name": "Voice",
+        "type": "string",
+        "default": "stella",
+        "options": ["stella", "tide"],
+        "hint": "stella is a female voice and tide is a male voice.",
+        "locales": {
+          "zh": { "name": "音色", "hint": "stella（海星）为女声，tide（暗潮）为男声。" }
+        }
+      },
+      "filter_markdown": {
+        "name": "Filter Markdown",
+        "type": "switch",
+        "default": true,
+        "hint": "Remove Markdown formatting before reading the text aloud.",
+        "locales": {
+          "zh": { "name": "过滤 Markdown", "hint": "朗读前去掉 Markdown 格式。" }
+        }
+      },
+      "timeout": {
+        "name": "Timeout",
+        "type": "integer",
+        "default": 120,
+        "min": 1,
+        "hint": "Request timeout in seconds",
+        "locales": {
+          "zh": { "name": "超时", "hint": "请求超时秒数" }
+        }
+      }
+    },
+    "stt": {
+      "timeout": {
+        "name": "Timeout",
+        "type": "integer",
+        "default": 120,
+        "min": 1,
+        "hint": "Request timeout in seconds. Accepts 16-bit PCM WAV or Ogg Opus up to 8 MiB and 120 seconds.",
+        "locales": {
+          "zh": { "name": "超时", "hint": "请求超时秒数。音频须为 16 位 PCM WAV 或 Ogg Opus，最大 8 MiB，最长 120 秒。" }
         }
       }
     }

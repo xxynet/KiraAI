@@ -3,13 +3,13 @@
     "display_name": "DeepSeek",
     "version": "1.0.0",
     "author": "KiraAI",
-    "description": "DeepSeek Provider with thinking mode support",
+    "description": "DeepSeek provider with thinking mode, speech recognition, and speech synthesis",
     "repo": null,
     "icon": "icon.svg",
     "locales": {
         "zh": {
             "display_name": "DeepSeek",
-            "description": "支持思考模式的 DeepSeek 提供商"
+            "description": "支持思考模式、语音识别和语音合成的 DeepSeek 提供商"
         }
     }
 }

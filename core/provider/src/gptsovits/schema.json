@@ -50,7 +50,7 @@
       },
       "ref_language": {
         "name": "参考音频语言",
-        "type": "enum",
+        "type": "string",
         "default": "zh",
         "options": ["zh", "en", "ja", "yue", "ko"],
         "hint": "参考音频的语言",
@@ -60,7 +60,7 @@
       },
       "text_language": {
         "name": "合成文本语言",
-        "type": "enum",
+        "type": "string",
         "default": "auto",
         "options": ["auto", "zh", "en", "ja", "yue", "ko"],
         "hint": "待合成文本的语言",

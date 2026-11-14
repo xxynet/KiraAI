@@ -2,16 +2,27 @@ import httpx
 
 from core.provider import BaseProvider, ModelType
 
-from .model_clients import DeepSeekLLMClient
+from .model_clients import DeepSeekLLMClient, DeepSeekSTTClient, DeepSeekTTSClient
 
 
 class DeepSeekProvider(BaseProvider):
     models = {
         ModelType.LLM: DeepSeekLLMClient,
+        ModelType.TTS: DeepSeekTTSClient,
+        ModelType.STT: DeepSeekSTTClient,
     }
 
     def __init__(self, provider_id, provider_name, provider_config):
         super().__init__(provider_id, provider_name, provider_config)
+
+    async def get_model_list(self, model_type: str) -> list[dict]:
+        if model_type == ModelType.TTS.value:
+            return [{"id": "deepseek-tts"}]
+        if model_type == ModelType.STT.value:
+            return [{"id": "deepseek-asr"}]
+        if model_type == ModelType.LLM.value:
+            return await self.get_llm_list()
+        return []
 
     async def get_llm_list(self) -> list[dict]:
         """

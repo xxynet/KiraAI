@@ -14,7 +14,7 @@
     },
     "region": {
       "name": "地域",
-      "type": "enum",
+      "type": "string",
       "default": "beijing",
       "options": [
         "beijing",
@@ -192,7 +192,7 @@
       },
       "audio_format": {
         "name": "音频格式",
-        "type": "enum",
+        "type": "string",
         "default": "mp3",
         "options": [
           "mp3",
@@ -299,7 +299,7 @@
       },
       "audio_format": {
         "name": "音频格式",
-        "type": "enum",
+        "type": "string",
         "default": "wav",
         "options": [
           "wav",
