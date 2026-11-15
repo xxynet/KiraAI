@@ -49,6 +49,7 @@ class SubAgentPreset(BaseModel):
         default_factory=list,
         max_length=500,
     )
+    exclude_tools_from_main: bool = False
     skills: list[str] = Field(
         default_factory=list,
         max_length=500,
@@ -178,6 +179,20 @@ class SubAgentPresetStore:
 
     def has_available_presets(self, session_id: str) -> bool:
         return next(self._available_presets(session_id), None) is not None
+
+    def main_tool_exclusions(self, session_id: str, tool_names: set[str]) -> set[str]:
+        # Resolve every preset against the same unfiltered, session-scoped pool.
+        excluded = set()
+        for preset in self._available_presets(session_id):
+            if not preset.exclude_tools_from_main:
+                continue
+            if preset.tool_mode == "inherit":
+                return tool_names.copy()
+            if preset.tool_mode == "custom":
+                excluded.update(tool_names.intersection(preset.tools))
+            else:
+                excluded.update(tool_names.difference(preset.tools))
+        return excluded
 
     def build_presets_prompt(self, session_id: str) -> Prompt | None:
         presets = list(self._available_presets(session_id))

@@ -1,5 +1,6 @@
 import asyncio
 from types import SimpleNamespace
+from typing import ClassVar
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -164,6 +165,59 @@ async def test_subagent_presets_are_built_with_skills_after_tools(processor, tmp
     next_ctx = IMBatchContext(services, batch())
     assert await BuildRequestStage().run(next_ctx)
     assert [prompt.name for prompt in next_ctx.request.system_prompt] == (["tools", "skills", "time"] if with_skills else ["tools", "time"])
+
+
+@pytest.mark.anyio
+async def test_main_model_receives_filtered_tools_from_available_presets(processor, tmp_path, monkeypatch):
+    from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
+    from core.plugin.builtin_plugins.subagents.main import SubAgentsPlugin
+    from core.utils.tool_utils import BaseTool
+
+    instance, model = processor
+    services = instance.im_workflow.ctx
+    store = SubAgentPresetStore(tmp_path / "presets.json")
+    services.subagent_manager.presets = store
+    event = batch()
+    async def save_preset(name, tools, *, exclude=True, enabled=True):
+        return await store.save(SubAgentPreset(
+            name=name, tool_mode="custom", tools=tools, exclude_tools_from_main=exclude, enabled=enabled,
+        ))
+
+    await save_preset("Static", ["search"])
+    await save_preset("Dynamic", ["dynamic", "search", "missing"])
+    await save_preset("Opted out", ["shared"], exclude=False)
+    await save_preset("Disabled", ["shared"], enabled=False)
+    restricted = await save_preset("Other session", ["shared"])
+    await store.replace_scopes({restricted["id"]: {"deny": [event.sid]}})
+
+    def tool(tool_name):
+        class TestTool(BaseTool):
+            name = tool_name
+            description = "Test tool"
+            parameters: ClassVar[dict] = {"type": "object", "properties": {}}
+
+            async def execute(self, event):
+                return "ok"
+
+        return TestTool()
+
+    services.tool_manager.build_tool_set = lambda: ToolSet([tool("search"), tool("shared"), tool("blocked")])
+    services.mcp_manager.get_tool_server_map = lambda: {"blocked": "restricted"}
+    services.mcp_manager.is_server_allowed = lambda server, sid: False
+    plugin = SubAgentsPlugin(SimpleNamespace(subagent_mgr=services.subagent_manager), {})
+
+    async def inject_dynamic_tool(event, request, tags):
+        request.tool_set.add(tool("dynamic"))
+
+    monkeypatch.setattr(event_handler_reg, "get_handlers", lambda event_type: [
+        SimpleNamespace(exec_handler=inject_dynamic_tool),
+        SimpleNamespace(exec_handler=plugin.inject_tools),
+    ] if event_type == EventType.ON_LLM_REQUEST else [])
+    await instance.im_workflow.handle_batch_event(event)
+    request = model.chat.await_args.args[0]
+    names = {item["function"]["name"] for item in request.tools}
+    assert names == {"shared", "spawn_agent", "list_agents", "send_message", "followup_task", "interrupt_agent"}
+    assert {tool.name for tool in request.tool_set.tools} == names
 
 
 @pytest.mark.anyio

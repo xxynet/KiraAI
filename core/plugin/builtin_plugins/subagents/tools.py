@@ -10,10 +10,10 @@ from core.utils.tool_utils import BaseTool
 class SubAgentTool(BaseTool):
     """Bind agent controls to the caller and share tool selection helpers."""
 
-    def __init__(self, *, ctx, source, request):
+    def __init__(self, *, ctx, source, parent_tools: ToolSet):
         super().__init__(ctx=ctx)
         self.source = source
-        self.request = request
+        self.parent_tools = parent_tools
 
     async def _get_source(self):
         return await self.ctx.session_mgr.get_session(self.source.sid, ensure_session=True)
@@ -23,7 +23,7 @@ class SubAgentTool(BaseTool):
         selected = []
         server_map = self.ctx.mcp_mgr.get_tool_server_map() if self.ctx.mcp_mgr else {}
         for name in names:
-            tool = self.request.tool_set.get(name)
+            tool = self.parent_tools.get(name)
             if tool is None:
                 tool = pool.get(name)
             if tool is None or name in SUBAGENT_TOOL_NAMES:
@@ -44,7 +44,7 @@ class SubAgentTool(BaseTool):
             target,
             message,
             caller_id=source.internal_id,
-            parent_tools=self.request.tool_set,
+            parent_tools=self.parent_tools,
             tools=tools,
             steer=steer,
             source_event=event,
@@ -98,7 +98,7 @@ class SpawnAgentTool(SubAgentTool):
             permission_session=source,
             title=preset.name if name is None else name,
             config=config,
-            parent_tools=self.request.tool_set,
+            parent_tools=self.parent_tools,
             tools=tools,
             preset_id=preset_id,
             source_event=event,

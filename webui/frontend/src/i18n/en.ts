@@ -433,6 +433,8 @@ export default {
       skill_disabled: '{name} (disabled)',
       skills_hint: 'Skills follow the parent session scope.',
       tools_hint: 'An empty allowed list disables tools. Tool permissions are checked against the parent session.',
+      exclude_tools_from_main: 'Hide this preset’s tools from the main agent',
+      exclude_tools_from_main_hint: 'When this preset is available in the current session, the main agent can only use these tools by delegating. Inherit mode hides all tools except subagent controls.',
       choose_tools: 'Choose tools',
       tools_selected: '{count} tools selected',
       tools_picker_hint: 'Select individual tools or a whole group from a plugin or MCP server.',
