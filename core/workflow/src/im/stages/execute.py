@@ -1,6 +1,7 @@
 import asyncio
 import random
 import time
+from contextlib import aclosing
 
 from core.agent.agent_executor import AgentExecutionContext, AgentExecutor
 from core.agent.config import AgentExecutionConfig
@@ -23,8 +24,8 @@ class ExecuteAgentStage(BaseStage[IMBatchContext]):
 
     async def run(self, ctx: IMBatchContext) -> bool:
         services, event, sid = ctx.services, ctx.event, ctx.sid
-        request, tag_set = ctx.request, ctx.tag_set
-        if request is None:
+        request, tag_set, session = ctx.request, ctx.tag_set, ctx.stored_session
+        if request is None or session is None:
             raise RuntimeError("BuildRequestStage must run before this stage")
         new_messages, model_group = ctx.new_messages, ctx.model_group
         # Get max tool loop config, defaults to 2 if not a valid integer
@@ -127,33 +128,35 @@ class ExecuteAgentStage(BaseStage[IMBatchContext]):
 
         # Iter agent executor to get LLMResponse
         # TODO use llm_semaphore to restrict concurrent LLM requests
-        async for step in agent_executor.run():
-            llm_resp = step.llm_response
-            if not llm_resp:
-                break
+        async with (
+            aclosing(agent_executor.run()) as steps,
+            services.main_agent_runs.track(session, agent_executor),
+        ):
+            async for step in steps:
+                llm_resp = step.llm_response
+                if not llm_resp:
+                    break
 
-            # Record LLM usage telemetry per step
-            try:
-                await services.db.add_telemetry_llm_usage(
-                    timestamp=int(time.time()),
-                    model=step.model.model_name,
-                    source="main",
-                    input_tokens=llm_resp.input_tokens or 0,
-                    output_tokens=llm_resp.output_tokens or 0,
-                    cached_tokens=llm_resp.cached_tokens,
-                    response_time_ms=int((llm_resp.time_consumed or 0) * 1000),
-                    success=(step.state != "error"),
-                )
-            except Exception as e:
-                logger.debug(f"Failed to record telemetry LLM usage: {e}")
+                # Record LLM usage telemetry per step
+                try:
+                    await services.db.add_telemetry_llm_usage(
+                        timestamp=int(time.time()),
+                        model=step.model.model_name,
+                        source="main",
+                        input_tokens=llm_resp.input_tokens or 0,
+                        output_tokens=llm_resp.output_tokens or 0,
+                        cached_tokens=llm_resp.cached_tokens,
+                        response_time_ms=int((llm_resp.time_consumed or 0) * 1000),
+                        success=(step.state != "error"),
+                    )
+                except Exception as e:
+                    logger.debug(f"Failed to record telemetry LLM usage: {e}")
 
-            if not await send_llm_text(llm_resp, step.assistant_message):
-                break
+                if not await send_llm_text(llm_resp, step.assistant_message):
+                    break
 
-            if step.is_final:
-                break
-
-            # Process tool calls if existed
+                if step.is_final:
+                    break
 
         # Finalization must still run when a result handler stops the event.
         return True

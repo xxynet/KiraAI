@@ -15,6 +15,7 @@ class BuildRequestStage(BaseStage[IMBatchContext]):
     async def run(self, ctx: IMBatchContext) -> bool:
         services, event, sid = ctx.services, ctx.event, ctx.sid
         session = await services.session_manager.get_session(sid, ensure_session=True)
+        ctx.stored_session = session
         if not session.session_title:
             await services.session_manager.update_session(sid, title=event.session.session_title)
         session_title = session.session_title or event.session.session_title

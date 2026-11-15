@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from core.agent.main_agent_runs import MainAgentRuns
 from core.agent.message import OpenAIMessage
 from core.chat.message_utils import (
     KiraMessageBatchEvent,
@@ -19,6 +20,7 @@ if TYPE_CHECKING:
     from core.agent.subagent_manager import SubAgentManager
     from core.chat.message_history import MessageHistoryService
     from core.chat.message_router import MessageRouter
+    from core.chat.session import Session
     from core.chat.session_buffer import SessionBufferManager
     from core.chat.session_manager import SessionManager
     from core.config import KiraConfig
@@ -51,6 +53,7 @@ class IMWorkflowContext:
     db: DatabaseService
     event_bus: EventBus
     message_history: MessageHistoryService | None = None
+    main_agent_runs: MainAgentRuns = field(default_factory=MainAgentRuns)
 
 
 @dataclass
@@ -79,6 +82,7 @@ class IMBatchContext:
     turn_steps: list[KiraStepResult] = field(default_factory=list)
 
     sid: str = field(init=False)
+    stored_session: Session | None = field(default=None, init=False)
 
     def __post_init__(self):
         self.sid = self.event.session.sid

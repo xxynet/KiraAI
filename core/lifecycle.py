@@ -289,7 +289,7 @@ class KiraLifecycle:
         message_formatter = MessageFormatter(
             self.kira_config, self.provider_manager, self.session_manager, self.image_desc_cache,
         )
-        workflow = DefaultIMWorkflow(IMWorkflowContext(
+        im_context = IMWorkflowContext(
             message_formatter=message_formatter,
             message_media=MessageMediaService(),
             message_buffer=message_buffer,
@@ -306,7 +306,8 @@ class KiraLifecycle:
             db=self.db_service,
             message_history=self.message_history,
             event_bus=self.event_bus,
-        ))
+        )
+        workflow = DefaultIMWorkflow(im_context)
         self.message_router.register_route(
             IMMessageRoute(
                 delivery=message_delivery,
@@ -374,6 +375,7 @@ class KiraLifecycle:
             image_desc_cache=self.image_desc_cache,
             message_router=self.message_router,
             subagent_mgr=self.subagent_manager,
+            _main_agent_runs=im_context.main_agent_runs,
         )
 
         self.plugin_manager = PluginManager(self.plugin_context)
