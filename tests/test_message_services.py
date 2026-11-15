@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from core.adapter.adapter_info import AdapterInfo
+from core.agent.main_agent_runs import MainAgentRuns
 from core.chat.message_elements import Forward, Image, Reply, Sticker, Text
 from core.chat.message_history import MessageHistoryService
 from core.chat.message_utils import (
@@ -83,6 +84,7 @@ async def test_plugin_context_exposes_services_without_processor_dependency():
         message_delivery=delivery,
         message_router=router,
         subagent_mgr=Mock(),
+        _main_agent_runs=MainAgentRuns(),
     )
 
     assert context.message_router is router

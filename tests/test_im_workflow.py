@@ -19,6 +19,7 @@ from core.chat.session_manager import SessionManager
 from core.config.config_loader import KiraConfig
 from core.message_manager import MessageProcessor
 from core.plugin.handlers import EventType, event_handler_reg
+from core.plugin.plugin_context import PluginContext
 from core.prompt_manager import Prompt
 from core.provider import LLMResponse
 from core.tag import RootTagAction
@@ -86,6 +87,23 @@ def processor(monkeypatch):
         ),
     )
     return instance, model
+
+
+@pytest.fixture
+def plugin_context(processor):
+    instance, _ = processor
+    services = instance.im_workflow.ctx
+    return PluginContext(
+        db=services.db, config=services.config, event_bus=services.event_bus,
+        provider_mgr=services.provider_mgr, tool_mgr=services.tool_manager,
+        adapter_mgr=Mock(), persona_mgr=Mock(), sticker_mgr=Mock(),
+        session_mgr=services.session_manager, prompt_mgr=services.prompt_manager,
+        skills_mgr=services.skills_manager, mcp_mgr=services.mcp_manager,
+        message_processor=instance, message_history=services.message_history,
+        image_desc_cache=Mock(), session_buffer_mgr=services.message_buffer,
+        message_delivery=services.message_delivery, message_router=services.message_router,
+        subagent_mgr=services.subagent_manager, _main_agent_runs=services.main_agent_runs,
+    )
 
 
 @pytest.mark.anyio
@@ -955,9 +973,11 @@ async def test_event_session_identity_through_receive_batch_and_request(
     if delete_before_build:
         await manager.delete_session(ctx.sid)
         assert published.session.internal_id == original_id
-    assert await BuildRequestStage().run(IMBatchContext(services, published))
+    batch_ctx = IMBatchContext(services, published)
+    assert await BuildRequestStage().run(batch_ctx)
     persisted = await manager.get_session(ctx.sid)
     assert published.session.internal_id == original_id
+    assert batch_ctx.stored_session.internal_id == persisted.internal_id
     assert (persisted.internal_id != original_id) is delete_before_build
 
 
@@ -1394,3 +1414,115 @@ async def test_steered_text_response_continues_im_loop_and_persists_instruction(
     assert memory is contexts[0].new_messages
     assert [message.role for message in memory] == ["user", "assistant", "user", "assistant"]
     assert memory[2].content == "follow the updated instruction"
+
+
+@pytest.mark.anyio
+async def test_plugin_context_steers_running_im_turn_by_session_or_id(processor, plugin_context):
+    instance, model = processor
+    event = batch()
+    session_without_internal_id = batch().session
+    stored_session = await plugin_context.session_mgr.get_session(event.sid)
+    event.session.internal_id = "sess_stale"
+    started = asyncio.Event()
+    resume = asyncio.Event()
+    seen = []
+
+    async def chat(request):
+        seen.append([message.to_dict() for message in request.messages])
+        if len(seen) == 1:
+            started.set()
+            await resume.wait()
+        else:
+            assert not plugin_context.steer_main_agent(event.sid, "no steps left")
+        return LLMResponse("<msg><text>reply</text></msg>")
+
+    model.chat.side_effect = chat
+    assert not plugin_context.steer_main_agent(event.sid, "before execution")
+    task = asyncio.create_task(instance.im_workflow.handle_batch_event(event))
+    try:
+        await asyncio.wait_for(started.wait(), timeout=5)
+        assert not plugin_context.steer_main_agent("adapter:dm:other", "other session")
+        assert not plugin_context.steer_main_agent(event.session.internal_id, "stale internal ID")
+        assert not plugin_context.steer_main_agent(event.session, "stale session")
+        assert plugin_context.steer_main_agent(event.sid, "first instruction")
+        assert plugin_context.steer_main_agent("sess_test", OpenAIMessage(role="user", content="second instruction"))
+        assert plugin_context.steer_main_agent(stored_session, "third instruction")
+        assert plugin_context.steer_main_agent(session_without_internal_id, "fourth instruction")
+        assert len(seen) == 1
+        resume.set()
+        await task
+    finally:
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    assert len(seen) == 2
+    instructions = ["first instruction", "second instruction", "third instruction", "fourth instruction"]
+    assert seen[1][-4:] == [{"role": "user", "content": instruction} for instruction in instructions]
+    memory = instance.im_workflow.ctx.session_manager.update_memory.call_args.args[1]
+    assert [message.content for message in memory[2:-1]] == instructions
+    assert not plugin_context.steer_main_agent(event.sid, "after completion")
+    assert not plugin_context.steer_main_agent("sess_test", "after completion")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("exit_mode", ["cancel", "error", "stop"])
+async def test_plugin_steer_rejects_overlapping_turns_until_one_exits(
+    processor, plugin_context, monkeypatch, exit_mode,
+):
+    instance, model = processor
+    first, second = batch(), batch()
+    first_started, second_started = asyncio.Event(), asyncio.Event()
+    resume_first, resume_second = asyncio.Event(), asyncio.Event()
+    response_hook = SimpleNamespace(exec_handler=AsyncMock())
+    monkeypatch.setattr(event_handler_reg, "get_handlers", lambda event_type: (
+        [response_hook] if event_type == EventType.ON_LLM_RESPONSE else []
+    ))
+
+    async def chat(request):
+        if model.chat.await_count == 1:
+            first_started.set()
+            await resume_first.wait()
+        elif model.chat.await_count == 2:
+            second_started.set()
+            await resume_second.wait()
+            if exit_mode == "error":
+                raise RuntimeError("model failed")
+        return LLMResponse("<msg><text>reply</text></msg>")
+
+    model.chat.side_effect = chat
+    tasks = [asyncio.create_task(instance.im_workflow.handle_batch_event(first))]
+    try:
+        await asyncio.wait_for(first_started.wait(), timeout=5)
+        second_task = asyncio.create_task(instance.im_workflow.handle_batch_event(second))
+        tasks.append(second_task)
+        await asyncio.wait_for(second_started.wait(), timeout=5)
+        assert not plugin_context.steer_main_agent(first.sid, "ambiguous SID")
+        assert not plugin_context.steer_main_agent("sess_test", "ambiguous internal ID")
+
+        if exit_mode == "cancel":
+            second_task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await second_task
+        elif exit_mode == "error":
+            resume_second.set()
+            with pytest.raises(RuntimeError, match="model failed"):
+                await second_task
+        else:
+            second.stop()
+            resume_second.set()
+            await second_task
+
+        assert plugin_context.steer_main_agent(first.sid, "only the first turn remains")
+        assert plugin_context.steer_main_agent("sess_test", "same turn by internal ID")
+        first.stop()
+        assert not plugin_context.steer_main_agent(first.sid, "already stopped")
+        resume_first.set()
+        await tasks[0]
+        assert model.chat.await_count == 2
+        assert not plugin_context.steer_main_agent("sess_test", "after both turns exit")
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)

@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from core.agent.base_agent_executor import (
@@ -14,6 +14,8 @@ from core.agent.base_agent_executor import (
 from core.agent.config import AgentExecutionConfig
 from core.agent.func_tool_manager import FuncToolManager
 from core.agent.hooks import AgentExecutionHooks
+from core.agent.main_agent_runs import MainAgentRuns
+from core.agent.message import OpenAIMessage
 from core.agent.tool_executor import ToolExecutor
 from core.chat import (
     Group,
@@ -100,6 +102,8 @@ class PluginContext:
 
     plugin_mgr: PluginManager | None = None
 
+    _main_agent_runs: MainAgentRuns = field(repr=False, kw_only=True)
+
     @property
     def sticker_manager(self) -> StickerManager:
         """Compatibility alias for plugins using the original attribute name."""
@@ -149,6 +153,19 @@ class PluginContext:
         return await publish_buffered_messages(
             self.session_buffer_mgr, self.event_bus, sid, filter_fn=filter_fn,
         )
+
+    def steer_main_agent(self, target: Session | str, message: str | OpenAIMessage) -> bool:
+        """Queue a user instruction for the unique active IM turn of a session.
+
+        A string may be a SID or internal ID. A Session uses its internal ID when
+        present and its SID otherwise.
+        Call from the workflow event loop. True means the instruction was accepted for
+        the next model request, which may be skipped if the turn stops. False means
+        the target was missing or ambiguous, or the turn no longer accepts steering.
+        """
+        if isinstance(target, Session):
+            target = target.internal_id or target.sid
+        return self._main_agent_runs.steer(target, message)
 
     def create_agent_executor(
         self, model_group: list[LLMModelClient] | None = None, *,
