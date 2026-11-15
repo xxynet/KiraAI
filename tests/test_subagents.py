@@ -105,6 +105,8 @@ async def test_background_agent_has_independent_session_and_parent_tool_permissi
     assert info["status"] == "queued"
     result = await manager.wait(info["id"], timeout=2)
     assert result["status"] == "done" and result["result"] == "child result"
+    usage = await sessions.db.get_unreported_telemetry_llm_usage_rows(0)
+    assert [(row["model"], row["source"]) for row in usage] == [("Test", "subagent")] * 2
     session = await sessions.resolve_session(info["id"])
     assert session.kind == "subagent" and session.parent_id == parent.internal_id
     assert session.session_id == session.internal_id == info["id"]

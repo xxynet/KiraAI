@@ -62,6 +62,7 @@ class TelemetryLLMUsage(Base):
     id = Column(String(36), primary_key=True, nullable=False)
     timestamp = Column(BigInteger, nullable=False)
     model = Column(String(128), nullable=False)
+    source = Column(String(16), nullable=False, server_default="main")
     input_tokens = Column(Integer, nullable=False, default=0)
     output_tokens = Column(Integer, nullable=False, default=0)
     cached_tokens = Column(Integer, nullable=True)

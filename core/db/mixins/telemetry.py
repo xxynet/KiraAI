@@ -1,6 +1,7 @@
 """Database operations for telemetry."""
 
 import uuid
+from typing import Literal
 
 from sqlalchemy import Integer, and_, cast, delete, func, select
 
@@ -18,11 +19,12 @@ class TelemetryMixin:
     async def add_telemetry_llm_usage(
         self, timestamp: int, model: str,
         input_tokens: int, output_tokens: int,
-        cached_tokens: int | None, response_time_ms: int, success: bool
+        cached_tokens: int | None, response_time_ms: int, success: bool,
+        *, source: Literal["main", "subagent"] = "main",
     ) -> None:
         async with self.db.transaction() as session:
             session.add(TelemetryLLMUsage(
-                id=str(uuid.uuid4()), timestamp=timestamp, model=model,
+                id=str(uuid.uuid4()), timestamp=timestamp, model=model, source=source,
                 input_tokens=input_tokens, output_tokens=output_tokens,
                 cached_tokens=cached_tokens, response_time_ms=response_time_ms, success=success,
             ))
@@ -94,6 +96,7 @@ class TelemetryMixin:
                 hour_bucket.label("hour_ts"),
                 TelemetryLLMUsage.id,
                 TelemetryLLMUsage.model,
+                TelemetryLLMUsage.source,
                 TelemetryLLMUsage.success,
                 TelemetryLLMUsage.input_tokens,
                 TelemetryLLMUsage.output_tokens,
@@ -106,6 +109,7 @@ class TelemetryMixin:
         return [
             {
                 "hour_ts": r["hour_ts"], "id": r["id"], "model": r["model"],
+                "source": r["source"],
                 "success": r["success"],
                 "input_tokens": r["input_tokens"] or 0,
                 "output_tokens": r["output_tokens"] or 0,

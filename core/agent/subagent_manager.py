@@ -442,6 +442,7 @@ class SubAgentManager:
                     await self.session_manager.db.add_telemetry_llm_usage(
                         timestamp=int(time.time()),
                         model=step.model.model_name,
+                        source="subagent",
                         input_tokens=response.input_tokens or 0,
                         output_tokens=response.output_tokens or 0,
                         cached_tokens=response.cached_tokens,
