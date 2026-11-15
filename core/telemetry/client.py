@@ -25,6 +25,21 @@ logger = get_logger("telemetry", "green")
 TELEMETRY_CONFIG_PATH = get_data_path() / "telemetry_config.json"
 
 
+def _llm_model_stats(totals: dict[str, dict[str, int]]) -> dict[str, dict[str, int]]:
+    return {
+        model: {
+            "total_calls": m["calls"],
+            "success_calls": m["success"],
+            "failed_calls": m["calls"] - m["success"],
+            "total_input_tokens": m["input"],
+            "total_output_tokens": m["output"],
+            "total_cached_tokens": m["cached"],
+            "avg_response_time_ms": m["resp_ms"] // m["calls"],
+        }
+        for model, m in totals.items()
+    }
+
+
 class TelemetryClient:
     """
     Telemetry client for KiraAI.
@@ -482,36 +497,27 @@ class TelemetryClient:
                     ids = llm_ids_by_hour.get(hour_ts, [])
                     if not ids:
                         continue
-                    # Aggregate per model from the raw rows.
+                    # Derive both views from the same rows marked on success.
                     per_model: dict[str, dict[str, int]] = {}
+                    per_source: dict[str, dict[str, dict[str, int]]] = {}
                     for r in rows:
-                        m = per_model.setdefault(r["model"], {
-                            "calls": 0, "success": 0, "input": 0, "output": 0, "cached": 0, "resp_ms": 0,
-                        })
-                        m["calls"] += 1
-                        m["success"] += 1 if r["success"] else 0
-                        m["input"] += r["input_tokens"]
-                        m["output"] += r["output_tokens"]
-                        m["cached"] += r["cached_tokens"]
-                        m["resp_ms"] += r["response_time_ms"]
+                        source_models = per_source.setdefault(r["source"], {})
+                        for model_totals in (per_model, source_models):
+                            m = model_totals.setdefault(r["model"], {
+                                "calls": 0, "success": 0, "input": 0, "output": 0, "cached": 0, "resp_ms": 0,
+                            })
+                            m["calls"] += 1
+                            m["success"] += int(r["success"])
+                            m["input"] += r["input_tokens"]
+                            m["output"] += r["output_tokens"]
+                            m["cached"] += r["cached_tokens"]
+                            m["resp_ms"] += r["response_time_ms"]
                     total_calls = sum(m["calls"] for m in per_model.values())
                     total_success = sum(m["success"] for m in per_model.values())
                     total_input = sum(m["input"] for m in per_model.values())
                     total_output = sum(m["output"] for m in per_model.values())
                     total_cached = sum(m["cached"] for m in per_model.values())
                     total_resp_ms = sum(m["resp_ms"] for m in per_model.values())
-                    models = {
-                        model: {
-                            "total_calls": m["calls"],
-                            "success_calls": m["success"],
-                            "failed_calls": m["calls"] - m["success"],
-                            "total_input_tokens": m["input"],
-                            "total_output_tokens": m["output"],
-                            "total_cached_tokens": m["cached"],
-                            "avg_response_time_ms": int(m["resp_ms"] / m["calls"]) if m["calls"] else 0,
-                        }
-                        for model, m in per_model.items()
-                    }
                     self.send_event(TelemetryEventType.LLM_USAGE, {
                         "hour": datetime.fromtimestamp(hour_ts, tz=timezone.utc).isoformat(),
                         "total_calls": total_calls,
@@ -521,7 +527,10 @@ class TelemetryClient:
                         "total_output_tokens": total_output,
                         "total_cached_tokens": total_cached,
                         "avg_response_time_ms": int(total_resp_ms / total_calls) if total_calls else 0,
-                        "models": models,
+                        "models": _llm_model_stats(per_model),
+                        "models_by_source": {
+                            source: _llm_model_stats(source_models) for source, source_models in per_source.items()
+                        },
                     }, on_success=lambda ids=ids: self.db.mark_telemetry_llm_by_ids(ids))
                     event_count += 1
 

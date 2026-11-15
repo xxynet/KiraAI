@@ -1,9 +1,12 @@
 import time
+from types import SimpleNamespace
 
 import pytest
+from sqlalchemy import text
 
 from core.db.db_mgr import DatabaseManager
 from core.db.service import DatabaseService
+from core.telemetry.client import TelemetryClient
 
 
 @pytest.fixture
@@ -267,6 +270,41 @@ async def test_telemetry_messages_aggregation(svc):
 async def test_telemetry_messages_empty_range(svc):
     rows = await svc.get_unreported_telemetry_messages_by_hour(since_ts=0)
     assert rows == []
+
+
+@pytest.mark.anyio
+async def test_llm_usage_source_survives_migration_and_is_reported(svc, monkeypatch):
+    now = int(time.time())
+    async with svc.db.engine.begin() as connection:
+        await connection.execute(text("ALTER TABLE telemetry_llm_usage DROP COLUMN source"))
+        await connection.execute(text(
+            "INSERT INTO telemetry_llm_usage "
+            "(id, timestamp, model, input_tokens, output_tokens, response_time_ms, success, reported) "
+            "VALUES ('legacy', :timestamp, 'shared', 20, 10, 100, true, false)"
+        ), {"timestamp": now})
+    await svc.init_tables()
+    for source, count in [("main", 1), ("subagent", 3)]:
+        for _ in range(count):
+            await svc.add_telemetry_llm_usage(now, "shared", 20, 10, 5, 200, True, source=source)
+    await svc.init_tables()
+
+    client = TelemetryClient(svc, SimpleNamespace(get_config=lambda *args, **kwargs: {}))
+    reports = []
+    monkeypatch.setattr(client, "send_event", lambda event_type, data, on_success: reports.append(
+        (event_type, data, on_success)
+    ))
+    await client._report_stats()
+
+    (event_type, data, on_success), = reports
+    assert event_type == "llm_usage"
+    assert data["total_calls"] == data["models"]["shared"]["total_calls"] == 5
+    main = data["models_by_source"]["main"]["shared"]
+    subagent = data["models_by_source"]["subagent"]["shared"]
+    assert (main["total_calls"], subagent["total_calls"]) == (2, 3)
+    assert (main["total_input_tokens"], subagent["total_input_tokens"]) == (40, 60)
+    assert (main["avg_response_time_ms"], subagent["avg_response_time_ms"]) == (150, 200)
+    await on_success()
+    assert await svc.get_unreported_telemetry_llm_usage_rows(0) == []
 
 
 @pytest.mark.anyio

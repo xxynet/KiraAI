@@ -1161,6 +1161,7 @@ async def test_provider_error_stays_internal(processor, monkeypatch, error_type,
         assert "reply" in memory[1].content
     usage = instance.im_workflow.ctx.db.add_telemetry_llm_usage.await_args.kwargs
     assert usage["success"] is False
+    assert usage["source"] == "main"
     final.assert_awaited_once()
     results = final.await_args.args[1].step_results
     assert len(results) == step_handler.await_count == 1 + int(after_tool_step)
