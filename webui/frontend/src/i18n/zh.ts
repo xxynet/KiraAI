@@ -433,6 +433,8 @@ export default {
       skill_disabled: '{name}（已禁用）',
       skills_hint: 'Skills 按父会话的作用域筛选。',
       tools_hint: '允许列表留空表示不使用工具，工具权限仍按父会话检查。',
+      exclude_tools_from_main: '从主代理中排除此预设的工具',
+      exclude_tools_from_main_hint: '此预设可用于当前会话时，主代理只能通过委派使用这些工具。“继承主代理”模式会排除全部普通工具。',
       choose_tools: '选择工具',
       tools_selected: '已选择 {count} 个工具',
       tools_picker_hint: '可按插件或 MCP 服务器整组选，也可逐个勾选工具。',

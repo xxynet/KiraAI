@@ -942,7 +942,6 @@ async def test_preset_persona_follows_edits_for_existing_and_restored_agents(age
     from core.config import KiraConfig
     from core.persona.model import PersonaInfo
     from core.plugin.builtin_plugins.subagents.tools import SpawnAgentTool
-    from core.provider import LLMRequest
 
     manager, sessions, parent, model = agents
     personas = manager.persona_manager
@@ -963,7 +962,7 @@ async def test_preset_persona_follows_edits_for_existing_and_restored_agents(age
             persona_mgr=personas,
         ),
         source=parent,
-        request=LLMRequest(tool_set=ToolSet()),
+        parent_tools=ToolSet(),
     )
     async def spawn():
         info = json.loads(await tool.execute(
@@ -1184,11 +1183,70 @@ async def test_native_preset_discovery_and_spawn_use_saved_settings(agents, tmp_
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(("mode", "tools", "child_names"), [
+    ("custom", ["record"], {"record"}),
+    ("custom", [], set()),
+    ("exclude", ["other"], {"record"}),
+    ("inherit", [], {"record", "other"}),
+])
+async def test_excluding_preset_tools_keeps_them_available_on_spawn_and_followup(
+    agents, tmp_path, mode, tools, child_names,
+):
+    import json
+
+    from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
+    from core.config import KiraConfig
+    from core.plugin.builtin_plugins.subagents.main import SubAgentsPlugin
+    from core.provider import LLMRequest
+
+    manager, sessions, parent, model = agents
+    manager.presets = SubAgentPresetStore(tmp_path / "presets.json")
+    await manager.presets.save(SubAgentPreset(
+        name="Worker",
+        instruction_source="custom",
+        tool_mode=mode,
+        tools=tools,
+        exclude_tools_from_main=True,
+    ))
+    class OtherTool(RecordingTool):
+        name = "other"
+
+    event = _source_batch(parent, ["text"])
+    plugin = SubAgentsPlugin(SimpleNamespace(
+        config=dict.__new__(KiraConfig),
+        session_mgr=sessions,
+        subagent_mgr=manager,
+        tool_mgr=SimpleNamespace(build_tool_set=ToolSet),
+        mcp_mgr=None,
+    ), {})
+
+    async def build_main_request():
+        request = LLMRequest(tool_set=ToolSet([RecordingTool(), OtherTool()]))
+        await plugin.inject_tools(event, request)
+        assert {tool.name for tool in request.tool_set.tools} == (
+            ({"record", "other"} - child_names) | SUBAGENT_TOOL_NAMES
+        )
+        return request
+
+    request = await build_main_request()
+    info = json.loads(await request.tool_set.get("spawn_agent").execute(
+        event, task="first", preset_name="Worker",
+    ))
+    assert (await manager.wait(info["id"], timeout=2))["status"] == "done"
+    assert {tool["function"]["name"] for tool in model.chat.await_args.args[0].tools} == child_names
+
+    request = await build_main_request()
+    await request.tool_set.get("followup_task").execute(event, agent_id=info["id"], message="again")
+    assert (await manager.wait(info["id"], timeout=2))["status"] == "done"
+    assert model.chat.await_count == 2
+    assert {tool["function"]["name"] for tool in model.chat.await_args.args[0].tools} == child_names
+
+
+@pytest.mark.anyio
 async def test_native_preset_cannot_bypass_disabled_state_or_custom_tool_permissions(agents, tmp_path):
     from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
     from core.config import KiraConfig
     from core.plugin.builtin_plugins.subagents.tools import SpawnAgentTool
-    from core.provider import LLMRequest
 
     manager, sessions, parent, model = agents
     manager.presets = SubAgentPresetStore(tmp_path / "presets.json")
@@ -1211,7 +1269,7 @@ async def test_native_preset_cannot_bypass_disabled_state_or_custom_tool_permiss
     spawn = SpawnAgentTool(
         ctx=ctx,
         source=parent,
-        request=LLMRequest(tool_set=ToolSet()),
+        parent_tools=ToolSet(),
     )
     with pytest.raises(PermissionError, match="not allowed"):
         await spawn.execute(
@@ -1249,7 +1307,7 @@ async def test_preset_model_is_resolved_for_each_turn_without_persisting_it(agen
     from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
     from core.config import KiraConfig
     from core.plugin.builtin_plugins.subagents.tools import SpawnAgentTool
-    from core.provider import LLMRequest, ModelType
+    from core.provider import ModelType
 
     manager, sessions, parent, model = agents
     manager.presets = SubAgentPresetStore(tmp_path / "presets.json")
@@ -1270,7 +1328,7 @@ async def test_preset_model_is_resolved_for_each_turn_without_persisting_it(agen
     tool = SpawnAgentTool(
         ctx=ctx,
         source=parent,
-        request=LLMRequest(tool_set=ToolSet()),
+        parent_tools=ToolSet(),
     )
     info = json.loads(await tool.execute(
         None,
@@ -1343,7 +1401,6 @@ async def test_unavailable_preset_model_does_not_silently_use_the_default(agents
     from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
     from core.config import KiraConfig
     from core.plugin.builtin_plugins.subagents.tools import SpawnAgentTool
-    from core.provider import LLMRequest
 
     manager, sessions, parent, model = agents
     manager.presets = SubAgentPresetStore(tmp_path / "presets.json")
@@ -1365,7 +1422,7 @@ async def test_unavailable_preset_model_does_not_silently_use_the_default(agents
             subagent_mgr=manager,
         ),
         source=parent,
-        request=LLMRequest(tool_set=ToolSet()),
+        parent_tools=ToolSet(),
     )
     with pytest.raises(ValueError, match="disabled|unavailable"):
         await tool.execute(
@@ -1660,7 +1717,6 @@ async def test_native_spawn_accepts_preset_step_limits_above_fifty(agents, tmp_p
     from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
     from core.config import KiraConfig
     from core.plugin.builtin_plugins.subagents.tools import SpawnAgentTool
-    from core.provider import LLMRequest
 
     manager, sessions, parent, _ = agents
     manager.presets = SubAgentPresetStore(tmp_path / "presets.json")
@@ -1671,7 +1727,7 @@ async def test_native_spawn_accepts_preset_step_limits_above_fifty(agents, tmp_p
             subagent_mgr=manager,
         ),
         source=parent,
-        request=LLMRequest(tool_set=ToolSet()),
+        parent_tools=ToolSet(),
     )
     preset = await manager.presets.save(SubAgentPreset(
         instruction_source="custom",

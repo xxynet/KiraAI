@@ -140,16 +140,10 @@
           </div>
           <div class="flex items-center justify-between gap-4">
             <span class="text-sm text-theme-body">{{ $t('plugin.subagents.enabled') }}</span>
-            <button
-              type="button"
-              class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-              :class="form.enabled ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500' : 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600'"
-              :aria-pressed="form.enabled"
+            <SubagentPresetSwitch
+              v-model="form.enabled"
               :aria-label="$t('plugin.subagents.enabled')"
-              @click="form.enabled = !form.enabled"
-            >
-              <span class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out" :class="form.enabled ? 'translate-x-4' : 'translate-x-0'" />
-            </button>
+            />
           </div>
           <div>
             <p class="block text-sm font-medium text-theme-body mb-1">{{ $t('plugin.subagents.model') }}</p>
@@ -202,6 +196,17 @@
             <SubagentToolPicker v-model="form.tools" :label="$t(form.tool_mode === 'exclude' ? 'plugin.subagents.excluded_tools' : 'plugin.subagents.custom_tools')" :disabled="saving" />
             <p class="mt-1 text-xs text-theme-subtle">{{ $t('plugin.subagents.tools_hint') }}</p>
           </div>
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <p id="subagent-exclude-tools-label" class="text-sm font-medium text-theme-body">{{ $t('plugin.subagents.exclude_tools_from_main') }}</p>
+              <p id="subagent-exclude-tools-hint" class="mt-1 text-xs text-theme-subtle">{{ $t('plugin.subagents.exclude_tools_from_main_hint') }}</p>
+            </div>
+            <SubagentPresetSwitch
+              v-model="form.exclude_tools_from_main"
+              aria-labelledby="subagent-exclude-tools-label"
+              aria-describedby="subagent-exclude-tools-hint"
+            />
+          </div>
           <div v-if="form.tool_mode !== 'inherit'">
             <p class="block text-sm font-medium text-theme-body mb-1">
               {{ $t(form.tool_mode === 'exclude' ? 'plugin.subagents.excluded_skills' : 'plugin.subagents.custom_skills') }}
@@ -252,6 +257,7 @@ import CustomSelect from '@/components/common/CustomSelect.vue'
 import CustomMultiSelect from '@/components/common/CustomMultiSelect.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
+import SubagentPresetSwitch from './SubagentPresetSwitch.vue'
 import SubagentToolPicker from './SubagentToolPicker.vue'
 
 const { t } = useI18n()
@@ -321,6 +327,7 @@ function newForm(): SubagentPresetInput {
     max_steps: -1,
     tool_mode: 'inherit',
     tools: [],
+    exclude_tools_from_main: false,
     skills: [],
     enabled: true,
     model: null,

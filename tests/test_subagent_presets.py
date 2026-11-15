@@ -25,6 +25,7 @@ async def test_preset_crud_survives_restart_without_exposing_mutable_settings(tm
         instruction="Study carefully",
         tool_mode="custom",
         tools=[" search ", "search"],
+        exclude_tools_from_main=True,
         skills=[" review ", "review"],
         model="provider:model",
         max_steps=100,
@@ -39,6 +40,7 @@ async def test_preset_crud_survives_restart_without_exposing_mutable_settings(tm
     restored = SubAgentPresetStore(path)
     await restored.initialize()
     assert restored.list() == store.list()
+    assert restored.get(item["id"]).exclude_tools_from_main is True
     await store.save(SubAgentPreset(
         name="Changed",
         enabled=False,
@@ -46,6 +48,18 @@ async def test_preset_crud_survives_restart_without_exposing_mutable_settings(tm
     assert not store.list(enabled_only=True)
     await store.delete(item["id"])
     assert json.loads(path.read_text(encoding="utf-8")) == {}
+
+
+@pytest.mark.anyio
+async def test_preset_saved_without_tool_exclusion_keeps_main_tools(tmp_path):
+    path = tmp_path / "presets.json"
+    path.write_text(json.dumps({"old": {"name": "Existing", "tool_mode": "inherit"}}), encoding="utf-8")
+    store = SubAgentPresetStore(path)
+
+    await store.initialize()
+
+    assert store.get("old").exclude_tools_from_main is False
+    assert store.main_tool_exclusions("adapter:dm:user", {"search"}) == set()
 
 
 @pytest.mark.anyio
@@ -87,6 +101,7 @@ async def test_concurrent_preset_creates_do_not_overwrite_each_other(tmp_path):
     {"skills": [None]},
     {"skills": [" "]},
     {"enabled": "true"},
+    {"exclude_tools_from_main": "true"},
     {"model": "missing-provider"},
     {"model": ":model"},
     {"model": "provider:"},
@@ -126,10 +141,12 @@ async def test_presets_routes_validate_persist_edit_delete_and_require_auth(tmp_
             "model": "provider:model",
             "tool_mode": "custom",
             "skills": ["review"],
+            "exclude_tools_from_main": True,
         })
         assert created.status_code == 201
         assert created.json()["model"] == "provider:model"
         assert created.json()["skills"] == ["review"]
+        assert created.json()["exclude_tools_from_main"] is True
         assert created.json()["instruction_source"] == "persona"
         assert created.json()["persona_id"] is None
         identity = created.json()["id"]
@@ -152,6 +169,7 @@ async def test_presets_routes_validate_persist_edit_delete_and_require_auth(tmp_
         assert changed.json()["model"] is None
         assert changed.json()["max_steps"] == 100
         assert changed.json()["skills"] == []
+        assert changed.json()["exclude_tools_from_main"] is False
         missing = await client.put("/api/subagents/presets/missing", json={"name": "Unknown"})
         assert missing.status_code == 404
         deleted = await client.delete(f"/api/subagents/presets/{identity}")

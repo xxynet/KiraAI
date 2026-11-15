@@ -46,9 +46,16 @@ class SubAgentsPlugin(BasePlugin):
 
     @on.llm_request(priority=Priority.SYS_LOW)
     async def inject_tools(self, event, request: LLMRequest, *_):
-        if request.tool_set is None:
-            request.tool_set = ToolSet()
-        can_spawn = self.ctx.subagent_mgr.presets.has_available_presets(event.session.sid)
+        parent_tools = request.tool_set if request.tool_set is not None else ToolSet()
+        presets = self.ctx.subagent_mgr.presets
+        sid = event.session.sid
+        can_spawn = presets.has_available_presets(sid)
+        excluded = presets.main_tool_exclusions(sid, {tool.name for tool in parent_tools.tools})
+        # Keep delegation bound to the unfiltered pool, including request-local tools.
+        request.tool_set = (
+            ToolSet([tool for tool in parent_tools.tools if tool.name not in excluded])
+            if excluded else parent_tools
+        )
         for tool_type in (
             SpawnAgentTool,
             ListAgentsTool,
@@ -61,5 +68,5 @@ class SubAgentsPlugin(BasePlugin):
             request.tool_set.add(tool_type(
                 ctx=self.ctx,
                 source=event.session,
-                request=request,
+                parent_tools=parent_tools,
             ))
