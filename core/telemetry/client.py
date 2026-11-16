@@ -63,7 +63,8 @@ class TelemetryClient:
         self.client_uuid: str | None = self.telemetry_config.get("client_uuid")
         self.secret_key: str | None = self.telemetry_config.get("secret_key")
         self.machine_id: str | None = None
-        self.launch_source = "launcher" if os.environ.get("KIRA_LAUNCH_SOURCE") == "launcher" else "core"
+        launch_source = os.environ.get("KIRA_LAUNCH_SOURCE")
+        self.launch_source = launch_source if launch_source in ("launcher", "android") else "core"
 
         self.server_url: str = os.environ.get("KIRA_TELEMETRY_SERVER", "https://telemetry.kira-ai.top/api/v1")
         self.heartbeat_interval: int = 300  # 5 minutes
