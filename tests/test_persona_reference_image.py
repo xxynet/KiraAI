@@ -610,6 +610,7 @@ async def test_image_tags_skip_unusable_extra_references(
 ):
     """Bad references must not discard a reply or prevent valid image generation."""
     tags = importlib.import_module("core.plugin.builtin_plugins.kira-ai.tags")
+    monkeypatch.setattr(tags, "get_data_path", lambda: tmp_path)
     persona_reference = await image_manager.set_reference_image("p1", image_bytes(), "portrait.png")
     await image_manager.set_active_persona("p1")
     bad_file = tmp_path / ("bad.txt" if failure == "text" else "bad.png")
@@ -683,6 +684,7 @@ async def test_image_tags_skip_unusable_extra_references(
 async def test_image_tags_use_actual_reference_mime(image_manager, tmp_path, monkeypatch, tag_name):
     """A valid image with a misleading extension must keep its actual format."""
     tags = importlib.import_module("core.plugin.builtin_plugins.kira-ai.tags")
+    monkeypatch.setattr(tags, "get_data_path", lambda: tmp_path)
     await image_manager.set_reference_image("p1", image_bytes(), "portrait.png")
     await image_manager.set_active_persona("p1")
     extra_file = tmp_path / "photo.txt"

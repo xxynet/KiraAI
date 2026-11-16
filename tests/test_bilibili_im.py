@@ -46,6 +46,40 @@ async def test_im_enabled_by_default_and_correct_credential_field():
     assert make_im_adapter(sessdata="", sesdata="misspelled-session").credential.sessdata is None
 
 
+@pytest.mark.asyncio
+async def test_missing_sessdata_does_not_schedule_dm_listener(monkeypatch):
+    adapter = make_adapter(enable_im=True, sessdata="", enable_comment_notifications=False)
+    start_im = AsyncMock()
+    monkeypatch.setattr(adapter, "_start_im", start_im)
+
+    task = asyncio.create_task(adapter._run_listeners())
+    await asyncio.sleep(0.05)
+    start_im.assert_not_awaited()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+def test_media_cookie_host_allowlist():
+    trusted = (
+        "https://i0.hdslb.com/bfs/new_dyn/a.jpg",
+        "https://s1.hdslb.com/bfs/static/a.png",
+        "https://www.bilibili.com/a.png",
+        "https://biliimg.com/a.png",
+    )
+    untrusted = (
+        "https://evil.example/a.png",
+        "https://bilibili.com.evil.example/a.png",
+        "http://127.0.0.1/a.png",
+        "http://i0.hdslb.com/a.png",
+        "http://www.bilibili.com/a.png",
+    )
+    for url in trusted:
+        assert im_module.BiliBiliIMCapability._is_trusted_media_host(url)
+    for url in untrusted:
+        assert not im_module.BiliBiliIMCapability._is_trusted_media_host(url)
+
+
 def test_schema_exposes_translated_im_settings_and_enabled_default():
     schema = json.loads(Path(adapter_module.__file__).with_name("schema.json").read_text(encoding="utf-8"))
     fields = {field.key: field for field in build_fields(schema)}
@@ -129,7 +163,8 @@ async def test_nickname_cache_is_account_local(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_image_download_keeps_cookie_auth_and_timeout_without_logging_secrets(monkeypatch):
+@pytest.mark.parametrize("scheme", ["https", "http"])
+async def test_image_download_keeps_cookie_auth_and_timeout_without_logging_secrets(monkeypatch, scheme):
     adapter = make_im_adapter(bili_jct="test-csrf", buvid3="test-device", dedeuserid="99")
     adapter.logger = Mock()
     response = SimpleNamespace(headers={"content-type": "image/png"}, content=b"image", raise_for_status=Mock())
@@ -138,13 +173,14 @@ async def test_image_download_keeps_cookie_auth_and_timeout_without_logging_secr
     manager.__aenter__.return_value = client
     factory = Mock(return_value=manager)
     monkeypatch.setattr(im_module.httpx, "AsyncClient", factory)
-    assert await adapter.im._download_image_as_base64_url("https://image.test/a") == "data:image/png;base64,aW1hZ2U="
+    assert await adapter.im._download_image_as_base64_url(f"{scheme}://i0.hdslb.com/a") == "data:image/png;base64,aW1hZ2U="
     factory.assert_called_once_with(follow_redirects=True, timeout=30.0)
-    assert client.get.await_args.kwargs["cookies"] == {
+    expected = {
         "SESSDATA": "test-session", "bili_jct": "test-csrf", "buvid3": "test-device", "DedeUserID": "99",
     }
+    assert client.get.await_args.kwargs["cookies"] == (expected if scheme == "https" else {})
     client.get.side_effect = RuntimeError("private-cookie-and-message")
-    assert await adapter.im._download_image_as_base64_url("https://image.test/private") == ""
+    assert await adapter.im._download_image_as_base64_url("https://i0.hdslb.com/private") == ""
     assert "private" not in str(adapter.logger.mock_calls)
 
 

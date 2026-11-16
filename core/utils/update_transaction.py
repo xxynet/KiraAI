@@ -127,6 +127,10 @@ def _rollback_from_data(root: Path, data: dict[str, Any], journal_name: str) -> 
         if not isinstance(name, str) or not name or Path(name).name != name:
             errors.append("Update recovery skipped an invalid item name.")
             continue
+        # This marker only deduplicates retries using the same in-memory data.
+        # Recovery after a crash relies on backup existence and had_original.
+        if action.get("state") == "rolled_back":
+            continue
         dst = root / name
         backup = backup_dir / name
         had_original = bool(action.get("had_original"))
@@ -138,8 +142,15 @@ def _rollback_from_data(root: Path, data: dict[str, Any], journal_name: str) -> 
                 if dst.exists():
                     _remove_path(dst)
                 backup.rename(dst)
-            elif action.get("state") in {"installing", "applied"} and dst.exists():
+                action["state"] = "rolled_back"
+            elif not had_original and action.get("state") in {"installing", "applied"} and dst.exists():
+                # No original existed, so a partially installed destination is
+                # safe to remove. When an original existed but its backup is
+                # gone, leave the destination alone: it may already be the
+                # restored original (a previous rollback may have completed
+                # before crashing), and deleting it would lose user data.
                 _remove_path(dst)
+                action["state"] = "rolled_back"
         except OSError as exc:
             errors.append(f"Update recovery could not restore '{name}': {exc}")
 

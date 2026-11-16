@@ -1,11 +1,64 @@
+import asyncio
+import ipaddress
+import socket
 import time
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
 from core.logging_manager import get_logger
 
 logger = get_logger("network", "cyan")
+
+# Fake-IP proxies (Clash/Surge/sing-box TUN mode) answer every DNS query with an
+# address from the RFC 2544 benchmarking range and resolve the real host
+# themselves, so a local lookup cannot classify the destination. Rejecting the
+# DNS answers in this range would block every domain URL on those hosts.
+# Literal addresses never receive this compatibility exception.
+_FAKE_IP_NETWORK = ipaddress.ip_network("198.18.0.0/15")
+
+
+def _is_public_address(host: str, *, allow_fake_ip: bool = False) -> bool:
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    if allow_fake_ip and address.version == 4 and address in _FAKE_IP_NETWORK:
+        return True
+    return address.is_global
+
+
+async def is_public_http_url(url: str) -> bool:
+    """Check public HTTP destinations, with a fake-IP DNS compatibility exception.
+
+    This is a guard for URLs that originate from adapter messages or model
+    output. It deliberately rejects loopback, private, link-local, reserved and
+    metadata-style addresses before any request is made. Fake-IP DNS answers
+    remain allowed for TUN proxy deployments; this is not transport enforcement.
+    """
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            return False
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        try:
+            address = ipaddress.ip_address(parsed.hostname)
+        except ValueError:
+            try:
+                address = ipaddress.ip_address(socket.inet_aton(parsed.hostname))
+            except OSError:
+                address = None
+        if address is not None:
+            return address.is_global
+        infos = await asyncio.get_running_loop().getaddrinfo(
+            parsed.hostname, port, type=socket.SOCK_STREAM,
+        )
+    except (OSError, ValueError):
+        return False
+    if not infos:
+        return False
+    return all(_is_public_address(info[4][0], allow_fake_ip=True) for info in infos)
 
 
 async def get_json(url: str, timeout: float = 60.0) -> Any:

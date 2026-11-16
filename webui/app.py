@@ -88,22 +88,25 @@ class KiraWebUI:
             max_bytes=MAX_PLUGIN_UPLOAD_BYTES,
         )
 
-        # Setup CORS.
+        # Setup CORS only for explicitly configured origins.
         # Auth is carried by the Authorization: Bearer header (and a
         # same-origin, SameSite=Lax kira_token cookie for iframe/plugin pages),
-        # so cross-origin *credentialed* access is never needed. Combining
-        # allow_origins=["*"] with allow_credentials=True is the classic unsafe
-        # CORS misconfiguration (Starlette reflects the request Origin and sets
-        # Allow-Credentials: true, letting any site make credentialed calls and
-        # read the responses). Keep the wildcard for convenience but disable
-        # credentials so the wildcard stays a true, non-reflecting "*".
-        self.app.add_middleware(
-            CORSMiddleware,
-            allow_origins=["*"],
-            allow_credentials=False,
-            allow_methods=["*"],
-            allow_headers=["*"],
-        )
+        # so the normal WebUI, Vite dev proxy and plugin pages are same-origin
+        # and need no CORS. A wildcard would let any page read login responses
+        # when --disable-webui-auth uses the fixed sentinel token.
+        allowed_origins = [
+            origin.strip().rstrip("/")
+            for origin in os.environ.get("KIRA_WEBUI_ALLOWED_ORIGINS", "").split(",")
+            if origin.strip()
+        ]
+        if allowed_origins:
+            self.app.add_middleware(
+                CORSMiddleware,
+                allow_origins=allowed_origins,
+                allow_credentials=False,
+                allow_methods=["*"],
+                allow_headers=["*"],
+            )
 
         self.app.add_middleware(PluginBridgeInjectionMiddleware)
 

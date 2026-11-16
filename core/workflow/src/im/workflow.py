@@ -1,3 +1,6 @@
+import asyncio
+from contextlib import asynccontextmanager
+
 from core.chat import KiraMessageBatchEvent, KiraMessageEvent
 from core.utils.media_refs import session_media_scope
 from core.workflow import BaseStage, IMWorkflow
@@ -30,6 +33,25 @@ class DefaultIMWorkflow(IMWorkflow):
             ExecuteAgentStage(),
             FinalizeStage(),
         )
+        # Per-session turn serialization. A session may receive another batch
+        # while its previous LLM turn is still running; letting both build from
+        # the same memory snapshot produces out-of-order history writes.
+        self._batch_turns: dict[str, list] = {}
+
+    @asynccontextmanager
+    async def _session_turn(self, sid: str):
+        entry = self._batch_turns.get(sid)
+        if entry is None:
+            entry = [asyncio.Lock(), 0]
+            self._batch_turns[sid] = entry
+        entry[1] += 1
+        try:
+            async with entry[0]:
+                yield
+        finally:
+            entry[1] -= 1
+            if entry[1] == 0:
+                self._batch_turns.pop(sid, None)
 
     async def handle_event(self, event: KiraMessageEvent):
         async with self.message_processing_semaphore:
@@ -39,8 +61,12 @@ class DefaultIMWorkflow(IMWorkflow):
                     return
 
     async def handle_batch_event(self, event: KiraMessageBatchEvent):
-        async with session_media_scope():
-            ctx = IMBatchContext(self.ctx, event)
-            for stage in self.batch_stages:
-                if not await stage.run(ctx):
-                    return
+        turn_id = getattr(event, "sid", None)
+        if turn_id is None:
+            turn_id = getattr(getattr(event, "session", None), "sid", "") or ""
+        async with self._session_turn(turn_id):
+            async with session_media_scope():
+                ctx = IMBatchContext(self.ctx, event)
+                for stage in self.batch_stages:
+                    if not await stage.run(ctx):
+                        return

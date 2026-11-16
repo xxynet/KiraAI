@@ -28,6 +28,7 @@ from core.utils.common_utils import (
     image_to_image,
     text_to_speech,
 )
+from core.utils.network import is_public_http_url
 from core.utils.path_utils import get_data_path
 
 from .file_send_policy import resolve_local_send_path
@@ -51,23 +52,43 @@ def _reference_image_mime(encoded: str) -> str:
     return mime
 
 
+def _resolve_reference_path(raw: str) -> Path | None:
+    """Resolve an image reference inside the data root.
+
+    Adapter messages and model output are untrusted; an absolute path pointing
+    at the host filesystem must not be read and forwarded to an image provider.
+    """
+    value = raw.strip().replace("\\", "/")
+    if not value:
+        return None
+    if os.path.isabs(value):
+        candidate = Path(value)
+    elif value.startswith("data/"):
+        candidate = get_data_path() / value.removeprefix("data/")
+    else:
+        candidate = get_data_path() / value
+    try:
+        resolved = candidate.resolve(strict=True)
+        data_root = get_data_path().resolve()
+    except (OSError, RuntimeError):
+        return None
+    if not resolved.is_relative_to(data_root) or not resolved.is_file():
+        return None
+    return resolved
+
+
 async def _load_reference_images(path: str) -> list[Image]:
-    """Load comma-separated local references using the image tags' data path rules."""
+    """Load comma-separated local references from inside the data root."""
     ref_images = []
     for p in path.split(","):
         p = p.strip().replace("\\", "/")
         if not p:
             continue
-        if os.path.isabs(p):
-            ref_file = Path(p)
-        elif p.startswith("data/"):
-            ref_file = get_data_path() / p.removeprefix("data/")
-        else:
-            ref_file = get_data_path() / p
+        ref_file = _resolve_reference_path(p)
+        if ref_file is None:
+            message_logger.warning(f"Image reference rejected or not found: {p}, skipped")
+            continue
         try:
-            if not await asyncio.to_thread(ref_file.is_file):
-                message_logger.warning(f"Image reference not found: {ref_file}, skipped")
-                continue
             bs64 = await image_to_base64(str(ref_file))
             mime = await asyncio.to_thread(_reference_image_mime, bs64)
         except (OSError, ValueError, SyntaxError,
@@ -300,6 +321,11 @@ def build_file_tag(sid: str = ""):
 
             # File URL
             if value.startswith(("http://", "https://")):
+                if not await is_public_http_url(value):
+                    message_logger.warning(
+                        f"<file> URL rejected because it is not a public HTTP(S) address: {value}"
+                    )
+                    return []
                 file_string = value
                 name = None
             else:
