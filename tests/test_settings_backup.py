@@ -1,4 +1,6 @@
 import asyncio
+import os
+import stat
 import threading
 import zipfile
 from datetime import datetime, timedelta
@@ -106,6 +108,122 @@ def test_empty_backup_is_valid(backup_routes):
     result = routes._create_backup_sync()
     with zipfile.ZipFile(data_path / "backups" / result.filename) as archive:
         assert archive.namelist() == []
+
+
+def test_backup_and_restore_preserve_in_tree_symlinks(backup_routes, monkeypatch):
+    routes, tmp_path = backup_routes
+    data_path = tmp_path / "data"
+    restored_path = tmp_path / "restored"
+    restored_path.mkdir()
+    monkeypatch.setattr(settings, "get_data_path", lambda: data_path)
+    runtime = data_path / "git-runtime"
+    runtime.mkdir(parents=True)
+    library = runtime / "libsample.so.1"
+    library.write_bytes(b"x" * 4096)
+    (runtime / "empty").mkdir()
+    (runtime / "nested").mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_bytes(b"outside the data directory")
+    links = {
+        "libsample.so": (library.name, False),
+        "libabsolute.so": (str(library), False),
+        "libmissing.so": ("libmissing.so.1", False),
+        "nested/libsample.so": ("../libsample.so", False),
+        "empty_link": ("empty", True),
+        "outside_link": (str(outside), False),
+    }
+    try:
+        for name, (target, is_directory) in links.items():
+            (runtime / name).symlink_to(target, target_is_directory=is_directory)
+    except OSError as exc:
+        pytest.skip(f"Symbolic links unavailable on the test filesystem: {exc}")
+
+    result = routes._create_backup_sync()
+    archive_path = data_path / "backups" / result.filename
+    with zipfile.ZipFile(archive_path) as archive:
+        assert "git-runtime/outside_link" not in archive.namelist()
+        assert archive.read("git-runtime/libsample.so.1") == library.read_bytes()
+        for name, target in {
+            "libsample.so": library.name,
+            "libabsolute.so": library.name,
+            "libmissing.so": "libmissing.so.1",
+            "nested/libsample.so": "../libsample.so",
+            "empty_link": "empty",
+        }.items():
+            entry = archive.getinfo(f"git-runtime/{name}")
+            assert stat.S_ISLNK(entry.external_attr >> 16)
+            assert archive.read(entry) == os.fsencode(target)
+
+    monkeypatch.setattr(settings, "get_data_path", lambda: restored_path)
+    assert routes._do_restore(archive_path).success
+    assert routes._do_restore(archive_path).success
+    runtime = restored_path / runtime.name
+    assert (runtime / "libsample.so").is_symlink()
+    assert (runtime / "libsample.so").read_bytes() == library.read_bytes()
+    assert (runtime / "libabsolute.so").resolve() == runtime / library.name
+    assert (runtime / "nested" / "libsample.so").read_bytes() == library.read_bytes()
+    assert (runtime / "libmissing.so").is_symlink()
+    assert not (runtime / "libmissing.so").exists()
+    assert (runtime / "empty_link").is_symlink()
+    assert (runtime / "empty_link").is_dir()
+
+
+@pytest.mark.parametrize("target", ["/absolute", "../out-of-tree"])
+def test_restore_rejects_link_targets_outside_archive_root(backup_routes, target):
+    routes, data_path = backup_routes
+    archive_path = data_path / "input.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("ordinary.txt", "unchanged on failure")
+        link = zipfile.ZipInfo("link")
+        link.create_system = 3
+        link.external_attr = (stat.S_IFLNK | 0o777) << 16
+        archive.writestr(link, target)
+
+    with pytest.raises(HTTPException) as error:
+        routes._do_restore(archive_path)
+    assert error.value.status_code == 400
+    assert not (data_path / "ordinary.txt").exists()
+
+
+def test_restore_replaces_existing_file_symlink_without_writing_to_target(backup_routes):
+    routes, data_path = backup_routes
+    original = data_path / "original.txt"
+    original.write_bytes(b"original")
+    link = data_path / "restored.txt"
+    try:
+        link.symlink_to(original.name)
+    except OSError as exc:
+        pytest.skip(f"Symbolic links unavailable on the test filesystem: {exc}")
+    archive_path = data_path / "input.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr(link.name, b"restored data")
+
+    assert routes._do_restore(archive_path).success
+    assert not link.is_symlink()
+    assert link.read_bytes() == b"restored data"
+    assert original.read_bytes() == b"original"
+
+
+def test_restore_rejects_writing_through_existing_directory_symlink(backup_routes):
+    routes, data_path = backup_routes
+    original = data_path / "original"
+    original.mkdir()
+    link = data_path / "linked_directory"
+    try:
+        link.symlink_to(original.name, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"Symbolic links unavailable on the test filesystem: {exc}")
+    archive_path = data_path / "input.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("ordinary.txt", b"ordinary data")
+        archive.writestr(f"{link.name}/nested.txt", b"nested data")
+
+    with pytest.raises(HTTPException) as error:
+        routes._do_restore(archive_path)
+    assert error.value.status_code == 400
+    assert link.is_symlink()
+    assert not (original / "nested.txt").exists()
+    assert not (data_path / "ordinary.txt").exists()
 
 
 def test_failed_archive_write_removes_partial_backup(backup_routes, monkeypatch):
