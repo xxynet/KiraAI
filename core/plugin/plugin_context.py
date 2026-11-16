@@ -4,7 +4,7 @@ import inspect
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from core.agent.base_agent_executor import (
     AgentStepResult,
@@ -206,6 +206,7 @@ class PluginContext:
         max_tool_calls_per_step: int = ToolExecutionConfig.max_tool_calls_per_step,
         tool_call_timeout: float | None = ToolExecutionConfig.tool_call_timeout,
         max_tool_output_tokens: int = ToolExecutionConfig.max_tool_output_tokens,
+        **kwargs: Any
     ) -> LLMResponse:
         """Run a prompt in a fresh conversation and return the final LLM response.
 
