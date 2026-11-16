@@ -1,15 +1,17 @@
 import asyncio
 import os
 import shutil
+import stat
 import tempfile
 import uuid
 import zipfile
 from collections.abc import Callable
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from fastapi import Depends, File, HTTPException, Request, UploadFile
 
+from core.logging_manager import get_logger
 from core.utils.path_utils import get_data_path
 from webui.models import (
     BackupCreateResponse,
@@ -25,14 +27,78 @@ from webui.utils import _update_access_token
 
 # Backup directory lives inside the data directory
 BACKUP_DIR_NAME = "backups"
+MAX_LINK_TARGET_BYTES = 128 * 1024
+logger = get_logger("webui", "blue")
 
 
 def _get_backup_dir() -> Path:
     return get_data_path() / BACKUP_DIR_NAME
 
 
+def _is_relative_link_target(target: str, link: Path, root: Path) -> bool:
+    # Allow leading parent components, but reject paths that could cancel a symlink.
+    return (
+        bool(target)
+        and "\x00" not in target
+        and "\\" not in target
+        and not PureWindowsPath(target).anchor
+        and Path(target).parts == Path(os.path.normpath(target)).parts
+        and Path(os.path.abspath(link.parent / target)).is_relative_to(root)
+    )
+
+
+def _backup_link_entry(
+    path: Path, data_path: Path, metadata: os.stat_result, is_directory: bool
+) -> tuple[zipfile.ZipInfo, bytes] | None:
+    try:
+        target = os.readlink(path).replace(os.sep, "/")
+        resolved = path.resolve()
+    except (OSError, RuntimeError) as exc:
+        logger.warning("Skipping backup symlink %s: %s", path, exc)
+        return None
+    if not resolved.is_relative_to(data_path) or resolved.is_symlink():
+        logger.warning("Skipping backup symlink %s -> %s", path, target)
+        return None
+    if not _is_relative_link_target(target, path, data_path):
+        declared = Path(target)
+        if os.name == "nt" and target.startswith("//?/"):
+            # Windows readlink can return a verbatim drive or UNC path.
+            unprefixed = target[4:]
+            if unprefixed[:4].upper() == "UNC/":
+                unprefixed = "//" + unprefixed[4:]
+            if Path(unprefixed).is_absolute():
+                declared = Path(unprefixed)
+
+        # Keep an in-tree absolute link pointed at the declared entry, even if
+        # that entry is itself a symlink.
+        if declared.is_relative_to(data_path) and ".." not in declared.parts:
+            relative = os.path.relpath(declared, path.parent).replace(os.sep, "/")
+            if _is_relative_link_target(relative, path, data_path):
+                try:
+                    if (path.parent / relative).resolve() == resolved:
+                        target = relative
+                except (OSError, RuntimeError) as exc:
+                    logger.debug("Could not verify relative backup symlink %s: %s", path, exc)
+        if not _is_relative_link_target(target, path, data_path):
+            target = os.path.relpath(resolved, path.parent).replace(os.sep, "/")
+    if not _is_relative_link_target(target, path, data_path):
+        logger.warning("Skipping backup symlink with unsupported target %s -> %s", path, target)
+        return None
+
+    info = zipfile.ZipInfo(path.relative_to(data_path).as_posix())
+    info.create_system = 3
+    info.external_attr = metadata.st_mode << 16
+    if is_directory or getattr(metadata, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_DIRECTORY:
+        info.external_attr |= stat.FILE_ATTRIBUTE_DIRECTORY
+    info.compress_type = zipfile.ZIP_DEFLATED
+    return info, os.fsencode(target)
+
+
 def _calc_dir_size(path: Path) -> tuple[int, int]:
-    """Return logical bytes and file count, counting hard links once per tree."""
+    """Return logical bytes and file count without following file symlinks.
+
+    Count hard links once per tree.
+    """
     total = 0
     count = 0
     seen_hard_links: set[tuple[int, int]] = set()
@@ -41,7 +107,7 @@ def _calc_dir_size(path: Path) -> tuple[int, int]:
             for f in filenames:
                 fp = Path(dirpath) / f
                 try:
-                    stat = fp.stat()
+                    stat = fp.stat(follow_symlinks=False)
                     # A zero inode cannot safely identify hard links.
                     if stat.st_nlink > 1 and stat.st_ino:
                         identity = (stat.st_dev, stat.st_ino)
@@ -238,7 +304,7 @@ class SettingsRoutes(Routes):
     def _create_backup_sync(
         self, report: Callable[[str, int], None] | None = None
     ) -> BackupCreateResponse:
-        data_path = get_data_path()
+        data_path = get_data_path().resolve()
         backup_dir = _get_backup_dir()
         backup_dir.mkdir(parents=True, exist_ok=True)
 
@@ -264,20 +330,34 @@ class SettingsRoutes(Routes):
                 files_to_backup = []
                 for root, dirs, files in os.walk(data_path):
                     # Scope application-owned exclusions to the data root.
-                    is_data_root = Path(root) == data_path
-                    dirs[:] = [
+                    directory = Path(root)
+                    is_data_root = directory == data_path
+                    subdirs = [
                         d for d in dirs
                         if d != "__pycache__" and (not is_data_root or d not in exclude_root_dirs)
                     ]
-                    for filename_to_backup in files:
-                        full_path = Path(root) / filename_to_backup
+                    dirs.clear()
+                    if not (is_data_root or subdirs or files):
+                        zf.writestr(directory.relative_to(data_path).as_posix() + "/", b"")
+                    for name in subdirs + files:
+                        full_path = directory / name
                         try:
-                            size = full_path.stat().st_size
+                            metadata = full_path.lstat()
                         except OSError:
                             continue
-                        files_to_backup.append((full_path, max(size, 1)))
+                        if stat.S_ISLNK(metadata.st_mode):
+                            entry = _backup_link_entry(full_path, data_path, metadata, name in subdirs)
+                            if entry is not None:
+                                files_to_backup.append((full_path, max(len(entry[1]), 1), entry))
+                        elif stat.S_ISDIR(metadata.st_mode):
+                            if os.name == "nt" and metadata.st_reparse_tag == stat.IO_REPARSE_TAG_MOUNT_POINT:
+                                logger.warning("Skipping backup directory junction %s", full_path)
+                            else:
+                                dirs.append(name)
+                        elif stat.S_ISREG(metadata.st_mode):
+                            files_to_backup.append((full_path, max(metadata.st_size, 1), None))
 
-                total = sum(weight for _, weight in files_to_backup)
+                total = sum(weight for _, weight, _ in files_to_backup)
                 processed = 0
                 last_percent = -1
 
@@ -289,7 +369,12 @@ class SettingsRoutes(Routes):
                         last_percent = percent
 
                 report_compression(0)
-                for full_path, weight in files_to_backup:
+                for full_path, weight, link_entry in files_to_backup:
+                    if link_entry is not None:
+                        zf.writestr(*link_entry)
+                        processed += weight
+                        report_compression(processed)
+                        continue
                     try:
                         info = zipfile.ZipInfo.from_file(
                             full_path, full_path.relative_to(data_path).as_posix()
@@ -393,40 +478,98 @@ class SettingsRoutes(Routes):
 
     def _do_restore(self, zip_source) -> RestoreResponse:
         """Extract a zip into a staging dir, validate, then copy to data directory."""
-        data_path = get_data_path()
+        data_path = get_data_path().resolve()
         exclude_dirs = {BACKUP_DIR_NAME, "__pycache__", "updates", "temp"}
 
         try:
             with tempfile.TemporaryDirectory() as staging_dir:
-                staging_path = Path(staging_dir)
+                staging_path = Path(staging_dir).resolve()
+                links: list[tuple[Path, str, bool]] = []
 
                 # Step 1: Extract to staging
                 with zipfile.ZipFile(zip_source, "r") as zf:
                     for member in zf.infolist():
                         target = (staging_path / member.filename).resolve()
-                        if not target.is_relative_to(staging_path.resolve()):
+                        if not target.is_relative_to(staging_path):
                             raise HTTPException(status_code=400, detail="Invalid archive content")
 
-                        parts = Path(member.filename).parts
+                        parts = target.relative_to(staging_path).parts
                         if parts and parts[0] in exclude_dirs:
                             continue
 
-                        if member.is_dir():
+                        if stat.S_ISLNK(member.external_attr >> 16):
+                            if member.file_size > MAX_LINK_TARGET_BYTES:
+                                raise HTTPException(status_code=400, detail="Invalid archive content")
+                            link_target = os.fsdecode(zf.read(member))
+                            if not _is_relative_link_target(link_target, target, staging_path):
+                                raise HTTPException(status_code=400, detail="Invalid archive content")
+                            target.parent.mkdir(parents=True, exist_ok=True)
+                            is_directory = bool(member.external_attr & stat.FILE_ATTRIBUTE_DIRECTORY)
+                            links.append((target, link_target, is_directory))
+                        elif member.is_dir():
                             target.mkdir(parents=True, exist_ok=True)
                         else:
                             target.parent.mkdir(parents=True, exist_ok=True)
                             with zf.open(member) as src, open(target, "wb") as dst:
                                 shutil.copyfileobj(src, dst)
 
-                # Step 2: Copy validated files to data_path
+                # Stage links after regular entries so extraction cannot write through them.
+                for path, target, is_directory in links:
+                    if os.path.lexists(path):
+                        raise HTTPException(status_code=400, detail="Invalid archive content")
+                    path.symlink_to(target, target_is_directory=is_directory)
+                for path, _, _ in links:
+                    try:
+                        resolved = path.resolve()
+                    except RuntimeError as exc:
+                        raise HTTPException(status_code=400, detail="Invalid archive content") from exc
+                    if not resolved.is_relative_to(staging_path) or resolved.is_symlink():
+                        raise HTTPException(status_code=400, detail="Invalid archive content")
+                    # A target absent from the archive must not inherit a live symlink.
+                    live_target = data_path / resolved.relative_to(staging_path)
+                    if not resolved.exists() and live_target.resolve() != live_target:
+                        raise HTTPException(status_code=400, detail="Invalid archive content")
+
+                # Check the live layout before changing any files.
+                entries = []
                 for src_file in staging_path.rglob("*"):
                     rel = src_file.relative_to(staging_path)
                     dst_file = data_path / rel
-                    if src_file.is_dir():
+                    is_link = src_file.is_symlink()
+                    is_directory = not is_link and src_file.is_dir()
+                    if dst_file.parent.resolve() != dst_file.parent:
+                        raise HTTPException(status_code=400, detail="Invalid archive content")
+                    if is_directory and (dst_file.resolve() != dst_file or dst_file.is_symlink()):
+                        raise HTTPException(status_code=400, detail="Invalid archive content")
+                    if not dst_file.is_symlink() and dst_file.exists() and dst_file.is_dir() != is_directory:
+                        raise HTTPException(status_code=400, detail="Invalid archive content")
+                    if not is_link:
+                        entries.append((src_file, dst_file, is_directory))
+
+                for src_file, dst_file, is_directory in entries:
+                    if is_directory:
                         dst_file.mkdir(parents=True, exist_ok=True)
                     else:
                         dst_file.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(src_file, dst_file)
+                        if dst_file.is_symlink():
+                            with tempfile.TemporaryDirectory(dir=dst_file.parent) as pending_dir:
+                                pending = Path(pending_dir) / "file"
+                                shutil.copy2(src_file, pending)
+                                pending.replace(dst_file)
+                        else:
+                            shutil.copy2(src_file, dst_file)
+
+                for path, target, is_directory in links:
+                    dst_file = data_path / path.relative_to(staging_path)
+                    if dst_file.is_symlink() and os.readlink(dst_file).replace(os.sep, "/") == target:
+                        attributes = getattr(dst_file.lstat(), "st_file_attributes", None)
+                        if attributes is None or bool(attributes & stat.FILE_ATTRIBUTE_DIRECTORY) == is_directory:
+                            continue
+                    dst_file.parent.mkdir(parents=True, exist_ok=True)
+                    with tempfile.TemporaryDirectory(dir=dst_file.parent) as pending_dir:
+                        pending = Path(pending_dir) / "link"
+                        pending.symlink_to(target, target_is_directory=is_directory)
+                        pending.replace(dst_file)
 
             return RestoreResponse(success=True, message="Restore completed successfully")
         except zipfile.BadZipFile:

@@ -39,6 +39,21 @@ def test_hard_links_are_counted_once_across_nested_directories(tmp_path):
     assert settings._calc_dir_size(nested) == expected
 
 
+def test_file_symlinks_count_their_own_size(tmp_path):
+    source = tmp_path / "libsample.so.1"
+    source.write_bytes(b"x" * 4096)
+    link = tmp_path / "libsample.so"
+    dangling = tmp_path / "libmissing.so"
+    try:
+        link.symlink_to(source.name)
+        dangling.symlink_to("libmissing.so.1")
+    except OSError as exc:
+        pytest.skip(f"Symbolic links unavailable on the test filesystem: {exc}")
+
+    expected_size = source.stat().st_size + link.lstat().st_size + dangling.lstat().st_size
+    assert settings._calc_dir_size(tmp_path) == (expected_size, 3)
+
+
 @pytest.mark.parametrize(
     ("identities", "expected"),
     [
