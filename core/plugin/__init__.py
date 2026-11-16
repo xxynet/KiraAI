@@ -7,6 +7,7 @@ from .handlers import EventType, Priority
 from .manager import PluginManager
 from .metadata import PluginInfo
 from .pages import PageMenu, PluginPage
+from .plugin_agent_executor import PluginAgentExecutor
 from .plugin_context import PluginContext
 
 logger = get_logger("plugin", "orange")
@@ -16,6 +17,7 @@ __all__ = [
     'BasePlugin',
     "EventType",
     'PageMenu',
+    'PluginAgentExecutor',
     'PluginContext',
     'PluginInfo',
     'PluginManager',
