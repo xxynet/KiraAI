@@ -821,8 +821,7 @@ async def test_native_tools_bind_the_caller_and_inherit_actual_request_tools(age
     event = SimpleNamespace(session=parent)
     manager.presets = SubAgentPresetStore(tmp_path / "presets.json")
     await plugin.inject_tools(event, request)
-    assert request.tool_set.get("spawn_agent") is None
-    assert request.tool_set.get("followup_task") is not None
+    assert request.tool_set.tools == [tool]
     preset = await manager.presets.save(SubAgentPreset(
         name="Default",
         instruction_source="custom",
@@ -1132,8 +1131,7 @@ async def test_native_preset_discovery_and_spawn_use_saved_settings(agents, tmp_
     await manager.presets.replace_scopes({preset["id"]: {"deny": [parent.sid]}})
     blocked_request = LLMRequest(tool_set=ToolSet())
     await plugin.inject_tools(event, blocked_request)
-    assert blocked_request.tool_set.get("spawn_agent") is None
-    assert blocked_request.tool_set.get("followup_task") is not None
+    assert not blocked_request.tool_set.tools
     with pytest.raises(PermissionError, match="not allowed"):
         await spawn.execute(event, task="inspect", preset_name=preset["name"])
     with pytest.raises(PermissionError, match="not allowed"):
@@ -1160,7 +1158,12 @@ async def test_native_preset_discovery_and_spawn_use_saved_settings(agents, tmp_
     ), preset["id"])
     manager._agents.clear()
     followup_event = _source_batch(parent, ["text", "image"])
-    await request.tool_set.get("followup_task").execute(
+    followup_request = LLMRequest(tool_set=ToolSet([RecordingTool()]))
+    await plugin.inject_tools(followup_event, followup_request)
+    assert {tool.name for tool in followup_request.tool_set.tools} == (
+        (SUBAGENT_TOOL_NAMES - {"spawn_agent"}) | {"record"}
+    )
+    await followup_request.tool_set.get("followup_task").execute(
         followup_event,
         agent_id=info["id"],
         message="again",
@@ -1180,6 +1183,30 @@ async def test_native_preset_discovery_and_spawn_use_saved_settings(agents, tmp_
             task="missing",
             preset_name=preset["name"],
         )
+
+
+@pytest.mark.anyio
+async def test_management_tools_follow_stored_session_scope_without_presets(agents, tmp_path):
+    from core.agent.subagent_presets import SubAgentPresetStore
+    from core.plugin.builtin_plugins.subagents.main import SubAgentsPlugin
+    from core.provider import LLMRequest
+
+    manager, sessions, parent, _ = agents
+    manager.presets = SubAgentPresetStore(tmp_path / "presets.json")
+    child = await sessions.create_subagent_session(
+        data={"subagent": {"scope_id": parent.internal_id}},
+    )
+    plugin = SubAgentsPlugin(SimpleNamespace(session_mgr=sessions, subagent_mgr=manager), {})
+    caller = Session(parent.adapter_name, parent.session_type, parent.session_id)
+    request = LLMRequest(tool_set=ToolSet())
+    await plugin.inject_tools(_source_batch(caller, ["text"]), request)
+    assert {tool.name for tool in request.tool_set.tools} == SUBAGENT_TOOL_NAMES - {"spawn_agent"}
+    assert [agent["id"] for agent in await manager.list_agents(caller_id=parent.internal_id)] == [child.internal_id]
+
+    other = await sessions.get_session("platform:dm:other", ensure_session=True)
+    unrelated_request = LLMRequest(tool_set=ToolSet())
+    await plugin.inject_tools(_source_batch(other, ["text"]), unrelated_request)
+    assert not unrelated_request.tool_set.tools
 
 
 @pytest.mark.anyio

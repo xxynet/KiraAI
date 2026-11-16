@@ -1,4 +1,4 @@
-from core.agent.subagent_manager import SUBAGENT_COMPLETED_EVENT
+from core.agent.subagent_manager import SUBAGENT_COMPLETED_EVENT, SUBAGENT_TOOL_NAMES
 from core.agent.tool import ToolSet
 from core.chat.message_elements import Text
 from core.chat.message_utils import KiraCustomEvent, MessageChain
@@ -47,9 +47,22 @@ class SubAgentsPlugin(BasePlugin):
     @on.llm_request(priority=Priority.SYS_LOW)
     async def inject_tools(self, event, request: LLMRequest, *_):
         parent_tools = request.tool_set if request.tool_set is not None else ToolSet()
-        presets = self.ctx.subagent_mgr.presets
-        sid = event.session.sid
+        manager = self.ctx.subagent_mgr
+        presets = manager.presets
+        source = event.session
+        sid = source.sid
         can_spawn = presets.has_available_presets(sid)
+        if not can_spawn:
+            caller_id = source.internal_id
+            if caller_id is None:
+                stored = await self.ctx.session_mgr.get_session(sid, include_content=False)
+                caller_id = stored.internal_id if stored is not None else None
+            if caller_id is None or not await manager.has_manageable_agents(caller_id):
+                parent_tools.remove(*SUBAGENT_TOOL_NAMES)
+                request.tool_set = parent_tools
+                return
+            parent_tools.remove(SpawnAgentTool.name)
+
         excluded = presets.main_tool_exclusions(sid, {tool.name for tool in parent_tools.tools})
         # Keep delegation bound to the unfiltered pool, including request-local tools.
         request.tool_set = (
@@ -67,6 +80,6 @@ class SubAgentsPlugin(BasePlugin):
                 continue
             request.tool_set.add(tool_type(
                 ctx=self.ctx,
-                source=event.session,
+                source=source,
                 parent_tools=parent_tools,
             ))

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from weakref import WeakValueDictionary
 
@@ -573,11 +574,15 @@ class SubAgentManager:
             raise ValueError("Target is not a stored subagent session")
         if not isinstance(session.data.get("subagent", {}), dict):
             raise TypeError("Subagent session metadata must be an object")
-        if caller_id is not None and caller_id not in {
-            session.parent_id, session.data.get("subagent", {}).get("scope_id"),
-        }:
+        if not self._can_manage(session, caller_id):
             raise PermissionError("Subagent does not belong to the calling session")
         return session
+
+    @staticmethod
+    def _can_manage(session: Session, caller_id: str | None) -> bool:
+        return caller_id is None or caller_id in {
+            session.parent_id, session.data.get("subagent", {}).get("scope_id"),
+        }
 
     @staticmethod
     def _info(session: Session, agent: _Agent | None = None) -> dict:
@@ -600,19 +605,22 @@ class SubAgentManager:
         session = await self._session(target, caller_id)
         return self._info(session, self._agents.get(session.internal_id))
 
+    async def _manageable_sessions(self, caller_id: str | None) -> Iterator[Session]:
+        sessions = await self.session_manager.get_sessions(kind="subagent", include_content=False)
+        return (
+            session for session in sessions
+            if isinstance(session.data, dict)
+            and isinstance(session.data.get("subagent", {}), dict)
+            and self._can_manage(session, caller_id)
+        )
+
+    async def has_manageable_agents(self, caller_id: str) -> bool:
+        sessions = await self._manageable_sessions(caller_id)
+        return next(sessions, None) is not None
+
     async def list_agents(self, *, caller_id: str | None = None) -> list[dict]:
-        result = []
-        for session in await self.session_manager.get_sessions(include_content=False):
-            if session.kind != "subagent" or not isinstance(session.data, dict):
-                continue
-            if not isinstance(session.data.get("subagent", {}), dict):
-                continue
-            if caller_id is not None and caller_id not in {
-                session.parent_id, session.data.get("subagent", {}).get("scope_id"),
-            }:
-                continue
-            result.append(self._info(session, self._agents.get(session.internal_id)))
-        return result
+        sessions = await self._manageable_sessions(caller_id)
+        return [self._info(session, self._agents.get(session.internal_id)) for session in sessions]
 
     async def followup(
         self,
