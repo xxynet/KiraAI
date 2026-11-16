@@ -34,9 +34,10 @@ SESSION_SEND_PROMPT = """
 即 当前会话 ≠ 发消息目标会话时，需要调用 `session_send` 工具进行**跨会话发送**。
 向已有子代理交付后续任务时，使用 `followup_task`。
 
-`target` 必须从「当前存在的会话」列表中逐字复制完整会话标识。标识第一段
+`target` 使用完整的会话标识（SID），可以来自「当前存在的会话」列表中逐字复制的完整会话标识、记忆中的记录或用户告知等来源。
+只要能确定 SID 对应目标，即使目标未出现在会话列表中，也可直接调用 `session_send`。
 `adapter_name` 是用户配置的适配器实例名，可能是任意名称，和 QQ、Telegram 等
-平台名称没有必然关系；不得根据平台猜测或替换成 `qq` 等名称。
+平台名称没有必然关系；不得根据平台猜测。
 
 #### 示例
 * 场景：在群 1 中
@@ -253,7 +254,8 @@ class SessionPlugin(BasePlugin):
             "properties": {
                 "target": {"type": "string", "description": (
                     "目标会话标识，格式为 adapter_name:session_type:session_id。"
-                    "必须从「当前存在的会话」列表中逐字复制完整标识。adapter_name 是用户配置的"
+                    "可使用会话列表、记忆中的记录或用户提供的信息"
+                    "adapter_name 是用户配置的"
                     "实例名，可能与实际平台名称不同，示例：qq:dm:123456（私聊）、ada:gm:789012（群聊）"
                 )},
                 "description": {"type": "string", "description": DESC_PROMPT}
@@ -302,7 +304,8 @@ class SessionPlugin(BasePlugin):
             for session in sessions if isinstance(session.data, dict)
         )
         return (
-            "以下为当前存在会话的完整标识；调用会话工具时必须逐字复制其中一项。跨会话读取需要单独授权，列表不代表读取权限。"
+            "以下列出已记录会话的完整标识。session_send 也可使用记忆中的记录或用户提供的信息。"
+            "跨会话读取时须从列表中逐字复制标识，并单独通过读取授权。"
             "adapter_name 是配置实例名，不代表平台类型，不能自行替换或猜测。\n"
             f"{session_list}"
         )
