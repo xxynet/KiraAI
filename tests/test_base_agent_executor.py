@@ -18,6 +18,7 @@ from core.agent.im_tool_executor import IMToolExecutor
 from core.agent.message import OpenAIMessage
 from core.agent.tool import ToolResult, ToolSet
 from core.agent.tool_executor import ToolExecutor
+from core.plugin import PluginAgentExecutor
 from core.plugin.handlers import EventType, event_handler_reg
 from core.plugin.plugin_context import PluginContext
 from core.provider import (
@@ -86,6 +87,76 @@ class ProbeTool(BaseTool):
 
     async def execute(self, *, value):
         return ToolResult(text=f"result: {value}")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("tool_container", [list, tuple, ToolSet])
+@pytest.mark.parametrize(("options", "tool_result"), [
+    ({}, "result: input"),
+    ({"max_tool_output_tokens": 1}, "[..]"),
+])
+async def test_plugin_context_runs_agent_with_default_model_and_custom_tool(tool_container, options, tool_result):
+    final_response = LLMResponse("complete", reasoning_content="reasoning", output_tokens=7)
+    model = _model(_tool_response(), final_response)
+    plugin_ctx = object.__new__(PluginContext)
+    plugin_ctx.provider_mgr = Mock()
+    plugin_ctx.provider_mgr.get_default_llm.return_value = model
+
+    reply = await plugin_ctx.run_agent("Use the probe tool.", tools=tool_container([ProbeTool()]), **options)
+
+    assert reply is final_response
+    plugin_ctx.provider_mgr.get_default_llm.assert_called_once_with()
+    request = model.chat.await_args.args[0]
+    assert [message.content for message in request.messages] == [
+        "Use the probe tool.", "", tool_result, "complete",
+    ]
+    assert request.tools[0]["function"]["name"] == "probe"
+
+
+@pytest.mark.anyio
+async def test_plugin_context_run_agent_returns_final_response_with_empty_text():
+    plugin_ctx = object.__new__(PluginContext)
+    response = LLMResponse("", reasoning_content="reasoning")
+
+    assert await plugin_ctx.run_agent("Run the task.", model_group=[_model(response)]) is response
+
+
+@pytest.mark.anyio
+async def test_plugin_context_creates_agent_with_explicit_context_and_request():
+    plugin_ctx = object.__new__(PluginContext)
+    models = [_model(_tool_response(), LLMResponse("complete"))]
+    context = BaseAgentExecutionContext(messages=[OpenAIMessage(role="user", content="Use the probe tool.")])
+    request = LLMRequest(tool_set=ToolSet([ProbeTool()]))
+    on_result = AsyncMock()
+
+    executor = plugin_ctx.create_agent_executor(models, context=context, request=request, on_result=on_result)
+    assert isinstance(executor, PluginAgentExecutor)
+    assert executor.context is context
+    assert executor.request is request
+
+    result = await executor.start()
+
+    assert result.llm_response.text_response == "complete"
+    assert [message.content for message in context.messages] == [
+        "Use the probe tool.", "", "result: input", "complete",
+    ]
+    assert on_result.await_count == 2
+    assert on_result.await_args.args[0].is_final
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(("max_steps", "response", "error"), [
+    (0, LLMResponse("unused"), "produced no result"),
+    (1, _tool_response(), "without a final reply"),
+    (1, ProviderAPIError("provider unavailable"), "provider unavailable"),
+])
+async def test_plugin_context_run_agent_reports_unfinished_and_failed_turns(max_steps, response, error):
+    plugin_ctx = object.__new__(PluginContext)
+    with pytest.raises(RuntimeError, match=error):
+        await plugin_ctx.run_agent(
+            "Use the probe tool.", tools=[ProbeTool()], model_group=[_model(response)],
+            max_steps=max_steps,
+        )
 
 
 @pytest.fixture

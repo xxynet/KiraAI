@@ -2,20 +2,20 @@ from __future__ import annotations
 
 import inspect
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from core.agent.base_agent_executor import (
     AgentStepResult,
     BaseAgentExecutionContext,
-    BaseAgentExecutor,
 )
-from core.agent.config import AgentExecutionConfig
+from core.agent.config import AgentExecutionConfig, ToolExecutionConfig
 from core.agent.func_tool_manager import FuncToolManager
 from core.agent.hooks import AgentExecutionHooks
 from core.agent.main_agent_runs import MainAgentRuns
 from core.agent.message import OpenAIMessage
+from core.agent.tool import ToolSet
 from core.agent.tool_executor import ToolExecutor
 from core.chat import (
     Group,
@@ -33,6 +33,7 @@ from core.event_bus import EventBus
 from core.persona import PersonaManager
 from core.sticker_manager import StickerManager
 from core.utils.path_utils import get_data_path
+from core.utils.tool_utils import BaseTool
 from core.workflow.src.im.batching import publish_buffered_messages
 
 from ..adapter import AdapterManager, BaseAdapter, BaseCapability, IMCapability
@@ -40,9 +41,11 @@ from ..provider import (
     EmbeddingModelClient,
     LLMModelClient,
     LLMRequest,
+    LLMResponse,
     ModelType,
     ProviderManager,
 )
+from .plugin_agent_executor import PluginAgentExecutor
 
 if TYPE_CHECKING:
     from core.agent.mcp_mgr import MCPManager
@@ -169,24 +172,69 @@ class PluginContext:
 
     def create_agent_executor(
         self, model_group: list[LLMModelClient] | None = None, *,
-        context: BaseAgentExecutionContext,
+        tools: Sequence[BaseTool] | ToolSet | None = None,
+        context: BaseAgentExecutionContext | None = None,
         request: LLMRequest | None = None,
         hooks: AgentExecutionHooks[BaseAgentExecutionContext] | None = None,
         tool_executor: ToolExecutor | None = None,
         config: AgentExecutionConfig | None = None,
         on_result: Callable[[AgentStepResult], Awaitable[None]] | None = None,
-    ) -> BaseAgentExecutor[BaseAgentExecutionContext]:
-        """Create an independent agent, using the default LLM when models are omitted."""
+    ) -> PluginAgentExecutor:
+        """Create an independent agent, using the default LLM when models are omitted.
+
+        Pass a sequence of tool instances or a ToolSet via tools, or configure a custom request.
+        """
         if model_group is None:
             client = self.get_default_llm_client()
             if client is None:
                 raise ValueError("No default LLM is available for agent execution")
             model_group = [client]
-        return BaseAgentExecutor(
-            model_group, context=context, request=request, hooks=hooks,
+        return PluginAgentExecutor(
+            model_group, tools=tools, context=context, request=request, hooks=hooks,
             tool_executor=tool_executor,
             config=config, on_result=on_result,
         )
+
+    async def run_agent(
+        self,
+        prompt: str | OpenAIMessage,
+        *,
+        tools: Sequence[BaseTool] | ToolSet | None = None,
+        model_group: list[LLMModelClient] | None = None,
+        max_steps: int = AgentExecutionConfig.max_steps,
+        final_step_hint: str | None = AgentExecutionConfig.final_step_hint,
+        max_tool_calls_per_step: int = ToolExecutionConfig.max_tool_calls_per_step,
+        tool_call_timeout: float | None = ToolExecutionConfig.tool_call_timeout,
+        max_tool_output_tokens: int = ToolExecutionConfig.max_tool_output_tokens,
+    ) -> LLMResponse:
+        """Run a prompt in a fresh conversation and return the final LLM response.
+
+        Use the default LLM unless a model group is supplied.
+        Raise RuntimeError if execution fails or ends without a final response.
+        """
+        config = AgentExecutionConfig(
+            max_steps=max_steps,
+            final_step_hint=final_step_hint,
+            tool_config=ToolExecutionConfig(
+                max_tool_calls_per_step=max_tool_calls_per_step,
+                tool_call_timeout=tool_call_timeout,
+                max_tool_output_tokens=max_tool_output_tokens,
+            ),
+        )
+        executor = self.create_agent_executor(
+            model_group, tools=tools, config=config,
+        )
+        task = executor.queue(prompt)
+        if task is None:
+            raise RuntimeError("Agent execution did not start")
+        result = await task
+        if result is None:
+            raise RuntimeError("Agent execution produced no result")
+        if result.state != "success":
+            raise RuntimeError(result.err or f"Agent execution ended with state: {result.state}")
+        if not result.is_final or result.has_tool_calls or result.llm_response is None:
+            raise RuntimeError("Agent execution ended without a final reply")
+        return result.llm_response
 
     def get_default_llm_client(self) -> LLMModelClient:
         client = self.get_llm_client(llm_type="default")
