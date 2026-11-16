@@ -127,6 +127,7 @@ def test_backup_and_restore_preserve_in_tree_symlinks(backup_routes, monkeypatch
     links = {
         "libsample.so": (library.name, False),
         "libabsolute.so": (str(library), False),
+        "libabsolute-chain.so": (str(runtime / "libsample.so"), False),
         "libmissing.so": ("libmissing.so.1", False),
         "nested/libsample.so": ("../libsample.so", False),
         "empty_link": ("empty", True),
@@ -146,6 +147,7 @@ def test_backup_and_restore_preserve_in_tree_symlinks(backup_routes, monkeypatch
         for name, target in {
             "libsample.so": library.name,
             "libabsolute.so": library.name,
+            "libabsolute-chain.so": "libsample.so",
             "libmissing.so": "libmissing.so.1",
             "nested/libsample.so": "../libsample.so",
             "empty_link": "empty",
@@ -166,6 +168,12 @@ def test_backup_and_restore_preserve_in_tree_symlinks(backup_routes, monkeypatch
     assert not (runtime / "libmissing.so").exists()
     assert (runtime / "empty_link").is_symlink()
     assert (runtime / "empty_link").is_dir()
+
+    new_library = runtime / "libsample.so.2"
+    new_library.write_bytes(b"new version")
+    (runtime / "libsample.so").unlink()
+    (runtime / "libsample.so").symlink_to(new_library.name)
+    assert (runtime / "libabsolute-chain.so").read_bytes() == new_library.read_bytes()
 
 
 @pytest.mark.parametrize("target", ["/absolute", "../out-of-tree"])

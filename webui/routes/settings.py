@@ -60,7 +60,27 @@ def _backup_link_entry(
         logger.warning("Skipping backup symlink %s -> %s", path, target)
         return None
     if not _is_relative_link_target(target, path, data_path):
-        target = os.path.relpath(resolved, path.parent).replace(os.sep, "/")
+        declared = Path(target)
+        if os.name == "nt" and target.startswith("//?/"):
+            # Windows readlink can return a verbatim drive or UNC path.
+            unprefixed = target[4:]
+            if unprefixed[:4].upper() == "UNC/":
+                unprefixed = "//" + unprefixed[4:]
+            if Path(unprefixed).is_absolute():
+                declared = Path(unprefixed)
+
+        # Keep an in-tree absolute link pointed at the declared entry, even if
+        # that entry is itself a symlink.
+        if declared.is_relative_to(data_path) and ".." not in declared.parts:
+            relative = os.path.relpath(declared, path.parent).replace(os.sep, "/")
+            if _is_relative_link_target(relative, path, data_path):
+                try:
+                    if (path.parent / relative).resolve() == resolved:
+                        target = relative
+                except (OSError, RuntimeError) as exc:
+                    logger.debug("Could not verify relative backup symlink %s: %s", path, exc)
+        if not _is_relative_link_target(target, path, data_path):
+            target = os.path.relpath(resolved, path.parent).replace(os.sep, "/")
     if not _is_relative_link_target(target, path, data_path):
         logger.warning("Skipping backup symlink with unsupported target %s -> %s", path, target)
         return None
