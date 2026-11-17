@@ -30,6 +30,7 @@ from tests.im_workflow_helpers import (
     make_session_manager,
     make_workflow_context,
 )
+from tests.image_samples import PNG_BYTES, PNG_DATA_URL
 
 
 def test_delivery_delays_follow_config_changes():
@@ -256,6 +257,21 @@ async def test_formatter_reuses_cached_description_without_calling_vlm(tmp_path)
     cache.get.assert_awaited_once_with("hash")
     provider.get_default_vlm.assert_not_called()
     cache.set.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_formatter_caches_sticker_and_includes_local_path(tmp_path, monkeypatch):
+    monkeypatch.setattr("core.utils.path_utils._data_dir", tmp_path)
+    config = SimpleNamespace(get_config=lambda key, default=None: default)
+    cache = SimpleNamespace(get=AsyncMock(), set=AsyncMock())
+    formatter = MessageFormatter(config, image_desc_cache=cache)
+    sticker = Sticker(sticker=PNG_DATA_URL.split(",", 1)[1], mime="image/png", caption="a red square")
+
+    result = await formatter.format_to_text(MessageChain([sticker]))
+
+    cached_path, = (tmp_path / "temp").glob("*.png")
+    assert cached_path.read_bytes() == PNG_BYTES
+    assert result == f"[Sticker a red square, file_path: data/{cached_path.relative_to(tmp_path)}]"
 
 
 @pytest.mark.anyio
