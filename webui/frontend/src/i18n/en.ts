@@ -937,6 +937,8 @@ export default {
       default_rerank_desc: 'Rerank model.',
       default_video: 'Default Video',
       default_video_desc: 'Video generation.',
+      default_decision: 'Default Decision Model',
+      default_decision_desc: 'Used for decision tasks.',
     },
   },
   webchat: {

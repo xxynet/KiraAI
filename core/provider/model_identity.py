@@ -13,6 +13,7 @@ DEFAULT_MODEL_TYPES = {
     "default_embedding": "embedding",
     "default_rerank": "rerank",
     "default_video": "video",
+    "default_decision": "decision",
 }
 
 
