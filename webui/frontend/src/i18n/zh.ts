@@ -937,6 +937,8 @@ export default {
       default_rerank_desc: '用于重排序的模型。',
       default_video: '默认视频模型',
       default_video_desc: '视频生成模型。',
+      default_decision: '默认决策模型',
+      default_decision_desc: '用于决策任务的模型。',
     },
   },
   webchat: {

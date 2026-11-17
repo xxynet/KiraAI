@@ -617,6 +617,7 @@ const allGroups: ConfigGroup[] = [
       { key: 'models.default_embedding', labelKey: 'configuration.model.default_embedding', labelFallback: 'Default Embedding', hintKey: 'configuration.model.default_embedding_desc', hintFallback: 'Embedding model.', type: 'model_select', modelType: 'embedding' },
       { key: 'models.default_rerank', labelKey: 'configuration.model.default_rerank', labelFallback: 'Default Rerank', hintKey: 'configuration.model.default_rerank_desc', hintFallback: 'Rerank model.', type: 'model_select', modelType: 'rerank' },
       { key: 'models.default_video', labelKey: 'configuration.model.default_video', labelFallback: 'Default Video', hintKey: 'configuration.model.default_video_desc', hintFallback: 'Video generation.', type: 'model_select', modelType: 'video' },
+      { key: 'models.default_decision', labelKey: 'configuration.model.default_decision', labelFallback: 'Default Decision Model', hintKey: 'configuration.model.default_decision_desc', hintFallback: 'Used for decision tasks.', type: 'model_select', modelType: 'decision' },
     ],
   },
 ]

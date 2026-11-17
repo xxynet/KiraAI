@@ -307,6 +307,17 @@ class ProviderManager:
             )
         return model_client
 
+    def get_default_decision(self) -> DecisionModelClient:
+        model_info = self.get_default_model_info("default_decision")
+        model_client = self.get_model_client(
+            model_info.provider_id, model_info.model_id, model_info.model_type
+        )
+        if not isinstance(model_client, DecisionModelClient):
+            raise TypeError(
+                f"Expected DecisionModelClient, got {type(model_client).__name__}"
+            )
+        return model_client
+
     def get_default_model_info(self, model_key: str):
         reference = self.kira_config.get_config(f"models.{model_key}")
         if not reference or ":" not in reference:

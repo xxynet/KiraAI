@@ -81,7 +81,8 @@ DEFAULT_CONFIG = {
         "default_image": None,
         "default_embedding": None,
         "default_rerank": None,
-        "default_video": None
+        "default_video": None,
+        "default_decision": None
     },
     "adapters": {},  # ID: Adapter config dict
     "network": {

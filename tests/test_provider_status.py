@@ -168,6 +168,7 @@ async def test_disabled_provider_blocks_deferred_stream_and_remote_requests(mana
 @pytest.mark.parametrize('model_key', [
     'default_llm', 'default_fast_llm', 'default_vlm', 'default_tts', 'default_stt',
     'default_image', 'default_video', 'default_embedding', 'default_rerank',
+    'default_decision',
 ])
 def test_disabled_provider_blocks_default_models(manager, model_key):
     manager.kira_config['models'][model_key] = 'provider:model'
