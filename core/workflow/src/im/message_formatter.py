@@ -47,6 +47,19 @@ class MessageFormatter:
         self.session_manager = session_manager
         self.image_desc_cache = image_desc_cache
 
+    @staticmethod
+    async def _format_image_with_path(element: Image | Sticker, label: str) -> str:
+        try:
+            path = Path(await element.to_path())
+            try:
+                path_result = f"data/{path.relative_to(get_data_path())}"
+            except ValueError:
+                path_result = str(path)
+            return f"[{label} {element.caption!s}, file_path: {path_result}]"
+        except Exception as e:
+            logger.warning(f"Failed to save {label.lower()}: {e}")
+            return f"[{label} {element.caption!s}]"
+
     async def format_to_text(self, message_chain: MessageChain, session_id: str | None = None, capabilities: dict | None = None):
         """将平台使用标准消息格式封装的消息转换为LLM可以接收的字符串"""
         message_str = ""
@@ -127,18 +140,7 @@ class MessageFormatter:
                             await self.image_desc_cache.set(md5, ele.caption)
                     except Exception as e:
                         logger.warning(f"Failed to cache image desc: {e}")
-                try:
-                    path = Path(await ele.to_path())
-                    data_dir = get_data_path()
-                    try:
-                        rel = path.relative_to(data_dir)
-                        path_result = f"data/{rel}"
-                    except ValueError:
-                        path_result = str(path)
-                    message_str += f"[Image {ele.caption!s}, file_path: {path_result}]"
-                except Exception as e:
-                    logger.warning(f"Failed to save image: {e}")
-                    message_str += f"[Image {ele.caption!s}]"
+                message_str += await self._format_image_with_path(ele, "Image")
             elif isinstance(ele, Sticker):
                 image_mode = image_recognition.get("mode", "vlm_description")
                 if image_mode == "native":
@@ -189,7 +191,7 @@ class MessageFormatter:
                             await self.image_desc_cache.set(md5, ele.caption)
                     except Exception as e:
                         logger.warning(f"Failed to cache sticker desc: {e}")
-                message_str += f"[Sticker {ele.caption!s}]"
+                message_str += await self._format_image_with_path(ele, "Sticker")
             elif isinstance(ele, Reply):
                 if ele.chain:
                     ele.chain.message_list = [x for x in ele.chain if not isinstance(x, Reply)]
