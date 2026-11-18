@@ -221,7 +221,7 @@ async def test_reference_ids_are_separate_from_passive_reply_ids_and_sent_ids(gr
     target = "group-openid" if group else "user-openid"
     await adapter.im._handle_message(message(group, message_scene={"ext": ["msg_idx=REFIDX_incoming"]}), group, True)
     incoming = adapter.ctx.event_queue.get_nowait().message.message_id
-    first = await adapter.im._send_message(target, MessageChain([Reply(incoming), At("user-openid", "Alice"), Text(" hi")]), group)
+    first = await adapter.im._send_message(target, MessageChain([Reply(incoming), At("user-openid", "Alice"), Text("hi")]), group)
     await adapter.im._send_message(target, MessageChain([Reply(first.message_id), Text("again")]), group)
     calls = [call.kwargs for call in send.await_args_list]
     expected_content = '<qqbot-at-user id="user-openid" /> hi'
@@ -565,6 +565,7 @@ async def test_group_mentions_use_markdown_payload_and_keep_reply_context(mentio
         send.side_effect = [RuntimeError("40034005"), {"id": "sent"}]
     expected = 'hello <qqbot-at-user id="user-openid" />'
     if mention == "element":
+        expected += " "
         chain = MessageChain([Text("hello "), At("user-openid")])
     else:
         markup = '<qqbot-at-user id="user-openid" />' if mention == "raw_new" else "<@user-openid>"
@@ -604,7 +605,7 @@ async def test_real_sdk_serializes_group_mention_in_markdown_field(sdk_gateway):
         assert result.ok
         payload = request.await_args.kwargs["json"]
         assert payload["msg_type"] == 2
-        assert payload["markdown"] == {"content": 'hello <qqbot-at-user id="user-openid" />'}
+        assert payload["markdown"] == {"content": 'hello <qqbot-at-user id="user-openid" /> '}
         assert payload["content"] is None
         assert payload["group_openid"] == "group-openid"
     finally:
