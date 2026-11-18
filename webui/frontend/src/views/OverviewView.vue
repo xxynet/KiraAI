@@ -311,6 +311,7 @@ function formatHourLabel(hourTs: number): string {
 
 const platformColorMap: Record<string, string> = {
   qq: '#e74c3c',
+  'qq official': '#1ebafc',
   telegram: '#3498db',
   discord: '#5865f2',
   wechat: '#27ae60',
