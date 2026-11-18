@@ -22,7 +22,10 @@ class SessionViewTool(BaseTool):
     """Read metadata for one authorized session."""
 
     name = "session_view"
-    description = "查看会话标题、描述、创建／更新时间、历史消息数量和上下文轮次数量，不返回聊天正文。时间戳单位为 Unix 秒。"
+    description = (
+        "查看会话标题、描述、创建／更新时间、历史消息数量和上下文轮次数量，不返回聊天正文。"
+        "created_at、updated_at 为带 UTC 偏移量的日期时间字符串，使用配置时区（未配置时使用本地时区）。"
+    )
     parameters: ClassVar[dict] = {
         "type": "object",
         "properties": {"target": READ_TARGET_PARAM},
