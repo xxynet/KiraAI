@@ -199,6 +199,7 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
     @staticmethod
     def _text_content(send_message_obj: MessageChain) -> str:
         parts: list[str] = []
+        mention_end = 0
         for element in send_message_obj:
             if isinstance(element, Text):
                 parts.append(element.text)
@@ -207,13 +208,18 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
                     parts.append("@all")
                 else:
                     parts.append(f'<qqbot-at-user id="{escape(element.pid, quote=True)}" />')
+                parts.append(" ")
+                mention_end = len(parts)
             elif isinstance(element, Emoji):
                 parts.append(element.emoji_desc or "")
             elif isinstance(element, (Reply, File, Image)):
                 continue
             else:
                 parts.append("[Unsupported message element]")
-        return "".join(parts).strip()
+        content = "".join(parts).strip()
+        if mention_end and not any(part.strip() for part in parts[mention_end:]):
+            content += " "
+        return content
 
     @staticmethod
     def _media_payload(upload_result: Any) -> dict[str, str] | None:

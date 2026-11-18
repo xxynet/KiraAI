@@ -98,7 +98,7 @@ def test_qq_official_text_content_omits_reply_metadata():
         MessageChain([Reply("message-id"), Text("Hello "), At("u1", "Alice"), Emoji("1", "!"), Text(".")])
     )
 
-    assert content == 'Hello <qqbot-at-user id="u1" />!.'
+    assert content == 'Hello <qqbot-at-user id="u1" /> !.'
 
 
 @pytest.mark.asyncio
