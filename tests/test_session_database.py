@@ -21,32 +21,41 @@ def manager_for(session_db, tmp_path):
 
 
 @pytest.mark.anyio
-async def test_delivery_resolution_loads_full_context_by_sid_or_internal_id(session_db, tmp_path):
+@pytest.mark.parametrize("include_content", [None, True, False])
+async def test_delivery_resolution_loads_context_by_sid_or_internal_id(session_db, tmp_path, include_content):
     manager = manager_for(session_db, tmp_path)
     content = [[{"role": "user", "content": "performance"}]]
-    data = {"routing": {"worker": "analysis"}}
+    data = {"routing": {"worker": "analysis"}, "llm_model": "provider:model"}
     row = await session_db.save_chat_session(SID, content=content, data=data)
     for target in (SID, row["id"]):
-        resolved = await manager.resolve_session(target)
+        kwargs = {} if include_content is None else {"include_content": include_content}
+        resolved = await manager.resolve_session(target, **kwargs)
         assert resolved.internal_id == row["id"]
-        assert resolved.content == content
+        assert resolved.content == ([] if include_content is False else content)
         assert resolved.data == data
         resolved.data["routing"]["worker"] = "changed"
-    assert (await session_db.get_chat_session(SID))["data"] == data
+    persisted = await session_db.get_chat_session(SID)
+    assert persisted["data"] == data
+    assert persisted["content"] == content
     assert (await session_db.get_chat_session_by_id(row["id"], include_content=False)).get("content") is None
 
 
 @pytest.mark.anyio
-async def test_delivery_resolution_preserves_objects_and_does_not_persist_new_targets(session_db, tmp_path):
+@pytest.mark.parametrize("include_content", [True, False])
+async def test_delivery_resolution_preserves_objects_and_does_not_persist_new_targets(
+    session_db, tmp_path, include_content,
+):
     manager = manager_for(session_db, tmp_path)
-    session = Session("arbitrary:namespace", "worker", "", data={"route": "custom"})
-    assert await manager.resolve_session(session) is session
-    resolved = await manager.resolve_session("adapter:dm:opaque:123")
+    content = [[{"role": "user", "content": "original"}]]
+    session = Session("arbitrary:namespace", "worker", "", data={"route": "custom"}, content=content)
+    assert await manager.resolve_session(session, include_content=include_content) is session
+    assert session.content == content
+    resolved = await manager.resolve_session("adapter:dm:opaque:123", include_content=include_content)
     assert resolved.session_id == "opaque:123" and resolved.internal_id is None
     assert await session_db.list_chat_sessions() == []
     for invalid in ("sess_missing", "adapter:dm", "adapter::user", "", None):
         with pytest.raises(ValueError):
-            await manager.resolve_session(invalid)
+            await manager.resolve_session(invalid, include_content=include_content)
     assert await session_db.list_chat_sessions() == []
 
 

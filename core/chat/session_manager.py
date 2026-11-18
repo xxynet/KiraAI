@@ -127,19 +127,22 @@ class SessionManager:
             raise ValueError("Session data must be an object")
         return record
 
-    async def resolve_session(self, target: Session | str) -> Session:
+    async def resolve_session(
+        self, target: Session | str, *, include_content: bool = True,
+    ) -> Session:
         """Resolve delivery targets without creating or changing stored sessions.
 
-        Full objects are used as supplied. Stored SID and internal-ID targets
-        load their complete context. Unstored SIDs remain valid for proactive IM
-        delivery, preserving the existing plugin sending contract.
+        Session objects are returned unchanged. Stored SID and internal-ID
+        targets load content by default; pass include_content=False to load
+        only metadata. Unstored SIDs remain valid for proactive IM delivery,
+        preserving the existing plugin sending contract.
         """
         if isinstance(target, Session):
             return target
         if not isinstance(target, str) or not target:
             raise ValueError("Session target must be a Session, SID, or internal ID")
         if ":" not in target:
-            row = await self.db.get_chat_session_by_id(target)
+            row = await self.db.get_chat_session_by_id(target, include_content=include_content)
             if row is None:
                 raise ValueError(f"Session not found: {target}")
             record = Session.from_record(row)
@@ -149,7 +152,7 @@ class SessionManager:
         parts = target.split(":", maxsplit=2)
         if len(parts) != 3 or any(not part for part in parts):
             raise ValueError("Invalid session routing key")
-        record = await self.get_session(target)
+        record = await self.get_session(target, include_content=include_content)
         return record if record is not None else Session(*parts)
 
     async def create_subagent_session(

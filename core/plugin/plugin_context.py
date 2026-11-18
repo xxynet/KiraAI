@@ -237,9 +237,13 @@ class PluginContext:
             raise RuntimeError("Agent execution ended without a final reply")
         return result.llm_response
 
-    def get_default_llm_client(self) -> LLMModelClient:
-        client = self.get_llm_client(llm_type="default")
-        return client
+    def get_default_llm_client(self, session: Session | None = None) -> LLMModelClient:
+        """Get the session's selected LLM or the global default when unset.
+
+        Pass a session loaded from session_mgr; incoming event sessions may
+        contain routing information only. Unavailable selections raise.
+        """
+        return self.provider_mgr.get_default_llm(session=session)
 
     def get_default_fast_llm_client(self) -> LLMModelClient:
         client = self.get_llm_client(llm_type="fast")

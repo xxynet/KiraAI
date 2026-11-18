@@ -2,12 +2,14 @@ from types import SimpleNamespace
 
 import pytest
 
+from core.chat.session import Session
 from core.plugin.plugin_context import PluginContext
 from core.provider import (
     EmbeddingModelClient,
     ImageModelClient,
     LLMModelClient,
     ModelType,
+    ProviderAPIError,
     ProviderManager,
 )
 
@@ -98,3 +100,56 @@ def test_plugin_model_lookup_filters_by_known_type(
         assert client.model.model_config["group"] == model_type.value
     else:
         assert client is None
+
+
+@pytest.fixture(params=["provider", "plugin"])
+def default_llm_lookup(request):
+    manager = build_provider_manager()
+    manager.kira_config["models"] = {"default_llm": "provider:duplicate-model"}
+    manager.kira_config["providers"]["provider"]["model_config"]["llm"]["session:model"] = {}
+    manager._providers = {"provider": SimpleNamespace(models={ModelType.LLM: LLMModelClient})}
+    context = object.__new__(PluginContext)
+    context.provider_mgr = manager
+    getter = manager.get_default_llm if request.param == "provider" else context.get_default_llm_client
+    return manager, getter
+
+
+@pytest.mark.parametrize("data", [None, {}, {"llm_model": None}])
+def test_default_llm_uses_global_when_session_selection_is_unset(default_llm_lookup, data):
+    _, getter = default_llm_lookup
+    client = getter() if data is None else getter(Session("adapter", "dm", "user", data=data))
+
+    assert client.model.provider_id == "provider"
+    assert client.model.model_id == "duplicate-model"
+    assert client.model.model_type is ModelType.LLM
+
+
+@pytest.mark.parametrize("global_configured", [True, False])
+def test_default_llm_prefers_session_without_requiring_global_default(default_llm_lookup, global_configured):
+    manager, getter = default_llm_lookup
+    if not global_configured:
+        manager.kira_config["models"]["default_llm"] = ""
+    session = Session("adapter", "dm", "user", data={"llm_model": "provider:session:model"})
+
+    client = getter(session)
+
+    assert client.model.model_id == "session:model"
+    assert session.data == {"llm_model": "provider:session:model"}
+
+
+@pytest.mark.parametrize("reference", ["", "invalid", "unknown:model", "provider:missing"])
+def test_default_llm_does_not_hide_unavailable_session_selection(default_llm_lookup, reference):
+    _, getter = default_llm_lookup
+    session = Session("adapter", "dm", "user", data={"llm_model": reference})
+
+    with pytest.raises(ValueError):
+        getter(session)
+
+
+def test_default_llm_rejects_disabled_session_provider(default_llm_lookup):
+    manager, getter = default_llm_lookup
+    manager.kira_config["providers"]["disabled"] = {"status": "inactive"}
+    session = Session("adapter", "dm", "user", data={"llm_model": "disabled:model"})
+
+    with pytest.raises(ProviderAPIError, match="disabled"):
+        getter(session)

@@ -105,7 +105,7 @@ async def test_plugin_context_runs_agent_with_default_model_and_custom_tool(tool
     reply = await plugin_ctx.run_agent("Use the probe tool.", tools=tool_container([ProbeTool()]), **options)
 
     assert reply is final_response
-    plugin_ctx.provider_mgr.get_default_llm.assert_called_once_with()
+    plugin_ctx.provider_mgr.get_default_llm.assert_called_once_with(session=None)
     request = model.chat.await_args.args[0]
     assert [message.content for message in request.messages] == [
         "Use the probe tool.", "", tool_result, "complete",
