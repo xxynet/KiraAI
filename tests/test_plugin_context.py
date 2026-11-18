@@ -27,7 +27,7 @@ def test_agent_factory_uses_default_llm_when_model_group_is_omitted(agent_factor
 
     assert executor.model_group == [client]
     assert executor.context is context
-    agent_factory_context.provider_mgr.get_default_llm.assert_called_once_with()
+    agent_factory_context.provider_mgr.get_default_llm.assert_called_once_with(session=None)
 
 
 @pytest.mark.parametrize("empty_group", [False, True])

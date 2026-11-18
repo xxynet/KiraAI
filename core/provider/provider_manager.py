@@ -8,12 +8,16 @@ import uuid
 from contextlib import aclosing
 from functools import wraps
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from core.config import KiraConfig, config_loader
 from core.config.config_field import BaseConfigField, build_fields
 from core.db.service import DatabaseService
 from core.logging_manager import get_logger
 from core.utils.path_utils import resolve_manifest_icon_path
+
+if TYPE_CHECKING:
+    from core.chat.session import Session
 
 from .model_identity import (
     DEFAULT_MODEL_TYPES,
@@ -204,7 +208,16 @@ class ProviderManager:
             raise ValueError(f"LLM model unavailable: {reference}")
         return model_client
 
-    def get_default_llm(self) -> LLMModelClient:
+    def get_default_llm(self, session: "Session | None" = None) -> LLMModelClient:
+        """Use the supplied session's LLM override, otherwise the global default.
+
+        The session must contain its stored metadata. An unavailable override
+        raises instead of silently selecting the global default.
+        """
+        if session is not None:
+            reference = session.data.get("llm_model")
+            if reference is not None:
+                return self.get_llm(reference)
         model_info = self.get_default_model_info("default_llm")
         model_client = self.get_model_client(
             model_info.provider_id, model_info.model_id, model_info.model_type
