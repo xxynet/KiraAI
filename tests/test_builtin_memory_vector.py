@@ -10,7 +10,7 @@ import pytest
 from core.plugin.builtin_plugins.memory import vector as module
 from core.plugin.builtin_plugins.memory.vector import VectorMemory
 from core.provider import EmbeddingModelClient, ModelInfo, ModelType
-from tests.test_builtin_memory import event, plugin_at, scope
+from tests.test_builtin_memory import event, memory_result, plugin_at, scope
 
 
 @pytest.fixture
@@ -66,7 +66,7 @@ async def test_disabled_memory_never_imports_numeric_dependency_or_calls_model(t
     plugin.ctx.get_embedding_client = Mock(side_effect=AssertionError("Must not resolve model"))
     await plugin.memory_add(event(), text="coffee")
     assert (await plugin.recall(scope(), ["coffee"]))["recalled"]
-    assert json.loads(await plugin.memory_search(event(), query="coffee"))["records"]
+    assert memory_result(await plugin.memory_search(event(), query="coffee"))["ids"]
     assert (await plugin.api_vector_status())["phase"] == "disabled"
     await plugin.api_vector_install()
     await plugin.api_vector_rebuild()
@@ -90,7 +90,7 @@ async def test_missing_dependency_sync_falls_back_without_repeated_installs(tmp_
     monkeypatch.setattr("core.plugin.plugin_installer.install_requirements", installer)
     await plugin.vectors._sync()
     assert plugin.vectors.phase == "dependency_missing"
-    assert json.loads(await plugin.memory_add(event(), text="coffee"))["ok"]
+    assert memory_result(await plugin.memory_add(event(), text="coffee"))["ok"]
     assert (await plugin.recall(scope(), ["coffee"]))["recalled"]
     installer.assert_not_called()
 
@@ -117,7 +117,7 @@ async def test_paraphrase_recalls_through_tools_preview_and_runtime(tmp_path, mo
     await plugin.vectors._sync()
     plugin.ctx.get_embedding_client.assert_called_with("", default=True)
     assert (await plugin.search(scope(), "车子"))[0]["id"] == row["id"]
-    assert json.loads(await plugin.memory_search(event(), query="车子"))["records"][0]["id"] == row["id"]
+    assert memory_result(await plugin.memory_search(event(), query="车子"))["ids"][0] == row["id"]
     result = await plugin.api_recall({"messages": ["车子"]})
     assert result["recalled"][0]["id"] == row["id"]
     assert result["retrieval"]["mode"] == "hybrid"
@@ -615,7 +615,7 @@ async def test_metadata_edits_reuse_current_vector_and_keep_retrieval_ready(tmp_
     else:
         if payload.get("expires_at", 1) is None:
             payload["clear_expiry"] = True
-        result = json.loads(await plugin.memory_update(event(), row["id"], **payload))
+        result = memory_result(await plugin.memory_update(event(), row["id"], **payload))
         assert result["ok"] and result["revision"] == 2
     assert plugin.vectors.ready and plugin.vectors.phase == "ready"
     after = await indexed_vector(plugin, row["id"])
@@ -635,7 +635,7 @@ async def test_source_message_change_does_not_reembed_unchanged_text(tmp_path, m
     await plugin.vectors._sync()
     turn = event()
     turn.messages[0].message_id = "new-source"
-    result = json.loads(await plugin.memory_update(turn, row["id"], 1, row["text"]))
+    result = memory_result(await plugin.memory_update(turn, row["id"], 1, row["text"]))
     assert result["ok"]
     assert (await plugin.store.admin_get(row["id"]))["source_message_id"] == "new-source"
     assert plugin.vectors.ready
@@ -656,7 +656,7 @@ async def test_metadata_edits_during_embedding_publish_latest_revision_without_a
             if entry == "webui":
                 await plugin.api_record_update(row["id"], payload)
             else:
-                result = json.loads(await plugin.memory_update(event(), row["id"], **payload))
+                result = memory_result(await plugin.memory_update(event(), row["id"], **payload))
                 assert result["ok"]
         return client.vectors(texts)
 
@@ -784,7 +784,7 @@ async def test_metadata_edit_still_rejects_outdated_revisions(tmp_path, monkeypa
     with pytest.raises(HTTPException) as conflict:
         await plugin.api_record_update(row["id"], {"revision": 1, "text": row["text"], "importance": 5})
     assert conflict.value.status_code == 400 and conflict.value.detail == "conflict"
-    result = json.loads(await plugin.memory_update(event(), row["id"], 1, row["text"], importance=5))
+    result = memory_result(await plugin.memory_update(event(), row["id"], 1, row["text"], importance=5))
     assert result["ok"] is False
     current = await plugin.store.admin_get(row["id"])
     assert current["revision"] == 2 and current["importance"] == 3
@@ -998,17 +998,17 @@ async def test_recall_channel_limits_are_independent_of_rerank_and_tool_paginati
         turn.messages[0].message_str = "coffee"
         request = LLMRequest(system_prompt=[Prompt("base", name="memory")])
         await plugin.inject_memory(turn, request)
-        injected = json.loads(request.system_prompt[0].content.rsplit("\n", 1)[1])
-        assert {row["id"] for row in injected} == expected
+        injected = memory_result(request.system_prompt[0].content)
+        assert set(injected["ids"]) == expected
 
         # Tools must still reach records beyond both small automatic recall pools.
         full = await plugin.search(scope(), "coffee", limit=50)
         assert len(full) == 16
         pages = []
         for offset in range(0, 16, 3):
-            page = json.loads(await plugin.memory_search(event(), query="coffee", limit=3, offset=offset))
+            page = memory_result(await plugin.memory_search(event(), query="coffee", limit=3, offset=offset))
             assert page["ok"]
-            pages.extend(row["id"] for row in page["records"])
+            pages.extend(page["ids"])
         assert pages == [row["id"] for row in full]
         assert len(set(pages)) == 16
 
@@ -1049,7 +1049,7 @@ async def test_incremental_indexing_keeps_current_vectors_and_excludes_edits_and
     await plugin.vectors._sync()
     await plugin.api_record_update(edited["id"], {"revision": 1, "text": "coffee updated"})
     await plugin.api_record_remove(removed["id"], revision=1)
-    added = json.loads(await plugin.memory_add(event(), text="coffee added"))
+    added = memory_result(await plugin.memory_add(event(), text="coffee added"))
     assert plugin.vectors.ready
     entered, release = asyncio.Event(), asyncio.Event()
 

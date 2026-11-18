@@ -1,33 +1,37 @@
+from datetime import timedelta, timezone
+
 from core.plugin.builtin_plugins.search.utils import (
     format_anysearch_domains,
-    format_anysearch_extract,
-    format_anysearch_search,
-    format_hybrid_results,
+    format_extracted_page,
+    format_search_results,
 )
 
 
-def test_format_anysearch_search_preserves_tavily_compatible_shape():
-    assert format_anysearch_search({"results": [{"title": "Result", "url": "https://example.com", "snippet": "Text"}]}) == (
-        '{"title": "Result", "url": "https://example.com", "content": "Text", '
-        '"score": 0.0, "source": "anysearch"}'
+def test_format_search_results_uses_separate_entries_and_source_fallback():
+    assert format_search_results(
+        [{"title": "Result", "url": "https://example.com", "snippet": "Text"}, {"title": "Another result"}],
+        source="anysearch",
+    ) == (
+        "### 1. Result\nURL: https://example.com\nSource: anysearch\n\nText"
+        "\n\n### 2. Another result\nSource: anysearch"
     )
 
 
-def test_format_hybrid_results_includes_sorted_sources_and_fusion_score():
-    assert format_hybrid_results([{
+def test_format_search_results_includes_sorted_sources_and_readable_publication_date():
+    assert format_search_results([{
         "title": "Result",
         "url": "https://example.com",
         "content": "Text",
-        "fusion_score": 0.12345,
         "sources": {"tavily", "anysearch"},
-    }]) == (
-        '{"title": "Result", "url": "https://example.com", "content": "Text", '
-        '"score": 0.1235, "source": "anysearch,tavily", "fusion_score": 0.1235}'
+        "published_date": 0,
+    }], timezone=timezone(timedelta(hours=8))) == (
+        "### 1. Result\nURL: https://example.com\nSource: anysearch, tavily"
+        "\nPublished: 1970-01-01 08:00:00+08:00\n\nText"
     )
 
 
-def test_format_anysearch_extract_includes_source_header_when_available():
-    assert format_anysearch_extract({"title": "Result", "url": "https://example.com", "content": "Text"}) == (
+def test_format_extracted_page_includes_source_header_and_retains_tavily_body():
+    assert format_extracted_page({"title": "Result", "url": "https://example.com", "raw_content": "Text"}) == (
         "## Result\n\n**来源**: https://example.com\n\n---\n\nText"
     )
 

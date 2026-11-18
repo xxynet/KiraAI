@@ -11,9 +11,8 @@ from core.utils.path_utils import get_config_path
 from .anysearch import AnySearchClient
 from .utils import (
     format_anysearch_domains,
-    format_anysearch_extract,
-    format_anysearch_search,
-    format_hybrid_results,
+    format_extracted_page,
+    format_search_results,
 )
 
 
@@ -234,11 +233,14 @@ class SearchPlugin(BasePlugin):
                 if key in merged:
                     merged[key]["fusion_score"] += fusion
                     merged[key]["sources"].add(lst.get("name") or lst.get("source") or "?")
+                    if merged[key]["published_date"] in (None, ""):
+                        merged[key]["published_date"] = it.get("published_date")
                 else:
                     merged[key] = {
                         "title": it.get("title") or "",
                         "url": it.get("url") or "",
                         "content": it.get("content") or it.get("snippet") or "",
+                        "published_date": it.get("published_date"),
                         "fusion_score": fusion,
                         "sources": {lst.get("name") or lst.get("source") or "?"},
                     }
@@ -287,7 +289,7 @@ class SearchPlugin(BasePlugin):
             res = await self._any_search(query, sub_domain, params, topic)
             if res["error"]:
                 return f"搜索失败：{res['error']}"
-            return format_anysearch_search({"results": res["results"]})
+            return format_search_results(res["results"], source="anysearch", timezone=self.ctx.get_timezone())
 
         mode = self._resolve_mode()
         if mode == "hybrid":
@@ -303,19 +305,19 @@ class SearchPlugin(BasePlugin):
                 errs = [e for e in (t_res["error"], a_res["error"]) if e]
                 if errs:
                     return "搜索失败：" + "；".join(errs)
-            return format_hybrid_results(fused)
+            return format_search_results(fused, timezone=self.ctx.get_timezone())
 
         if mode == "tavily":
             res = await self._tavily_search(query, topic, search_depth)
             if res["error"]:
                 return f"搜索失败：{res['error']}"
-            return "".join(json.dumps(ele, ensure_ascii=False) for ele in res["results"])
+            return format_search_results(res["results"], source="tavily", timezone=self.ctx.get_timezone())
 
         # anysearch 单源
         res = await self._any_search(query, None, None, topic)
         if res["error"]:
             return f"搜索失败：{res['error']}"
-        return format_anysearch_search({"results": res["results"]})
+        return format_search_results(res["results"], source="anysearch", timezone=self.ctx.get_timezone())
 
     # ---------- 工具：网页内容提取 ----------
 
@@ -346,7 +348,7 @@ class SearchPlugin(BasePlugin):
                 )
                 results = res.get("results") or []
                 if results:
-                    return "".join(json.dumps(ele, ensure_ascii=False) for ele in results)
+                    return "\n\n".join(format_extracted_page(page) for page in results)
                 return f"未能从 {url} 提取到正文（可能是不支持的格式或页面为空）"
             except Exception as e:
                 logger.warning("Tavily extract failed: %r", e)
@@ -361,7 +363,7 @@ class SearchPlugin(BasePlugin):
                 )
                 results = res.get("results") or []
                 if results:
-                    return "".join(json.dumps(ele, ensure_ascii=False) for ele in results)
+                    return "\n\n".join(format_extracted_page(page) for page in results)
             except Exception as e:
                 logger.warning("Tavily extract failed: %r", e)
 
@@ -373,7 +375,7 @@ class SearchPlugin(BasePlugin):
         data = body.get("data") or {}
         if not data.get("content"):
             return f"未能从 {url} 提取到正文（可能是不支持的格式或页面为空）"
-        return format_anysearch_extract(data)
+        return format_extracted_page(data)
 
     # ---------- 工具：AnySearch 专属：并行批量搜索 ----------
 
@@ -431,12 +433,14 @@ class SearchPlugin(BasePlugin):
 
         results = await asyncio.gather(*(one(it) for it in normalized))
         out = []
+        timezone = self.ctx.get_timezone()
         for q, result in results:
             if result["error"]:
-                out.append(json.dumps({"query": q, "error": result["error"]}, ensure_ascii=False))
+                output = f"Error: {result['error']}"
             else:
-                out.append(format_anysearch_search({"results": result["results"]}))
-        return "\n".join(out)
+                output = format_search_results(result["results"], source="anysearch", timezone=timezone)
+            out.append(f"## Query: {q}\n\n{output}")
+        return "\n\n".join(out)
 
     # ---------- 工具：AnySearch 专属：垂直领域目录 ----------
 

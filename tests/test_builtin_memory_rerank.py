@@ -1,7 +1,6 @@
 """Optional memory reranking, provider boundaries, budgets, and fallback behavior."""
 
 import asyncio
-import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -11,7 +10,7 @@ from core.plugin.builtin_plugins.memory.rerank import MemoryReranker
 from core.prompt_manager import Prompt
 from core.provider import LLMRequest, ModelInfo, ModelType, RerankModelClient
 from core.provider.llm_model import RerankResult
-from tests.test_builtin_memory import event, plugin_at, scope
+from tests.test_builtin_memory import event, memory_result, plugin_at, scope
 
 
 @pytest.fixture
@@ -66,8 +65,8 @@ async def test_keyword_rerank_is_shared_by_tools_chat_and_both_preview_entries(t
     expected = [row["id"] for row in reversed(original)]
     assert not plugin.vectors.enabled
     assert [row["id"] for row in await plugin.search(scope(), "coffee", limit=2)] == expected[:2]
-    tool = json.loads(await plugin.memory_search(event(), query="coffee", limit=2))
-    assert [row["id"] for row in tool["records"]] == expected[:2]
+    tool = memory_result(await plugin.memory_search(event(), query="coffee", limit=2))
+    assert tool["ids"] == expected[:2]
     for result in (await plugin.recall(scope(), ["coffee"]),
                    await plugin.api_recall({"messages": ["coffee"]}),
                    await plugin.api_recall({"adapter": "test", "session_id": "test:dm:alice",
@@ -400,8 +399,8 @@ async def test_keyword_recall_respects_pool_limit_without_restricting_core_or_to
         assert {row["id"] for row in result["core"]} == {row["id"] for row in core}
         assert result["retrieval"]["rerank"]["phase"] == "skipped"
     client.rerank.assert_not_awaited()
-    page = json.loads(await plugin.memory_search(event(), query="coffee", limit=3, offset=5))
-    assert page["ok"] and len(page["records"]) == 3
+    page = memory_result(await plugin.memory_search(event(), query="coffee", limit=3, offset=5))
+    assert page["ok"] and len(page["ids"]) == 3
     assert client.rerank.await_count == 1
     await plugin.terminate()
 

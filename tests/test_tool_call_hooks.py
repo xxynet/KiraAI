@@ -445,7 +445,7 @@ async def test_tool_timeout_still_applies_after_approval():
     hook.assert_awaited_once()
     assert hook.await_args.args[0].agent_context is None
     tool.execute.assert_awaited_once_with(value="input")
-    assert "timed out after 0.01s" in response.tool_results[0]["content"]
+    assert response.tool_results[0]["content"] == "Error: Tool 'probe' timed out after 0.01s"
 
 
 @pytest.mark.anyio
@@ -463,6 +463,6 @@ async def test_missing_and_over_limit_tools_are_not_offered_for_approval():
     hook.assert_awaited_once()
     assert hook.await_args.args[0].tool_call_id == "call-2"
     tool.execute.assert_awaited_once_with(value="input")
-    assert "not implemented" in response.tool_results[0]["content"]
+    assert response.tool_results[0]["content"] == "Error: Tool missing not implemented"
     assert response.tool_results[1]["content"] == "executed"
     assert "Tool call limit exceeded" in response.tool_results[2]["content"]

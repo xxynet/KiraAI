@@ -30,6 +30,10 @@ from core.provider import LLMResponse
 from core.utils.tool_utils import BaseTool
 
 
+def agent_fields(output):
+    return dict(line.split(": ", 1) for line in output.splitlines() if line and not line.startswith(" "))
+
+
 class RecordingTool(BaseTool):
     name = "record"
     description = "Record event identity"
@@ -797,7 +801,6 @@ async def test_capacity_check_is_atomic_for_concurrent_spawns(agents):
 
 @pytest.mark.anyio
 async def test_native_tools_bind_the_caller_and_inherit_actual_request_tools(agents, tmp_path):
-    import json
 
     from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
     from core.config.config_loader import KiraConfig
@@ -862,7 +865,7 @@ async def test_native_tools_bind_the_caller_and_inherit_actual_request_tools(age
                 session_retention_hours=invalid,
             )
     assert await manager.list_agents(caller_id=parent.internal_id) == []
-    info = json.loads(await spawn.execute(
+    info = agent_fields(await spawn.execute(
         event,
         task="delegate",
         preset_name=preset["name"],
@@ -875,8 +878,8 @@ async def test_native_tools_bind_the_caller_and_inherit_actual_request_tools(age
     assert child.data["subagent"]["settings"]["max_steps"] == -1
     registry.build_tool_set.assert_not_called()
     assert [tool.name for tool in model.chat.await_args.args[0].tool_set.tools] == ["record"]
-    listed = json.loads(await request.tool_set.get("list_agents").execute(event))
-    assert listed["agents"][0]["parent_id"] == parent.internal_id
+    listed = await request.tool_set.get("list_agents").execute(event)
+    assert f"parent_id: {parent.internal_id}" in listed.splitlines()
     await request.tool_set.get("followup_task").execute(event, agent_id=info["id"], message="again")
     await manager.wait(info["id"], timeout=2)
     assert model.chat.await_count == 2
@@ -885,7 +888,6 @@ async def test_native_tools_bind_the_caller_and_inherit_actual_request_tools(age
 
 @pytest.mark.anyio
 async def test_native_custom_tools_can_select_outside_the_parent_tool_list(agents, tmp_path):
-    import json
 
     from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
     from core.config.config_loader import KiraConfig
@@ -913,7 +915,7 @@ async def test_native_custom_tools_can_select_outside_the_parent_tool_list(agent
         tools=["record"],
     ))
     await SubAgentsPlugin(ctx, {}).inject_tools(event, request)
-    info = json.loads(await request.tool_set.get("spawn_agent").execute(
+    info = agent_fields(await request.tool_set.get("spawn_agent").execute(
         event,
         task="custom",
         preset_name=preset["name"],
@@ -935,7 +937,6 @@ async def test_native_custom_tools_can_select_outside_the_parent_tool_list(agent
 @pytest.mark.anyio
 @pytest.mark.parametrize("persona_id", [None, "reviewer"])
 async def test_preset_persona_follows_edits_for_existing_and_restored_agents(agents, tmp_path, persona_id):
-    import json
 
     from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
     from core.config import KiraConfig
@@ -964,7 +965,7 @@ async def test_preset_persona_follows_edits_for_existing_and_restored_agents(age
         parent_tools=ToolSet(),
     )
     async def spawn():
-        info = json.loads(await tool.execute(
+        info = agent_fields(await tool.execute(
             None,
             task="inspect",
             preset_name=preset["name"],
@@ -1086,7 +1087,6 @@ async def test_persona_refreshes_between_calls_without_mutating_inflight_message
 
 @pytest.mark.anyio
 async def test_native_preset_discovery_and_spawn_use_saved_settings(agents, tmp_path):
-    import json
 
     from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
     from core.config import KiraConfig
@@ -1137,7 +1137,7 @@ async def test_native_preset_discovery_and_spawn_use_saved_settings(agents, tmp_
     with pytest.raises(PermissionError, match="not allowed"):
         await manager.spawn("inspect", parent_id=parent.internal_id, preset_id=preset["id"])
     await manager.presets.replace_scopes({preset["id"]: {"allow": [parent.sid]}})
-    info = json.loads(await spawn.execute(
+    info = agent_fields(await spawn.execute(
         event,
         task="inspect",
         preset_name=preset["name"],
@@ -1219,7 +1219,6 @@ async def test_management_tools_follow_stored_session_scope_without_presets(agen
 async def test_excluding_preset_tools_keeps_them_available_on_spawn_and_followup(
     agents, tmp_path, mode, tools, child_names,
 ):
-    import json
 
     from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
     from core.config import KiraConfig
@@ -1256,7 +1255,7 @@ async def test_excluding_preset_tools_keeps_them_available_on_spawn_and_followup
         return request
 
     request = await build_main_request()
-    info = json.loads(await request.tool_set.get("spawn_agent").execute(
+    info = agent_fields(await request.tool_set.get("spawn_agent").execute(
         event, task="first", preset_name="Worker",
     ))
     assert (await manager.wait(info["id"], timeout=2))["status"] == "done"
@@ -1329,7 +1328,6 @@ async def test_native_preset_cannot_bypass_disabled_state_or_custom_tool_permiss
 @pytest.mark.anyio
 @pytest.mark.parametrize("restored", [False, True])
 async def test_preset_model_is_resolved_for_each_turn_without_persisting_it(agents, tmp_path, restored):
-    import json
 
     from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
     from core.config import KiraConfig
@@ -1357,7 +1355,7 @@ async def test_preset_model_is_resolved_for_each_turn_without_persisting_it(agen
         source=parent,
         parent_tools=ToolSet(),
     )
-    info = json.loads(await tool.execute(
+    info = agent_fields(await tool.execute(
         None,
         task="first",
         preset_name=preset["name"],
@@ -1739,7 +1737,6 @@ async def test_subagent_default_has_no_step_limit_and_restores_it_for_followups(
 
 @pytest.mark.anyio
 async def test_native_spawn_accepts_preset_step_limits_above_fifty(agents, tmp_path):
-    import json
 
     from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
     from core.config import KiraConfig
@@ -1761,7 +1758,7 @@ async def test_native_spawn_accepts_preset_step_limits_above_fifty(agents, tmp_p
         name="Long task",
         max_steps=100,
     ))
-    info = json.loads(await tool.execute(
+    info = agent_fields(await tool.execute(
         None,
         task="task",
         preset_name=preset["name"],

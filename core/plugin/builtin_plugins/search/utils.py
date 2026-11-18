@@ -1,47 +1,40 @@
-import json
+from core.utils.time_utils import format_timestamp
 
 
-def format_hybrid_results(results: list) -> str:
-    """Format fused search results in the established Tavily-compatible JSON style."""
+def format_search_results(results: list, *, source: str = "", timezone=None) -> str:
     if not results:
-        return "[]"
-    output = []
-    for result in results:
-        output.append({
-            "title": result["title"],
-            "url": result["url"],
-            "content": result["content"],
-            "score": round(result["fusion_score"], 4),
-            "source": ",".join(sorted(result["sources"])),
-            "fusion_score": round(result["fusion_score"], 4),
-        })
-    return "".join(json.dumps(item, ensure_ascii=False) for item in output)
+        return "No web results found."
+    blocks = []
+    for index, result in enumerate(results, 1):
+        title = result.get("title") or result.get("url") or "Untitled"
+        lines = [f"### {index}. {title}"]
+        providers = ", ".join(sorted(result.get("sources", ()))) or result.get("source") or source
+        published = result.get("published_date")
+        if isinstance(published, (int, float)):
+            published = format_timestamp(published, timezone)
+        for label, value in (("URL", result.get("url")), ("Source", providers), ("Published", published)):
+            if value:
+                lines.append(f"{label}: {value}")
+        if result.get("fusion_score") is not None:
+            lines.append(f"Fusion score: {result['fusion_score']:.4f}")
+        elif result.get("score") is not None:
+            lines.append(f"Score: {result['score']}")
+        content = result.get("content") or result.get("snippet")
+        if content:
+            lines.extend(("", content))
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
 
 
-def format_anysearch_search(data: dict) -> str:
-    """Format AnySearch results in the established Tavily-compatible JSON style."""
-    results = data.get("results") or []
-    if not results:
-        return "[]"
-    output = []
-    for result in results:
-        output.append({
-            "title": result.get("title") or "",
-            "url": result.get("url") or "",
-            "content": result.get("content") or result.get("snippet") or "",
-            "score": result.get("score") or 0.0,
-            "source": result.get("source") or "anysearch",
-        })
-    return "".join(json.dumps(item, ensure_ascii=False) for item in output)
-
-
-def format_anysearch_extract(data: dict) -> str:
-    """Format extracted AnySearch page content for tool output."""
+def format_extracted_page(data: dict) -> str:
+    """Format the extracted page content from either provider."""
     title = data.get("title") or ""
     url = data.get("url") or ""
-    content = data.get("content") or ""
+    content = data.get("content") or data.get("raw_content") or ""
     header = f"## {title}\n\n**来源**: {url}\n\n---\n\n" if title or url else ""
-    return header + content
+    images = data.get("images") or []
+    image_links = "\n".join(f"- {image}" for image in images if isinstance(image, str))
+    return header + content + (f"\n\nImages:\n{image_links}" if image_links else "")
 
 
 def format_anysearch_domains(data: dict) -> str:

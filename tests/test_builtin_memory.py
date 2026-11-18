@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -14,6 +15,20 @@ from core.plugin.builtin_plugins.memory.scope import MemoryInputError, MemorySco
 from core.plugin.builtin_plugins.memory.store import MemoryStore
 from core.prompt_manager import Prompt
 from core.provider import LLMRequest
+
+
+def memory_result(output):
+    lines = output.split("\n")
+    header = lines[0]
+    result = {"ok": not any(header.startswith(locale["error"]) for locale in MESSAGES.values()), "ids": []}
+    for line in lines[1:]:
+        key, _, value = line.partition(": ")
+        if key == "memory_id":
+            result["ids"].append(value)
+            result.setdefault("memory_id", value)
+        elif key in {"revision", "next_offset"}:
+            result[key] = int(value)
+    return result
 
 
 def event(*, session="dm", target="alice", users=("alice",), adapter="test", account="bot", notice=False,
@@ -219,7 +234,8 @@ async def test_input_validation(tmp_path, kwargs):
 async def plugin_at(tmp_path, monkeypatch, lang="en", cfg=None):
     import core.plugin.builtin_plugins.memory.main as module
     monkeypatch.setattr(module, "get_data_path", lambda: tmp_path)
-    ctx = SimpleNamespace(get_lang=lambda: lang, persona_mgr=SimpleNamespace(
+    ctx = SimpleNamespace(get_lang=lambda: lang, get_timezone=lambda: timezone(timedelta(hours=8)),
+                          persona_mgr=SimpleNamespace(
         get_persona=AsyncMock(return_value=SimpleNamespace(id="persona-one", name="Kira")),
         list_personas=AsyncMock(return_value=[SimpleNamespace(id="persona-one", name="Kira")]),
     ), adapter_mgr=SimpleNamespace(get_adapter=Mock(return_value=SimpleNamespace(platform="test-platform"))),
@@ -235,18 +251,23 @@ async def plugin_at(tmp_path, monkeypatch, lang="en", cfg=None):
 async def test_tools_pin_persona_per_turn_and_expose_stable_ids(tmp_path, monkeypatch):
     plugin = await plugin_at(tmp_path, monkeypatch)
     turn = event()
-    result = json.loads(await plugin.memory_add(turn, text="coffee fact"))
+    added = await plugin.memory_add(turn, text="coffee fact", expires_at=4102444800)
+    assert added.startswith("Memory operation completed.\nmemory_id: ")
+    result = memory_result(added)
     assert result["ok"]
     plugin.ctx.persona_mgr.get_persona.return_value = SimpleNamespace(id="persona-two")
-    search = json.loads(await plugin.memory_search(turn, query="coffee"))
-    assert search["records"][0]["id"] == result["memory_id"]
-    assert not json.loads(await plugin.memory_search(event(), query="coffee"))["records"]
-    assert not json.loads(await plugin.memory_update(turn, index=0, text="wrong"))["ok"]
-    assert json.loads(await plugin.memory_update(turn, result["memory_id"], 1, "tea"))["revision"] == 2
-    assert not json.loads(await plugin.memory_remove(turn, result["memory_id"], 1))["ok"]
-    assert json.loads(await plugin.memory_remove(turn, result["memory_id"], 2))["ok"]
+    output = await plugin.memory_search(turn, query="coffee")
+    assert "expires_at: 2100-01-01 08:00:00+08:00" in output.splitlines()
+    assert "> coffee fact" in output.splitlines()
+    search = memory_result(output)
+    assert search["ids"][0] == result["memory_id"]
+    assert not memory_result(await plugin.memory_search(event(), query="coffee"))["ids"]
+    assert not memory_result(await plugin.memory_update(turn, index=0, text="wrong"))["ok"]
+    assert memory_result(await plugin.memory_update(turn, result["memory_id"], 1, "tea"))["revision"] == 2
+    assert not memory_result(await plugin.memory_remove(turn, result["memory_id"], 1))["ok"]
+    assert memory_result(await plugin.memory_remove(turn, result["memory_id"], 2))["ok"]
     await plugin.terminate()
-    assert not json.loads(await plugin.memory_search(turn))["ok"]
+    assert not memory_result(await plugin.memory_search(turn))["ok"]
 
 
 @pytest.mark.anyio
@@ -276,14 +297,14 @@ async def test_search_pagination_does_not_drop_records_at_budget_boundary(tmp_pa
     ids = set()
     offset = 0
     for _ in range(6):
-        result = json.loads(await plugin.memory_search(event(), offset=offset))
-        if not result["records"]:
+        result = memory_result(await plugin.memory_search(event(), offset=offset))
+        if not result["ids"]:
             break
         assert result["next_offset"] > offset
         offset = result["next_offset"]
-        for row in result["records"]:
-            assert row["id"] not in ids
-            ids.add(row["id"])
+        for memory_id in result["ids"]:
+            assert memory_id not in ids
+            ids.add(memory_id)
     assert len(ids) == 5
 
 
@@ -331,7 +352,7 @@ async def test_memory_uses_persona_snapshot_from_built_request(tmp_path, monkeyp
     await plugin.inject_memory(turn, request)
     memory = next(p for p in prompts if p.name == "memory")
     assert "persona one coffee" in memory.content
-    added = json.loads(await plugin.memory_add(turn, text="still belongs to one"))
+    added = memory_result(await plugin.memory_add(turn, text="still belongs to one"))
     assert await plugin.store.get(scope(persona="persona-one"), added["memory_id"])
     assert await plugin.store.get(scope(persona="persona-two"), added["memory_id"]) is None
 
@@ -367,10 +388,10 @@ async def test_database_failure_does_not_abort_chat_or_echo_content(tmp_path, mo
     request = LLMRequest(system_prompt=[Prompt("base", name="memory")])
     await plugin.inject_memory(event(), request)
     assert request.system_prompt[0].content == "base"
-    result = json.loads(await plugin.memory_search(event()))
-    assert result["ok"] is False
+    result = await plugin.memory_search(event())
+    assert memory_result(result)["ok"] is False
     assert "private-memory-content" not in str(logger.mock_calls)
-    assert "private-memory-content" not in str(result)
+    assert "private-memory-content" not in result
 
 
 # ---------------------------------------------------------------------------
@@ -489,7 +510,7 @@ async def test_admin_listing_rejects_bad_input(tmp_path, monkeypatch):
 @pytest.mark.anyio
 async def test_admin_detail_and_facets(tmp_path, monkeypatch):
     plugin = await plugin_at(tmp_path, monkeypatch)
-    added = json.loads(await plugin.memory_add(event(), text="likes coffee", core=True))
+    added = memory_result(await plugin.memory_add(event(), text="likes coffee", core=True))
     record = await plugin.store.admin_get(added["memory_id"])
     assert record["text"] == "likes coffee" and record["terms"] > 0
     assert await plugin.store.admin_get("missing") is None
@@ -512,7 +533,7 @@ async def test_overview_counts(tmp_path, monkeypatch):
     plugin = await plugin_at(tmp_path, monkeypatch)
     await plugin.memory_add(event(), text="core fact", core=True)
     await plugin.memory_add(event(), text="plain fact")
-    row = json.loads(await plugin.memory_add(event(), text="removable fact"))
+    row = memory_result(await plugin.memory_add(event(), text="removable fact"))
     # Removal is physical, so the totals drop rather than gaining a "deleted" bucket.
     await plugin.memory_remove(event(), row["memory_id"], row["revision"])
 
@@ -642,10 +663,10 @@ async def test_recall_preview_matches_chat_payload_without_writes(tmp_path, monk
     (memory_dir / "core.txt").write_text("legacy coffee", encoding="utf-8")
     plugin = await plugin_at(tmp_path, monkeypatch)
     await plugin.memory_add(event(), text="daily routine", core=True)
-    added = json.loads(await plugin.memory_add(event(), text="likes coffee"))
+    added = memory_result(await plugin.memory_add(event(), text="likes coffee"))
     await plugin.memory_add(event(), text="expired coffee", expires_at=1)
     await plugin.memory_add(event(target="bob", users=("bob",)), text="bob coffee")
-    other_account = json.loads(await plugin.memory_add(event(account="other-bot"), text="other account coffee"))
+    other_account = memory_result(await plugin.memory_add(event(account="other-bot"), text="other account coffee"))
     plugin.ctx.persona_mgr.get_persona.return_value = SimpleNamespace(id="persona-two")
     await plugin.memory_add(event(), text="other persona coffee")
     plugin.ctx.persona_mgr.get_persona.return_value = SimpleNamespace(id="persona-one")
@@ -659,7 +680,9 @@ async def test_recall_preview_matches_chat_payload_without_writes(tmp_path, monk
     assert len({row["id"] for row in result["core"] + result["recalled"]}) == 4
     request = LLMRequest(system_prompt=[Prompt("base", name="memory", persona_id="persona-one")])
     await plugin.inject_memory(event(), request)
-    assert json.loads(request.system_prompt[0].content.rsplit("\n", 1)[1]) == result["core"] + result["recalled"]
+    assert request.system_prompt[0].content.endswith(
+        plugin.render_records(result["core"] + result["recalled"], plugin.ctx.get_timezone())
+    )
     legacy_only = await plugin.api_recall(payload | {"persona_id": "new-persona"})
     assert [row["text"] for row in legacy_only["core"]] == ["legacy coffee"]
     assert legacy_only["recalled"] == []
@@ -672,12 +695,12 @@ async def test_recall_preview_group_speaker_visibility(tmp_path, monkeypatch):
     plugin = await plugin_at(tmp_path, monkeypatch)
     turn = event(session="gm", target="group-one", users=("alice", "bob"))
     for user, source in (("alice", "msg-0"), ("bob", "msg-1")):
-        result = json.loads(await plugin.memory_add(
+        result = memory_result(await plugin.memory_add(
             turn, text=f"{user} coffee", user_id=user, source_message_id=source,
         ))
         assert result["ok"]
     for owner in ("group", "self"):
-        result = json.loads(await plugin.memory_add(
+        result = memory_result(await plugin.memory_add(
             turn, text=f"{owner} coffee", owner_type=owner, source_message_id="msg-0",
         ))
         assert result["ok"]
@@ -708,7 +731,7 @@ async def test_recall_preview_query_and_budget_match_runtime(tmp_path, monkeypat
     assert result["query"] == " ".join(payload["messages"])
     assert len(result["core"]) == len(result["recalled"]) == 1
     assert all(row["truncated"] for row in result["core"] + result["recalled"])
-    assert result["prompt_chars"] == len(plugin.encode(result["core"] + result["recalled"])) <= 1500
+    assert result["prompt_chars"] == len(plugin.render_records(result["core"] + result["recalled"], plugin.ctx.get_timezone())) <= 1500
     assert result["limits"] == {"core": 1, "recall": 1, "prompt_chars": 1500}
     empty = await plugin.api_recall(payload | {"messages": []})
     assert empty["query"] == "" and empty["recalled"] == [] and len(empty["core"]) == 1
@@ -854,7 +877,7 @@ async def test_operator_recall_needs_no_account_or_message_history(tmp_path, mon
     await plugin.memory_add(event(), text="other persona coffee")
     plugin.ctx.persona_mgr.get_persona.return_value = SimpleNamespace(id="persona-one")
     await plugin.memory_add(event(), text="expired coffee", expires_at=1)
-    done = json.loads(await plugin.memory_add(event(), text="completed coffee"))
+    done = memory_result(await plugin.memory_add(event(), text="completed coffee"))
     await plugin.memory_update(event(), done["memory_id"], done["revision"],
                                text="completed coffee", status="completed")
     before = plugin.store.path.read_bytes()
@@ -978,7 +1001,7 @@ async def test_owner_serialization_and_speaker_lookup_use_adapter_keys(tmp_path,
     from core.plugin.builtin_plugins.memory import webui
 
     plugin = await plugin_at(tmp_path, monkeypatch)
-    added = json.loads(await plugin.memory_add(event(), text="coffee"))
+    added = memory_result(await plugin.memory_add(event(), text="coffee"))
     payload = webui.serialize(await plugin.store.admin_get(added["memory_id"]))
     assert "namespace" not in payload
     assert json.loads(payload["owner_id"]) == ["test", "alice"]
@@ -1212,8 +1235,8 @@ async def test_core_matches_do_not_consume_ordinary_recall_candidates(tmp_path, 
         assert {row["id"] for row in result["recalled"]} == ordinary_ids
         assert len({row["id"] for row in result["core"] + result["recalled"]}) == 12
         assert result["prompt_chars"] <= 6000
-        tool = json.loads(await plugin.memory_search(event(), query="coffee", limit=6))
-        assert {row["id"] for row in tool["records"]} == core_ids
+        tool = memory_result(await plugin.memory_search(event(), query="coffee", limit=6))
+        assert set(tool["ids"]) == core_ids
     finally:
         await plugin.terminate()
 
@@ -1252,9 +1275,9 @@ async def test_recall_shares_unused_character_budget_in_both_directions(
         saved = next(row for row in records if row["id"] == large["id"])
         assert saved["text"] == text and not saved.get("truncated")
         assert len(records) == 1 + with_other
-        assert 3000 < result["prompt_chars"] == len(plugin.encode(records)) <= 6000
+        assert 3000 < result["prompt_chars"] == len(plugin.render_records(records, plugin.ctx.get_timezone())) <= 6000
         request = LLMRequest(system_prompt=[Prompt("", name="memory")])
         await plugin.inject_memory(event(), request)
-        assert json.loads(request.system_prompt[0].content.rsplit("\n", 1)[1]) == records
+        assert request.system_prompt[0].content.endswith(plugin.render_records(records, plugin.ctx.get_timezone()))
     finally:
         await plugin.terminate()

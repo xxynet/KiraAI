@@ -1,10 +1,30 @@
-import json
 from typing import ClassVar
 
 from core.agent.subagent_manager import SUBAGENT_TOOL_NAMES
 from core.agent.tool import ToolSet
 from core.config.tool_execution import build_tool_execution_config
 from core.utils.tool_utils import BaseTool
+
+
+def format_agent(agent: dict) -> str:
+    """Render agent identity, progress and retained turn output."""
+    title = str(agent["title"]).replace("\n", "\n  ")
+    lines = [
+        f"id: {agent['id']}",
+        f"sid: {agent['sid']}",
+        f"kind: {agent['kind']}",
+        f"parent_id: {agent['parent_id']}",
+        f"title: {title}",
+        f"permission_sid: {agent['permission_sid']}",
+        f"status: {agent['status']}",
+        f"step_index: {agent['step_index']}",
+        f"turn: {agent['turn']}",
+    ]
+    if agent["result"]:
+        lines.append("result: " + agent["result"].replace("\n", "\n  "))
+    if agent["error"]:
+        lines.append("error: " + agent["error"].replace("\n", "\n  "))
+    return "\n".join(lines)
 
 
 class SubAgentTool(BaseTool):
@@ -104,7 +124,7 @@ class SpawnAgentTool(SubAgentTool):
             source_event=event,
             session_retention_hours=session_retention_hours,
         )
-        return json.dumps(result, ensure_ascii=False)
+        return format_agent(result)
 
 
 class ListAgentsTool(SubAgentTool):
@@ -118,8 +138,8 @@ class ListAgentsTool(SubAgentTool):
 
     async def execute(self, event, **args):
         source = await self._get_source()
-        result = {"agents": await self.ctx.subagent_mgr.list_agents(caller_id=source.internal_id)}
-        return json.dumps(result, ensure_ascii=False)
+        agents = await self.ctx.subagent_mgr.list_agents(caller_id=source.internal_id)
+        return "\n\n".join(format_agent(agent) for agent in agents) or "No child agents."
 
 
 class SendMessageTool(SubAgentTool):
@@ -141,7 +161,7 @@ class SendMessageTool(SubAgentTool):
             args["message"],
             steer=True,
         )
-        return json.dumps(result, ensure_ascii=False)
+        return format_agent(result)
 
 
 class FollowupTaskTool(SubAgentTool):
@@ -163,7 +183,7 @@ class FollowupTaskTool(SubAgentTool):
             args["message"],
             steer=False,
         )
-        return json.dumps(result, ensure_ascii=False)
+        return format_agent(result)
 
 
 class InterruptAgentTool(SubAgentTool):
@@ -183,4 +203,4 @@ class InterruptAgentTool(SubAgentTool):
             args["agent_id"],
             caller_id=source.internal_id,
         )
-        return json.dumps(result, ensure_ascii=False)
+        return format_agent(result)

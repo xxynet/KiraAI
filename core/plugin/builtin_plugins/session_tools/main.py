@@ -9,6 +9,7 @@ from core.chat.message_elements import Text
 from core.chat.message_utils import KiraMessageBatchEvent
 from core.plugin import BasePlugin, Priority, on, register
 from core.provider import LLMRequest
+from core.utils.time_utils import format_timestamp
 
 from .tools import GetMessageHistoryTool, SessionViewTool
 
@@ -132,27 +133,31 @@ class SessionPlugin(BasePlugin):
     async def session_view(self, event: KiraMessageBatchEvent, target: str | None = None):
         """Return session metadata and counts without loading conversation bodies."""
         if not self._tool_enabled("session_view"):
-            return json.dumps({"error": "session_view is disabled"})
+            return "Error: session_view is disabled"
         try:
             target = self._read_target(event, target)
             session = await self.ctx.session_mgr.get_session(target, include_content=False)
             history_sessions = await self.ctx.message_history.list_sessions(session_id=target)
             history_count = history_sessions[0].message_count if history_sessions else 0
             if session is None and not history_count:
-                return json.dumps({"error": "Session not found"})
+                return "Error: Session not found"
             counts = await self.ctx.session_mgr.get_session_message_counts(target) if session is not None else {}
-            return json.dumps({
-                "session_id": target,
-                "title": session.session_title if session else None,
-                "description": session.session_description if session else None,
-                "created_at": session.created_at if session else None,
-                "updated_at": session.updated_at if session else None,
-                "context_chunk_count": counts.get(target, 0),
-                "history_count": history_count,
-                "timestamp_unit": "unix_seconds",
-            }, ensure_ascii=False)
+            timezone = self.ctx.get_timezone()
+            title = str(session.session_title if session else None).replace("\n", "\n  ")
+            description = str(session.session_description if session else None).replace("\n", "\n  ")
+            created_at = session.created_at if session else None
+            updated_at = session.updated_at if session else None
+            return (
+                f"session_id: {target}\n"
+                f"title: {title}\n"
+                f"description: {description}\n"
+                f"created_at: {format_timestamp(created_at, timezone) if created_at is not None else None}\n"
+                f"updated_at: {format_timestamp(updated_at, timezone) if updated_at is not None else None}\n"
+                f"context_chunk_count: {counts.get(target, 0)}\n"
+                f"history_count: {history_count}"
+            )
         except (TypeError, ValueError) as exc:
-            return json.dumps({"error": str(exc)}, ensure_ascii=False)
+            return f"Error: {exc}"
 
     @staticmethod
     def _history_chain_text(chain, *, depth: int = 0) -> str:
@@ -227,7 +232,7 @@ class SessionPlugin(BasePlugin):
     ):
         """Retrieve an authorized page of retained messages with optional text search."""
         if not self._tool_enabled("get_message_history"):
-            return json.dumps({"error": "get_message_history is disabled"})
+            return "Error: get_message_history is disabled"
         try:
             target = self._read_target(event, target)
             if cursor is not None and (not isinstance(cursor, str) or not cursor):
@@ -236,13 +241,11 @@ class SessionPlugin(BasePlugin):
                 session_id=target, keyword=keyword, limit=limit, cursor=cursor, direction=direction,
             )
             timezone = self.ctx.get_timezone()
-            return json.dumps({
-                "session_id": target,
-                "messages": [self._history_message_line(message, timezone) for message in page.messages],
-                "next_cursor": page.next_cursor,
-            }, ensure_ascii=False)
+            header = f"session_id: {target}\nnext_cursor: {page.next_cursor}"
+            messages = "\n".join(self._history_message_line(message, timezone) for message in page.messages)
+            return f"{header}\n\n{messages or 'No matching messages.'}"
         except (TypeError, ValueError) as exc:
-            return json.dumps({"error": str(exc)}, ensure_ascii=False)
+            return f"Error: {exc}"
 
     @register.tool(
         name="session_send",
