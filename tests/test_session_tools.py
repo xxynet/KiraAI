@@ -14,6 +14,21 @@ from tests.test_message_history import SID, history, incoming
 OTHER = "custom-instance:gm:channel:123"
 
 
+def session_result(output):
+    if output.startswith("Error: "):
+        return {"error": output.removeprefix("Error: ")}
+    header, separator, messages = output.partition("\n\n")
+    result = {}
+    for line in header.split("\n"):
+        key, _, value = line.partition(": ")
+        if key in {"context_chunk_count", "history_count"}:
+            value = int(value)
+        result[key] = None if value == "None" else value
+    if separator:
+        result["messages"] = [] if messages == "No matching messages." else messages.split("\n")
+    return result
+
+
 @pytest.fixture
 def session_plugin(history):
     capability = SimpleNamespace(is_allowed=Mock(return_value=True))
@@ -50,14 +65,15 @@ async def test_session_view_metadata_and_counts_without_exposing_memory(session_
     get_session = AsyncMock(wraps=history.session_manager.get_session)
     monkeypatch.setattr(history.session_manager, "get_session", get_session)
 
-    result = json.loads(await session_plugin.session_view(SimpleNamespace(sid=SID)))
+    result = session_result(await session_plugin.session_view(SimpleNamespace(sid=SID)))
 
     assert result["title"] == "会话标题" and result["description"] == "会话描述"
     assert result["history_count"] == 2 and result["context_chunk_count"] == 2
-    assert result["created_at"] and result["updated_at"] >= result["created_at"]
+    assert result["created_at"].endswith("+08:00")
+    assert result["updated_at"] >= result["created_at"]
     assert set(result) == {
         "session_id", "title", "description", "created_at", "updated_at",
-        "context_chunk_count", "history_count", "timestamp_unit",
+        "context_chunk_count", "history_count",
     }
     assert "private memory" not in json.dumps(result) and "private_extension" not in result
     get_session.assert_awaited_once_with(SID, include_content=False)
@@ -69,7 +85,7 @@ async def test_history_only_session_is_queryable_but_excluded_from_prompt(sessio
     """Explicit archive reads remain possible without adding archive-only sessions to model prompts."""
     archived_sid = "archive-only:dm:user"
     await archive_text(history, "retained message", "one", sid=archived_sid)
-    result = json.loads(await session_plugin.session_view(SimpleNamespace(sid=archived_sid)))
+    result = session_result(await session_plugin.session_view(SimpleNamespace(sid=archived_sid)))
     assert result["history_count"] == 1 and result["context_chunk_count"] == 0
     assert result["created_at"] is None and result["updated_at"] is None
     prompt = await session_plugin.get_session_list_prompt()
@@ -107,8 +123,8 @@ async def test_nonexistent_session_has_empty_history_and_no_metadata(session_plu
     """Read-only tools must not create sessions when no matching history or metadata exists."""
     sid = "nonexistent:dm:user"
     event = SimpleNamespace(sid=sid)
-    assert json.loads(await session_plugin.session_view(event)) == {"error": "Session not found"}
-    assert json.loads(await session_plugin.get_message_history(event)) == {
+    assert session_result(await session_plugin.session_view(event)) == {"error": "Session not found"}
+    assert session_result(await session_plugin.get_message_history(event)) == {
         "session_id": sid, "messages": [], "next_cursor": None,
     }
     assert await history.session_manager.get_session(sid) is None
@@ -130,7 +146,7 @@ async def test_keyword_search_precedes_pagination_and_scopes_direction(session_p
     event = SimpleNamespace(sid=SID)
     found, cursor = [], None
     for _ in range(4):
-        page = json.loads(await session_plugin.get_message_history(
+        page = session_result(await session_plugin.get_message_history(
             event, keyword="中文 match_100%", direction="incoming", limit=1, cursor=cursor,
         ))
         found.extend(row.split("[message_id: ", 1)[1].split("]", 1)[0] for row in page["messages"])
@@ -183,7 +199,7 @@ async def test_history_tool_omits_media_paths_without_changing_archive(session_p
         await session.execute(update(MessageRecord).where(MessageRecord.id == record).values(chain=chain))
     result = await session_plugin.get_message_history(SimpleNamespace(sid=SID), keyword="月亮")
     assert "private-path" not in result
-    assert "[Image 月亮]" in json.loads(result)["messages"][0]
+    assert "[Image 月亮]" in session_result(result)["messages"][0]
     assert (await history.get_message(record)).to_dict()["chain"] == chain
 
 
@@ -209,7 +225,7 @@ async def test_search_cursor_must_match_session_keyword_and_direction(history):
 ])
 async def test_history_tool_validates_arguments(session_plugin, options):
     """Invalid pagination and filter values produce readable tool errors."""
-    result = json.loads(await session_plugin.get_message_history(SimpleNamespace(sid=SID), **options))
+    result = session_result(await session_plugin.get_message_history(SimpleNamespace(sid=SID), **options))
     assert "error" in result
 
 
@@ -224,7 +240,7 @@ async def test_invalid_or_unauthorized_targets_never_query(session_plugin, tool_
     monkeypatch.setattr(session_plugin.ctx.session_mgr, "get_session", get_session)
     monkeypatch.setattr(session_plugin.ctx.message_history, "get_messages", get_messages)
     monkeypatch.setattr(session_plugin.ctx.message_history, "list_sessions", history_sessions)
-    result = json.loads(await getattr(session_plugin, tool_name)(SimpleNamespace(sid=SID), target=target))
+    result = session_result(await getattr(session_plugin, tool_name)(SimpleNamespace(sid=SID), target=target))
     assert "error" in result
     get_session.assert_not_awaited()
     get_messages.assert_not_awaited()
@@ -242,8 +258,8 @@ async def test_cross_session_read_uses_calling_session_permission(session_plugin
     session_plugin.plugin_cfg = {"cross_session_read": {"permission_mode": mode, "session_list": sessions}}
     await archive_text(history, "target history", "target", sid=OTHER)
     event = SimpleNamespace(sid=SID)
-    result = json.loads(await session_plugin.get_message_history(event, target=OTHER))
-    metadata = json.loads(await session_plugin.session_view(event, target=OTHER))
+    result = session_result(await session_plugin.get_message_history(event, target=OTHER))
+    metadata = session_result(await session_plugin.session_view(event, target=OTHER))
     assert ("error" not in result) is allowed
     assert ("error" not in metadata) is allowed
     if allowed:
@@ -270,7 +286,7 @@ async def test_cross_session_read_also_respects_adapter_policy(session_plugin, f
     else:
         lookup.return_value.get_capability.return_value.is_allowed.return_value = False
     for method in (session_plugin.get_message_history, session_plugin.session_view):
-        assert "error" in json.loads(await method(SimpleNamespace(sid=SID), target=OTHER))
+        assert "error" in session_result(await method(SimpleNamespace(sid=SID), target=OTHER))
 
 
 @pytest.mark.anyio
@@ -356,7 +372,7 @@ async def test_session_view_counts_only_target_context_without_loading_bodies(se
     engine = history.db.db.engine.sync_engine
     event.listen(engine, "after_cursor_execute", capture)
     try:
-        result = json.loads(await session_plugin.session_view(SimpleNamespace(sid=SID)))
+        result = session_result(await session_plugin.session_view(SimpleNamespace(sid=SID)))
     finally:
         event.remove(engine, "after_cursor_execute", capture)
 
@@ -415,11 +431,11 @@ async def test_malformed_archive_is_readable_and_does_not_block_later_matches(se
     page = await history.get_messages(session_id=SID, keyword="needle")
     expected = {good_record, bad_record} if matched else {good_record}
     assert {record.id for record in page.messages} == expected
-    result = json.loads(await session_plugin.get_message_history(SimpleNamespace(sid=SID), keyword="needle"))
+    result = session_result(await session_plugin.get_message_history(SimpleNamespace(sid=SID), keyword="needle"))
     expected_platform_ids = {"valid", "malformed"} if matched else {"valid"}
     assert {line.split("[message_id: ", 1)[1].split("]", 1)[0] for line in result["messages"]} == expected_platform_ids
 
-    unfiltered = json.loads(await session_plugin.get_message_history(SimpleNamespace(sid=SID)))
+    unfiltered = session_result(await session_plugin.get_message_history(SimpleNamespace(sid=SID)))
     assert {line.split("[message_id: ", 1)[1].split("]", 1)[0] for line in unfiltered["messages"]} == {"malformed", "valid"}
     assert (await history.get_message(bad_record)).to_dict()["chain"] == chain
     assert not (await history.get_messages(session_id=SID, keyword="not found")).messages
@@ -609,7 +625,7 @@ async def test_adjacent_text_segments_have_equivalent_keyword_search_and_paginat
     found = []
     cursor = None
     for _ in range(3):
-        page = json.loads(await session_plugin.get_message_history(
+        page = session_result(await session_plugin.get_message_history(
             SimpleNamespace(sid=SID), keyword=keyword, limit=1, cursor=cursor,
         ))
         for message in page["messages"]:
@@ -655,7 +671,7 @@ async def test_history_lines_use_configured_time_sender_content_and_platform_id(
     message.chain[0].text = "午餐\n吃面"
     identity = await history.record_incoming(message, SID, "test")
 
-    result = json.loads(await session_plugin.get_message_history(SimpleNamespace(sid=SID), keyword="午餐"))
+    result = session_result(await session_plugin.get_message_history(SimpleNamespace(sid=SID), keyword="午餐"))
     assert result == {
         "session_id": SID,
         "messages": ["[Jan 01 1970 08:00 Thu] [message_id: platform-42] [user_nickname: 小林, user_id: 123456] | 午餐\\n吃面"],
@@ -664,7 +680,7 @@ async def test_history_lines_use_configured_time_sender_content_and_platform_id(
     assert (await history.get_message(identity)).chain[0].text == "午餐\n吃面"
 
     session_plugin.ctx.get_timezone = lambda: timezone.utc
-    result = json.loads(await session_plugin.get_message_history(SimpleNamespace(sid=SID)))
+    result = session_result(await session_plugin.get_message_history(SimpleNamespace(sid=SID)))
     assert result["messages"][0].startswith("[Jan 01 1970 00:00 Thu]")
 
 
@@ -679,7 +695,7 @@ async def test_outgoing_history_keeps_delivery_state_and_missing_platform_id_vis
         SID, MessageChain([Text("你好")]), platform="test", self_id="self-123",
     )
     await history.finish_outgoing(identity, status=status)
-    result = json.loads(await session_plugin.get_message_history(SimpleNamespace(sid=SID), direction="outgoing"))
+    result = session_result(await session_plugin.get_message_history(SimpleNamespace(sid=SID), direction="outgoing"))
     line = result["messages"][0]
     marker = "" if status == "sent" else f"[发送状态:{status}] "
     assert line.endswith(f"[message_id: 无] [user_nickname: 你, user_id: self-123] | {marker}你好")
@@ -702,7 +718,7 @@ async def test_history_lines_render_media_quotes_mentions_and_cards(session_plug
     ]
     async with history.db.db.transaction() as session:
         await session.execute(update(MessageRecord).where(MessageRecord.id == identity).values(chain=chain))
-    result = json.loads(await session_plugin.get_message_history(SimpleNamespace(sid=SID), keyword="月亮"))
+    result = session_result(await session_plugin.get_message_history(SimpleNamespace(sid=SID), keyword="月亮"))
     line = result["messages"][0]
     for visible in ("[At 456(nickname: 小明)]", "[Reply ID: original-7 content: 周五见]", "[Image 月亮]", "[Record 下午开会]", '[Json card {"地点": "会议室"}]'):
         assert visible in line
@@ -732,7 +748,7 @@ async def test_history_headers_match_kira_ai_message_format(session_plugin, hist
         message.group = Group("channel:123", "未知")
     await history.record_incoming(message, sid, "test")
 
-    result = json.loads(await session_plugin.get_message_history(SimpleNamespace(sid=sid)))
+    result = session_result(await session_plugin.get_message_history(SimpleNamespace(sid=sid)))
     assert result["messages"] == [live_plugin._format_user_message(message)]
     session_plugin.ctx.adapter_mgr.get_adapter.assert_not_called()
 
@@ -819,7 +835,7 @@ async def test_disabled_read_tool_rejects_calls_before_querying(session_plugin, 
     )
 
     tool_type = SessionViewTool if tool_name == "session_view" else GetMessageHistoryTool
-    result = json.loads(await tool_type(session_plugin).execute(SimpleNamespace(sid=SID)))
+    result = session_result(await tool_type(session_plugin).execute(SimpleNamespace(sid=SID)))
     assert result == {"error": f"{tool_name} is disabled"}
     get_session.assert_not_awaited()
     get_messages.assert_not_awaited()
@@ -873,7 +889,7 @@ async def test_cross_session_read_requires_target_permission(
     monkeypatch.setattr(session_plugin.ctx.message_history, "get_messages", get_messages)
     monkeypatch.setattr(session_plugin.ctx.message_history, "list_sessions", list_sessions)
 
-    result = json.loads(await getattr(session_plugin, tool_name)(SimpleNamespace(sid=SID), target=OTHER))
+    result = session_result(await getattr(session_plugin, tool_name)(SimpleNamespace(sid=SID), target=OTHER))
     assert ("error" not in result) is allowed
     if allowed:
         assert result["session_id"] == OTHER
@@ -895,7 +911,7 @@ async def test_cross_session_target_restrictions_do_not_block_current_session(se
     session_plugin.plugin_cfg = {"cross_session_read": {
         "session_list": [], "target_permission_mode": "deny_list", "target_session_list": [SID],
     }}
-    result = json.loads(await getattr(session_plugin, tool_name)(SimpleNamespace(sid=SID), target=target))
+    result = session_result(await getattr(session_plugin, tool_name)(SimpleNamespace(sid=SID), target=target))
     assert "error" not in result
     assert result["session_id"] == SID
     session_plugin.ctx.adapter_mgr.get_adapter.assert_not_called()
@@ -914,7 +930,7 @@ async def test_target_permission_cannot_override_denied_caller(session_plugin, t
     monkeypatch.setattr(session_plugin.ctx.session_mgr, "get_session", get_session)
     monkeypatch.setattr(session_plugin.ctx.message_history, "get_messages", get_messages)
     monkeypatch.setattr(session_plugin.ctx.message_history, "list_sessions", list_sessions)
-    result = json.loads(await getattr(session_plugin, tool_name)(SimpleNamespace(sid=SID), target=OTHER))
+    result = session_result(await getattr(session_plugin, tool_name)(SimpleNamespace(sid=SID), target=OTHER))
     assert "calling session" in result["error"]
     get_session.assert_not_awaited()
     get_messages.assert_not_awaited()

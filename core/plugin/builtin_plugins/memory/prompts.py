@@ -24,6 +24,9 @@ Use status and expires_at (Unix seconds) for changing plans and temporary states
 never schedules a reminder. Prefer updating an existing fact; retain meaningful dated experiences.
 """,
         "ok": "Memory operation completed.",
+        "error": "Memory operation failed.",
+        "no_results": "No matching memories.",
+        "found": "Showing {count} matching memories.",
         "duplicate": "An identical active memory already exists; use its ID to update it.",
         "context_unavailable": "Memory context is unavailable for this event.",
         "invalid_owner": "Choose user, group or self; user_id must identify a current speaker and group requires a group session.",
@@ -59,6 +62,9 @@ core=true 仅用于少量稳定且必要的信息，它是加载偏好，不是�
 优先更新已有事实，同时保留有意义且标明日期的经历。
 """,
         "ok": "记忆操作已完成。",
+        "error": "记忆操作失败。",
+        "no_results": "未找到匹配的记忆。",
+        "found": "显示 {count} 条匹配的记忆。",
         "duplicate": "已存在相同的有效记忆，请使用其 ID 更新。",
         "context_unavailable": "当前事件缺少可用的记忆上下文。",
         "invalid_owner": "请选择 user、group 或 self；user_id 必须是当前发言者，group 仅适用于群聊。",

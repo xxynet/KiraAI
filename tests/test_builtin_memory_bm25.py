@@ -1,13 +1,12 @@
 """Native FTS5 BM25 ranking, exact N-gram matching, and transactional index maintenance."""
 
-import json
 import math
 from collections import Counter
 
 import pytest
 
 from core.plugin.builtin_plugins.memory.search import FTS_COLUMNS, match_query
-from tests.test_builtin_memory import event, plugin_at, scope, store_at
+from tests.test_builtin_memory import event, memory_result, plugin_at, scope, store_at
 
 
 @pytest.fixture
@@ -124,8 +123,8 @@ async def test_bm25_order_is_shared_by_tools_preview_admin_and_pagination(tmp_pa
     for text in ("猫", "猫 猫", "猫 " + "狗 " * 8):
         await plugin.store.add(scope(), text=text)
     expected = [row["id"] for row in await plugin.search(scope(), "猫")]
-    tool = json.loads(await plugin.memory_search(event(), query="猫"))
-    assert [row["id"] for row in tool["records"]] == expected
+    tool = memory_result(await plugin.memory_search(event(), query="猫"))
+    assert tool["ids"] == expected
     preview = await plugin.api_recall({"messages": ["猫"]})
     assert [row["id"] for row in preview["recalled"]] == expected
     assert preview["retrieval"]["mode"] == "keyword"

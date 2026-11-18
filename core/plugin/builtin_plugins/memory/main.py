@@ -8,6 +8,7 @@ from functools import partial, wraps
 from core.plugin import BasePlugin, PageMenu, PluginPage, logger, on, register
 from core.provider import LLMRequest
 from core.utils.path_utils import get_data_path
+from core.utils.time_utils import format_timestamp
 
 from . import webui
 from .prompts import MESSAGES
@@ -47,6 +48,10 @@ def schema(properties, required=()):
     return {"type": "object", "properties": properties, "required": list(required), "additionalProperties": False}
 
 
+def escape_prompt_text(value):
+    return str(value).replace("<", "\\u003c").replace(">", "\\u003e").replace("\r", "\\r")
+
+
 class MemoryPlugin(BasePlugin):
     def __init__(self, ctx, cfg: dict):
         super().__init__(ctx, cfg)
@@ -59,8 +64,14 @@ class MemoryPlugin(BasePlugin):
     def messages(self):
         return MESSAGES["zh" if (self.ctx.get_lang() or "en").startswith("zh") else "en"]
 
-    def result(self, success, code="ok", **values):
-        return json.dumps({"ok": success, "message": self.messages[code], **values}, ensure_ascii=False)
+    def result(self, success, code="ok", *, memory_id=None, revision=None):
+        message = self.messages[code]
+        lines = [message if success else f"{self.messages['error']} {message}"]
+        if memory_id is not None:
+            lines.append(f"memory_id: {memory_id}")
+        if revision is not None:
+            lines.append(f"revision: {revision}")
+        return "\n".join(lines)
 
     def setting(self, key, default, minimum, maximum):
         value = self.plugin_cfg.get(key, default)
@@ -189,8 +200,14 @@ class MemoryPlugin(BasePlugin):
         else:
             rows = await self.search(scope, query, limit=limit, kind=kind, owner_type=owner_type,
                                      include_inactive=include_inactive, offset=offset)
-        records = self.pack(rows, self.setting("search_char_budget", 12000, 5000, 30000))
-        return self.result(True, records=records, next_offset=offset + len(records) if records and memory_id is None else None)
+        timezone = self.ctx.get_timezone()
+        records = self.pack(rows, self.setting("search_char_budget", 12000, 5000, 30000), timezone)
+        if not records:
+            return self.messages["no_results"]
+        header = self.messages["found"].format(count=len(records))
+        if memory_id is None:
+            header += f"\nnext_offset: {offset + len(records)}"
+        return f"{header}\n\n{self.render_records(records, timezone)}"
 
     @register.tool(
         name="memory_update",
@@ -256,44 +273,88 @@ class MemoryPlugin(BasePlugin):
         return self.result(True, memory_id=memory_id)
 
     @staticmethod
-    def encode(value):
-        return json.dumps(value, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e")
+    def render_record(record, timezone):
+        owner = record["owner_id"]
+        if record["owner_type"] in {"user", "group"}:
+            adapter, owner = json.loads(owner)
+        else:
+            adapter = None
+        lines = [
+            f"memory_id: {record['id']}",
+            f"revision: {record['revision']}",
+            f"kind: {record['kind']}",
+            f"owner_type: {record['owner_type']}",
+            f"owner_id: {owner}",
+        ]
+        if adapter is not None:
+            lines.append(f"adapter: {adapter}")
+        lines.extend((
+            f"status: {record['status']}",
+            f"core: {'yes' if record['core'] else 'no'}",
+        ))
+        if record["source_message_id"] is not None:
+            lines.append(f"source_message_id: {record['source_message_id']}")
+        lines.extend((
+            f"created_at: {format_timestamp(record['created_at'], timezone)}",
+            f"updated_at: {format_timestamp(record['updated_at'], timezone)}",
+        ))
+        if record["expires_at"] is not None:
+            lines.append(f"expires_at: {format_timestamp(record['expires_at'], timezone)}")
+        if record.get("truncated"):
+            lines.append("truncated: yes")
+        lines = [escape_prompt_text(line).replace("\n", "\\n") for line in lines]
+        lines.extend(f"> {line}" for line in escape_prompt_text(record["text"]).split("\n"))
+        return "\n".join(lines)
 
     @classmethod
-    def pack(cls, rows, budget):
+    def render_records(cls, records, timezone):
+        return "\n\n".join(cls.render_record(record, timezone) for record in records)
+
+    @classmethod
+    def pack(cls, rows, budget, timezone):
         records = []
-        used = 2
+        used = 0
         for row in rows:
             record = {key: row[key] for key in (
                 "id", "revision", "text", "kind", "owner_type", "owner_id", "status", "core",
                 "source_message_id", "created_at", "updated_at", "expires_at",
             )}
-            encoded = cls.encode(record)
-            if used + len(encoded) + 2 > budget:
+            length = len(cls.render_record(record, timezone))
+            separator = 2 if records else 0
+            if used + separator + length > budget:
                 # Only truncate a single oversized record, never a normal page boundary.
                 if records:
                     break
-                available = max(0, budget - len(encoded) + len(record["text"]) - 80)
-                record["text"] = record["text"][:available]
                 record["truncated"] = True
-                while len(cls.encode(record)) + 4 > budget and record["text"]:
-                    record["text"] = record["text"][:len(record["text"]) // 2]
-                if len(cls.encode(record)) + 4 > budget:
+                original = record["text"]
+                record["text"] = ""
+                length = len(cls.render_record(record, timezone))
+                if length > budget:
                     break
+                low, high = 0, min(len(original), budget - length)
+                while low < high:
+                    mid = (low + high + 1) // 2
+                    record["text"] = original[:mid]
+                    if len(cls.render_record(record, timezone)) <= budget:
+                        low = mid
+                    else:
+                        high = mid - 1
+                record["text"] = original[:low]
+                length = len(cls.render_record(record, timezone))
             records.append(record)
-            used += len(cls.encode(record)) + 2
+            used += separator + length
         return records
 
     @classmethod
-    def pack_recall(cls, core, recalled, budget):
-        """Reserve space for both groups and share unused space within one JSON budget."""
+    def pack_recall(cls, core, recalled, budget, timezone):
+        """Reserve space for both groups and share unused space within one prompt budget."""
         def remaining(records):
-            return budget - (len(cls.encode(records)) if records else 0)
+            return budget - (len(cls.render_records(records, timezone)) + 2 if records else 0)
 
-        core_records = cls.pack(core, budget // 2)
-        recalled_records = cls.pack(recalled, remaining(core_records))
-        core_records = cls.pack(core, remaining(recalled_records))
-        recalled_records = cls.pack(recalled, remaining(core_records))
+        core_records = cls.pack(core, budget // 2, timezone)
+        recalled_records = cls.pack(recalled, remaining(core_records), timezone)
+        core_records = cls.pack(core, remaining(recalled_records), timezone)
+        recalled_records = cls.pack(recalled, remaining(core_records), timezone)
         return core_records, recalled_records
 
     async def search(self, scope, query="", **options):
@@ -392,7 +453,8 @@ class MemoryPlugin(BasePlugin):
                     "fallback", "recall_timeout", started=checkpoint["rerank_started"],
                     candidates=checkpoint["rerank_candidates"],
                 ))
-        core_records, recalled_records = self.pack_recall(core, recalled, budget)
+        timezone = self.ctx.get_timezone()
+        core_records, recalled_records = self.pack_recall(core, recalled, budget, timezone)
         return {
             "query": query,
             "retrieval": {"mode": "hybrid" if self.vectors.enabled and self.vectors.ready else "keyword",
@@ -400,7 +462,7 @@ class MemoryPlugin(BasePlugin):
                           "timed_out": timed_out, "timeout_seconds": timeout},
             "core": core_records,
             "recalled": recalled_records,
-            "prompt_chars": len(self.encode(core_records + recalled_records)),
+            "prompt_chars": len(self.render_records(core_records + recalled_records, timezone)),
             "limits": {"core": core_limit, "recall": recall_limit, "prompt_chars": budget},
         }
 
@@ -414,15 +476,18 @@ class MemoryPlugin(BasePlugin):
                 for message in event.messages[-3:] if not getattr(message, "is_notice", False)
             ])
             records = recalled["core"] + recalled["recalled"]
-            context = {"persona_id": scope.persona_id, "session_id": scope.session_id,
-                       "sources": [{"source_message_id": mid, "user_id": uid} for mid, uid in scope.sources[-30:]]}
+            context = [
+                f"persona_id: {scope.persona_id}",
+                f"session_id: {scope.session_id}",
+                "Current message sources:",
+            ]
+            context.extend(f"- source_message_id: {mid}, user_id: {uid}" for mid, uid in scope.sources[-30:])
             for prompt in req.system_prompt:
                 if prompt.name == "memory":
-                    # JSON escaping keeps stored tag-like text inside data boundaries.
-                    payload = self.encode(records)
+                    payload = self.render_records(records, self.ctx.get_timezone())
                     prompt.content += self.messages["rules"] + "\n" + payload
                 elif prompt.name == "tools":
-                    prompt.content += self.messages["tools"] + "\n" + self.encode(context)
+                    prompt.content += self.messages["tools"] + "\n" + escape_prompt_text("\n".join(context))
         except MemoryInputError:
             return
         except Exception as exc:

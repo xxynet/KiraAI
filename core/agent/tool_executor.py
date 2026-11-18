@@ -96,13 +96,13 @@ class ToolExecutor:
                         coro = self.invoke_tool(tool_inst, call_ctx.arguments)
                         result = await (wait_for(coro, tool_call_timeout) if tool_call_timeout else coro)
                     except AsyncTimeoutError:
-                        result = {"error": f"Tool '{name}' timed out after {tool_call_timeout}s"}
+                        result = f"Error: Tool '{name}' timed out after {tool_call_timeout}s"
                         tool_logger.error(f"Tool '{name}' timed out after {tool_call_timeout}s")
                     except Exception as e:
-                        result = {"error": f"Failed to call tool '{name}': {e}"}
+                        result = f"Error: Failed to call tool '{name}': {e}"
                         tool_logger.error(f"Failed to call tool '{name}': {e}")
             else:
-                result = {"error": f"Tool {name} not implemented"}
+                result = f"Error: Tool {name} not implemented"
                 tool_logger.error(f"Tool {name} not implemented")
 
             if isinstance(result, ToolResult):
