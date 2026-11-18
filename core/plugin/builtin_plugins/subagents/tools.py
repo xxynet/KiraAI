@@ -46,8 +46,10 @@ class SubAgentTool(BaseTool):
             tool = self.parent_tools.get(name)
             if tool is None:
                 tool = pool.get(name)
-            if tool is None or name in SUBAGENT_TOOL_NAMES:
+            if name in SUBAGENT_TOOL_NAMES:
                 raise ValueError(f"Unknown or unavailable child tool: {name}")
+            if tool is None:
+                continue
             server = server_map.get(name)
             if server and not self.ctx.mcp_mgr.is_server_allowed(server, self.source.sid):
                 raise PermissionError(f"MCP server is not allowed for the calling session: {server}")
