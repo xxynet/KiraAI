@@ -192,9 +192,6 @@ class SubAgentManager:
         pool = custom_tools if config.tool_mode == "custom" else parent_tools
         tools = list(pool.tools)
         if config.tool_mode == "custom" and config.tool_names:
-            missing = set(config.tool_names) - {tool.name for tool in tools}
-            if missing:
-                raise ValueError(f"Unknown subagent tools: {', '.join(sorted(missing))}")
             tools = [tool for tool in tools if tool.name in config.tool_names]
         blocked = SUBAGENT_TOOL_NAMES | set(config.excluded_tools)
         return ToolSet([tool for tool in tools if tool.name not in blocked])

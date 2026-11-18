@@ -935,6 +935,81 @@ async def test_native_custom_tools_can_select_outside_the_parent_tool_list(agent
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("keep_available_tool", [False, True])
+@pytest.mark.parametrize("restored", [False, True])
+@pytest.mark.parametrize("control_name", ["followup_task", "send_message"])
+async def test_custom_preset_skips_unavailable_tools_and_restores_them_when_registered(
+    agents, tmp_path, keep_available_tool, restored, control_name,
+):
+    from core.agent.func_tool_manager import FuncToolManager
+    from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
+    from core.config import KiraConfig
+    from core.plugin.builtin_plugins.subagents.main import SubAgentsPlugin
+    from core.provider import LLMRequest
+
+    class AvailableTool(RecordingTool):
+        name = "available"
+
+    manager, sessions, parent, model = agents
+    registry = FuncToolManager()
+    selected_tool = RecordingTool()
+    registry.tool_set.add(selected_tool, AvailableTool())
+    manager.presets = SubAgentPresetStore(tmp_path / "presets.json")
+    names = ["record", "available"] if keep_available_tool else ["record"]
+    preset = await manager.presets.save(SubAgentPreset(
+        name="Custom",
+        instruction_source="custom",
+        tool_mode="custom",
+        tools=names,
+    ))
+    ctx = SimpleNamespace(
+        config=dict.__new__(KiraConfig),
+        session_mgr=sessions,
+        subagent_mgr=manager,
+        tool_mgr=registry,
+        mcp_mgr=None,
+    )
+    plugin = SubAgentsPlugin(ctx, {})
+    event = SimpleNamespace(session=parent)
+    expected = {"available"} if keep_available_tool else set()
+
+    registry.unregister_tool("record")
+    request = LLMRequest(tool_set=registry.build_tool_set())
+    await plugin.inject_tools(event, request)
+    info = agent_fields(await request.tool_set.get("spawn_agent").execute(
+        event, task="start with a disabled plugin", preset_name=preset["name"],
+    ))
+    assert (await manager.wait(info["id"], timeout=2))["status"] == "done"
+    sent = model.chat.await_args.args[0]
+    assert {tool["function"]["name"] for tool in sent.tools} == expected
+    assert sent.tool_choice == ("auto" if expected else "none")
+
+    for enabled in (True, False):
+        if enabled:
+            registry.tool_set.add(selected_tool)
+        else:
+            registry.unregister_tool("record")
+        if restored:
+            manager._agents.clear()
+        request = LLMRequest(tool_set=registry.build_tool_set())
+        await plugin.inject_tools(event, request)
+        await request.tool_set.get(control_name).execute(
+            event, agent_id=info["id"], message="continue after toggling the plugin",
+        )
+        assert (await manager.wait(info["id"], timeout=2))["status"] == "done"
+        sent = model.chat.await_args.args[0]
+        active = expected | {"record"} if enabled else expected
+        assert {tool["function"]["name"] for tool in sent.tools} == active
+        assert sent.tool_choice == ("auto" if active else "none")
+        child = await sessions.resolve_session(info["id"])
+        assert child.data["subagent"]["settings"]["tool_names"] == names
+        assert set(child.data["subagent"]["resolved_tools"]) == active
+
+    assert manager.presets.get(preset["id"]).tools == names
+    assert model.chat.await_count == 3
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("persona_id", [None, "reviewer"])
 async def test_preset_persona_follows_edits_for_existing_and_restored_agents(agents, tmp_path, persona_id):
 
