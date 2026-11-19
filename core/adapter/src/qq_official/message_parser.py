@@ -62,6 +62,16 @@ def _face_text(match: re.Match) -> str:
     return "[Emoji]"
 
 
+def _preview_prefix_length(raw: str, candidates: list[str]) -> int:
+    value = raw.lstrip(" \t")
+    for candidate in sorted(candidates, key=len, reverse=True):
+        if value.startswith(candidate):
+            tail = value[len(candidate):]
+            if not tail or tail[0] in " \t<":
+                return len(raw) - len(tail)
+    return 0
+
+
 def _card_content(content: str, ark: Any) -> tuple[str, Text | None]:
     if not isinstance(ark, dict):
         return content, None
@@ -73,9 +83,13 @@ def _card_content(content: str, ark: Any) -> tuple[str, Text | None]:
     if not details and content.strip():
         return content, None
     if details and (preview := CARD_PREVIEW.search(content)):
-        label, summary = preview[1].strip(), (preview[2] or "").strip()
-        if not label or label in names or summary in details:
-            content = content[:preview.start()] + content[preview.end():]
+        label_len = _preview_prefix_length(preview[1], names)
+        summary_len = _preview_prefix_length(preview[2] or "", details)
+        if not preview[1].strip() or label_len:
+            end = preview.start(1) + label_len
+            if summary_len and not preview[1][label_len:].strip():
+                end = preview.start(2) + summary_len
+            content = content[:preview.start()] + content[end:]
             if not content.strip():
                 content = ""
     summary = " - ".join(dict.fromkeys([*names[:1], *details]))
@@ -144,6 +158,13 @@ class QQOfficialMessageParser:
                 )
                 if child:
                     children.append(MessageChain(child))
+        if message_type == "103" and 0 < depth < MAX_ELEMENT_DEPTH and isinstance(nested, list) and nested:
+            quote = self.content_elements(
+                nested[0], is_group, target_id, depth=depth + 1, within_forward=within_forward,
+            )
+            if quote:
+                # A historical quote must not become a reply reference in the enclosing conversation.
+                elements.extend((Text("[Quoted message] "), *quote, Text("\n")))
         content = field(message, "content")
         content = content if isinstance(content, str) else ""
         if children and message_type == "102" and content.strip() in FORWARD_PREVIEWS:

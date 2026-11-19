@@ -247,6 +247,64 @@ def test_ark_without_details_keeps_the_official_preview():
     assert [element.text for element in chain] == [content]
 
 
+@pytest.mark.parametrize("mention", ["<@friend>", '<qqbot-at-user id="friend" />'])
+def test_ark_keeps_user_content_after_preview_on_same_line(mention):
+    chain = make_adapter().im._message_chain(
+        {
+            "message_type": 3,
+            "content": f"[卡片消息] 小程序\n摘要: 报名开放 请看 {mention}",
+            "ark_data": {"ark_name": "小程序", "prompt": "报名开放"},
+        },
+        False, "user-openid",
+    )
+    (tag,) = [element for element in chain if isinstance(element, At)]
+    assert tag.pid == "friend"
+    text = "".join(element.text for element in chain if isinstance(element, Text))
+    assert "请看" in text
+    assert "摘要:" not in text
+    assert text.count("报名开放") == 1
+
+
+def test_ark_keeps_unrecognized_summary_with_mentions():
+    chain = make_adapter().im._message_chain(
+        {
+            "message_type": 3,
+            "content": "[卡片消息] 小程序\n摘要: 自己写的 <@friend>",
+            "ark_data": {"ark_name": "小程序", "prompt": "报名开放"},
+        },
+        False, "user-openid",
+    )
+    (tag,) = [element for element in chain if isinstance(element, At)]
+    assert tag.pid == "friend"
+    assert any("自己写的" in element.text for element in chain if isinstance(element, Text))
+
+
+@pytest.mark.parametrize("container_type", [101, 102])
+def test_nested_reply_keeps_quoted_content_without_becoming_a_live_reply(container_type):
+    chain = make_adapter().im._message_chain(
+        {
+            "message_type": container_type,
+            "msg_elements": [{
+                "message_type": 103,
+                "content": "response",
+                "msg_elements": [{
+                    "id": "original-id",
+                    "content": "quoted",
+                    "attachments": [{"content_type": "image/png", "url": "https://example.com/quote.png"}],
+                }],
+            }],
+        },
+        True, "group-openid",
+    )
+    history = chain[0].chains[0] if container_type == 102 else chain
+    assert [element.text for element in history if isinstance(element, Text)] == [
+        "[Quoted message] ", "quoted", "\n", "response",
+    ]
+    (image,) = [element for element in history if isinstance(element, Image)]
+    assert image.file == "https://example.com/quote.png"
+    assert not any(isinstance(element, Reply) for element in history)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("group", [False, True])
 async def test_structured_history_keeps_nested_cards_and_attachments(group):
