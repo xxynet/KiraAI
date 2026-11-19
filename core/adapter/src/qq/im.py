@@ -522,6 +522,10 @@ class QQIMCapability(IMCapability["QQAdapter"]):
         group_info = await self.adapter.bot.get_group_info(msg.get("group_id"))
         group_name = (group_info.get("data") or {}).get("group_name") or str(group_id)
 
+        sender_info = msg.get("sender") or {}
+        raw_card = sender_info.get("card")
+        group_nickname = raw_card.strip() if isinstance(raw_card, str) and raw_card.strip() else None
+
         message_obj = KiraMessageEvent(
             adapter=self.adapter.info,
             supported_elements=list((await self.get_message_metadata()).supported_elements),
@@ -533,7 +537,8 @@ class QQIMCapability(IMCapability["QQAdapter"]):
                 ),
                 sender=User(
                     user_id=user_id,
-                    nickname=msg.get("sender").get("nickname")
+                    nickname=sender_info.get("nickname"),
+                    group_nickname=group_nickname
                 ),
                 is_mentioned=is_mentioned,
                 message_id=str(msg.get("message_id")),
