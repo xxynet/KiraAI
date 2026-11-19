@@ -51,9 +51,11 @@ def _has_sqlite_header(path: Path) -> bool:
 def _snapshot_sqlite(source_path: Path, snapshot_path: Path) -> None:
     """Write a standalone snapshot including committed transactions in the WAL."""
     deadline = monotonic() + 15
+    # Python 3.10 does not export these SQLite primary result codes.
+    retry_statuses = (getattr(sqlite3, "SQLITE_BUSY", 5), getattr(sqlite3, "SQLITE_LOCKED", 6))
 
     def check_lock(status: int, _remaining: int, _total: int) -> None:
-        if status in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED) and monotonic() >= deadline:
+        if status in retry_statuses and monotonic() >= deadline:
             raise sqlite3.OperationalError(f"Timed out reading SQLite database {source_path.name}")
 
     source_uri = source_path.as_uri() + "?mode=ro"
@@ -401,7 +403,9 @@ class SettingsRoutes(Routes):
                     for path in sqlite_paths for suffix in SQLITE_SIDECAR_SUFFIXES
                 }
                 files_to_backup = [
-                    entry for entry in files_to_backup if entry[0] not in sqlite_sidecars
+                    (path, weight, link)
+                    for path, weight, link in files_to_backup
+                    if link is not None or path not in sqlite_sidecars
                 ]
                 total = sum(weight for _, weight, _ in files_to_backup)
                 processed = 0

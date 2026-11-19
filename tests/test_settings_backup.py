@@ -113,8 +113,10 @@ def test_empty_backup_is_valid(backup_routes):
 
 
 @pytest.mark.parametrize("relative", ["data.db", "plugin_data/sample/store"])
-def test_backup_captures_committed_wal_data_without_sidecars(backup_routes, relative):
+def test_backup_captures_committed_wal_data_without_sidecars(backup_routes, relative, monkeypatch):
     routes, data_path = backup_routes
+    monkeypatch.delattr(sqlite3, "SQLITE_BUSY", raising=False)
+    monkeypatch.delattr(sqlite3, "SQLITE_LOCKED", raising=False)
     database = data_path / relative
     database.parent.mkdir(parents=True, exist_ok=True)
     unrelated = data_path / "archive-wal"
@@ -176,12 +178,16 @@ def test_backup_and_restore_preserve_in_tree_symlinks(backup_routes, monkeypatch
     runtime.mkdir(parents=True)
     library = runtime / "libsample.so.1"
     library.write_bytes(b"x" * 4096)
+    with closing(sqlite3.connect(runtime / "local.db")) as database:
+        assert database.execute("PRAGMA journal_mode=DELETE").fetchone() == ("delete",)
+        database.execute("CREATE TABLE content (value TEXT)")
     (runtime / "empty").mkdir()
     (runtime / "nested").mkdir()
     outside = tmp_path / "outside.txt"
     outside.write_bytes(b"outside the data directory")
     links = {
         "libsample.so": (library.name, False),
+        "local.db-shm": (library.name, False),
         "libabsolute.so": (str(library), False),
         "libabsolute-chain.so": (str(runtime / "libsample.so"), False),
         "libmissing.so": ("libmissing.so.1", False),
@@ -202,6 +208,7 @@ def test_backup_and_restore_preserve_in_tree_symlinks(backup_routes, monkeypatch
         assert archive.read("git-runtime/libsample.so.1") == library.read_bytes()
         for name, target in {
             "libsample.so": library.name,
+            "local.db-shm": library.name,
             "libabsolute.so": library.name,
             "libabsolute-chain.so": "libsample.so",
             "libmissing.so": "libmissing.so.1",
@@ -218,6 +225,8 @@ def test_backup_and_restore_preserve_in_tree_symlinks(backup_routes, monkeypatch
     runtime = restored_path / runtime.name
     assert (runtime / "libsample.so").is_symlink()
     assert (runtime / "libsample.so").read_bytes() == library.read_bytes()
+    assert (runtime / "local.db-shm").is_symlink()
+    assert (runtime / "local.db-shm").read_bytes() == library.read_bytes()
     assert (runtime / "libabsolute.so").resolve() == runtime / library.name
     assert (runtime / "nested" / "libsample.so").read_bytes() == library.read_bytes()
     assert (runtime / "libmissing.so").is_symlink()
