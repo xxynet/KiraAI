@@ -1,8 +1,10 @@
 import asyncio
 import os
+import sqlite3
 import stat
 import threading
 import zipfile
+from contextlib import closing
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -108,6 +110,60 @@ def test_empty_backup_is_valid(backup_routes):
     result = routes._create_backup_sync()
     with zipfile.ZipFile(data_path / "backups" / result.filename) as archive:
         assert archive.namelist() == []
+
+
+@pytest.mark.parametrize("relative", ["data.db", "plugin_data/sample/store"])
+def test_backup_captures_committed_wal_data_without_sidecars(backup_routes, relative):
+    routes, data_path = backup_routes
+    database = data_path / relative
+    database.parent.mkdir(parents=True, exist_ok=True)
+    unrelated = data_path / "archive-wal"
+    unrelated.write_bytes(b"ordinary file with a WAL-like name")
+    with closing(sqlite3.connect(database)) as writer:
+        assert writer.execute("PRAGMA journal_mode=WAL").fetchone() == ("wal",)
+        writer.execute("PRAGMA wal_autocheckpoint=0")
+        writer.execute("CREATE TABLE messages (text TEXT)")
+        writer.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        writer.execute("INSERT INTO messages VALUES ('committed')")
+        writer.commit()
+        writer.execute("INSERT INTO messages VALUES ('uncommitted')")
+        assert database.with_name(database.name + "-wal").stat().st_size > 0
+
+        result = routes._create_backup_sync()
+        with zipfile.ZipFile(data_path / "backups" / result.filename) as archive:
+            extracted = archive.extract(relative, data_path / "extracted")
+            with closing(sqlite3.connect(extracted)) as snapshot:
+                assert snapshot.execute("PRAGMA quick_check").fetchone() == ("ok",)
+                assert snapshot.execute("SELECT text FROM messages").fetchall() == [("committed",)]
+            assert set(archive.namelist()) == {relative, unrelated.name}
+            assert archive.read(unrelated.name) == unrelated.read_bytes()
+        assert writer.execute("SELECT text FROM messages").fetchall() == [
+            ("committed",),
+            ("uncommitted",),
+        ]
+
+
+def test_backup_failure_for_unreadable_sqlite_does_not_publish_an_archive(backup_routes):
+    routes, data_path = backup_routes
+    (data_path / "data.db").write_bytes(b"SQLite format 3\0" + bytes(400))
+
+    with pytest.raises(sqlite3.DatabaseError):
+        routes._create_backup_sync()
+
+    assert not list((data_path / "backups").iterdir())
+
+
+def test_backup_aborts_when_a_sqlite_lock_does_not_clear(backup_routes, monkeypatch):
+    routes, data_path = backup_routes
+    times = iter([0, 16])
+    monkeypatch.setattr(settings, "monotonic", lambda: next(times))
+    with closing(sqlite3.connect(data_path / "data.db")) as writer:
+        writer.execute("CREATE TABLE messages (text TEXT)")
+        writer.execute("BEGIN EXCLUSIVE")
+        with pytest.raises(sqlite3.OperationalError, match="Timed out reading SQLite database"):
+            routes._create_backup_sync()
+
+    assert not list((data_path / "backups").iterdir())
 
 
 def test_backup_and_restore_preserve_in_tree_symlinks(backup_routes, monkeypatch):

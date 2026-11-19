@@ -1,13 +1,16 @@
 import asyncio
 import os
 import shutil
+import sqlite3
 import stat
 import tempfile
 import uuid
 import zipfile
 from collections.abc import Callable
+from contextlib import ExitStack, closing
 from datetime import datetime
 from pathlib import Path, PureWindowsPath
+from time import monotonic
 
 from fastapi import Depends, File, HTTPException, Request, UploadFile
 
@@ -28,11 +31,41 @@ from webui.utils import _update_access_token
 # Backup directory lives inside the data directory
 BACKUP_DIR_NAME = "backups"
 MAX_LINK_TARGET_BYTES = 128 * 1024
+SQLITE_HEADER = b"SQLite format 3\0"
+SQLITE_SIDECAR_SUFFIXES = ("-wal", "-shm", "-journal")
 logger = get_logger("webui", "blue")
 
 
 def _get_backup_dir() -> Path:
     return get_data_path() / BACKUP_DIR_NAME
+
+
+def _has_sqlite_header(path: Path) -> bool:
+    try:
+        with path.open("rb") as source:
+            return source.read(len(SQLITE_HEADER)) == SQLITE_HEADER
+    except OSError:
+        return False
+
+
+def _snapshot_sqlite(source_path: Path, snapshot_path: Path) -> None:
+    """Write a standalone snapshot including committed transactions in the WAL."""
+    deadline = monotonic() + 15
+
+    def check_lock(status: int, _remaining: int, _total: int) -> None:
+        if status in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED) and monotonic() >= deadline:
+            raise sqlite3.OperationalError(f"Timed out reading SQLite database {source_path.name}")
+
+    source_uri = source_path.as_uri() + "?mode=ro"
+    with (
+        closing(sqlite3.connect(source_uri, uri=True, timeout=1)) as source,
+        closing(sqlite3.connect(snapshot_path)) as snapshot,
+    ):
+        source.backup(snapshot, progress=check_lock, sleep=0.1)
+        if snapshot.execute("PRAGMA journal_mode=DELETE").fetchone() != ("delete",):
+            raise sqlite3.DatabaseError(f"Could not finalize SQLite snapshot {source_path.name}")
+        if snapshot.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
+            raise sqlite3.DatabaseError(f"SQLite snapshot failed integrity check: {source_path.name}")
 
 
 def _is_relative_link_target(target: str, link: Path, root: Path) -> bool:
@@ -297,6 +330,8 @@ class SettingsRoutes(Routes):
         except Exception as exc:
             progress = self._backup_progress[task_id]
             error = "backup_exists" if isinstance(exc, HTTPException) and exc.status_code == 409 else None
+            if error is None:
+                logger.exception("Backup creation failed")
             self._backup_progress[task_id] = progress.model_copy(
                 update={"status": "failed", "stage": "failed", "error": error}
             )
@@ -357,6 +392,17 @@ class SettingsRoutes(Routes):
                         elif stat.S_ISREG(metadata.st_mode):
                             files_to_backup.append((full_path, max(metadata.st_size, 1), None))
 
+                sqlite_paths = {
+                    path for path, _, link in files_to_backup
+                    if link is None and _has_sqlite_header(path)
+                }
+                sqlite_sidecars = {
+                    path.with_name(path.name + suffix)
+                    for path in sqlite_paths for suffix in SQLITE_SIDECAR_SUFFIXES
+                }
+                files_to_backup = [
+                    entry for entry in files_to_backup if entry[0] not in sqlite_sidecars
+                ]
                 total = sum(weight for _, weight, _ in files_to_backup)
                 processed = 0
                 last_percent = -1
@@ -375,22 +421,31 @@ class SettingsRoutes(Routes):
                         processed += weight
                         report_compression(processed)
                         continue
-                    try:
-                        info = zipfile.ZipInfo.from_file(
-                            full_path, full_path.relative_to(data_path).as_posix()
-                        )
-                        src = full_path.open("rb")
-                    except OSError:
-                        processed += weight
-                        report_compression(processed)
-                        continue
-                    info.compress_type = zipfile.ZIP_DEFLATED
-                    with src, zf.open(info, "w", force_zip64=True) as dst:
-                        written = 0
-                        while chunk := src.read(1024 * 1024):
-                            dst.write(chunk)
-                            written += len(chunk)
-                            report_compression(processed + min(written, weight))
+                    with ExitStack() as files:
+                        input_path = full_path
+                        is_sqlite = full_path in sqlite_paths
+                        if is_sqlite:
+                            temp_dir = files.enter_context(tempfile.TemporaryDirectory(dir=backup_dir))
+                            input_path = Path(temp_dir) / "snapshot.sqlite"
+                            _snapshot_sqlite(full_path, input_path)
+                        try:
+                            info = zipfile.ZipInfo.from_file(
+                                full_path, full_path.relative_to(data_path).as_posix()
+                            )
+                            src = files.enter_context(input_path.open("rb"))
+                        except OSError:
+                            if is_sqlite:
+                                raise
+                            processed += weight
+                            report_compression(processed)
+                            continue
+                        info.compress_type = zipfile.ZIP_DEFLATED
+                        with zf.open(info, "w", force_zip64=True) as dst:
+                            written = 0
+                            while chunk := src.read(1024 * 1024):
+                                dst.write(chunk)
+                                written += len(chunk)
+                                report_compression(processed + min(written, weight))
                     processed += weight
                     report_compression(processed)
                 if report:
