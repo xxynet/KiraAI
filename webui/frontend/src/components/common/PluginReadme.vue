@@ -1,6 +1,14 @@
 <template>
   <section v-if="loading || readme">
-    <div v-if="loading" class="text-sm text-theme-subtle">{{ $t('plugin.status_loading') }}</div>
+    <div v-if="loading" role="status">
+      <span class="sr-only">{{ $t('plugin.status_loading') }}</span>
+      <div aria-hidden="true" class="space-y-3 motion-safe:animate-pulse">
+        <div class="mb-4 h-5 w-1/3 rounded bg-gray-200 dark:bg-gray-700" />
+        <div class="h-3 w-full rounded bg-gray-200 dark:bg-gray-700" />
+        <div class="h-3 w-11/12 rounded bg-gray-200 dark:bg-gray-700" />
+        <div class="h-3 w-2/3 rounded bg-gray-200 dark:bg-gray-700" />
+      </div>
+    </div>
     <article v-else class="plugin-readme text-sm leading-6 text-theme-body" v-html="renderedReadme" />
   </section>
 </template>

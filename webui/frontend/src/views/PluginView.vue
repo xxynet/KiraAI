@@ -895,7 +895,7 @@
 
     <!-- Plugin Details Dialog -->
     <Modal v-model="pluginDetailsVisible" content-class="max-w-4xl">
-      <div v-if="selectedPlugin" class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col overflow-hidden" style="max-height: 90vh;">
+      <div v-if="selectedPlugin" class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full h-[90dvh] flex flex-col overflow-hidden">
         <div class="flex items-start justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <div class="min-w-0 pr-4">
             <h3 class="text-lg font-semibold text-theme-strong">{{ $t('plugin.details_title') }}</h3>
