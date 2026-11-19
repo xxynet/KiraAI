@@ -360,6 +360,7 @@ export default {
     details_title: '插件详情',
     readme_title: 'README',
     no_readme: '暂无 README',
+    store_readme_unavailable: '无法从 GitHub 加载 README',
     components_title: '插件组件',
     page_open_in_webui: '在 WebUI 中打开',
     page_open_new_tab: '新标签页打开',

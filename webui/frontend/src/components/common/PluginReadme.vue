@@ -1,6 +1,14 @@
 <template>
   <section v-if="loading || readme">
-    <div v-if="loading" class="text-sm text-theme-subtle">{{ $t('plugin.status_loading') }}</div>
+    <div v-if="loading" role="status">
+      <span class="sr-only">{{ $t('plugin.status_loading') }}</span>
+      <div aria-hidden="true" class="space-y-3 motion-safe:animate-pulse">
+        <div class="mb-4 h-5 w-1/3 rounded bg-gray-200 dark:bg-gray-700" />
+        <div class="h-3 w-full rounded bg-gray-200 dark:bg-gray-700" />
+        <div class="h-3 w-11/12 rounded bg-gray-200 dark:bg-gray-700" />
+        <div class="h-3 w-2/3 rounded bg-gray-200 dark:bg-gray-700" />
+      </div>
+    </div>
     <article v-else class="plugin-readme text-sm leading-6 text-theme-body" v-html="renderedReadme" />
   </section>
 </template>
@@ -9,6 +17,7 @@
 import { computed } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
+import { resolveReadmeUrl } from '@/utils/pluginReadme'
 
 const props = defineProps<{
   /** Raw README markdown; null while not loaded or unavailable. */
@@ -16,6 +25,7 @@ const props = defineProps<{
   loading: boolean
   /** HTTPS repository URL used to resolve relative links and images. */
   repoUrl: string | null
+  repoRef: string
 }>()
 
 const renderedReadme = computed(() => (props.readme ? renderMarkdown(props.readme) : ''))
@@ -29,60 +39,15 @@ function renderMarkdown(text: string): string {
     // Fragment-only links point at anchors inside the rendered README itself;
     // keep them in the current document instead of opening a new tab.
     if (href && href.startsWith('#')) return
-    if (href && repoUrl) link.setAttribute('href', resolveReadmeUrl(href, repoUrl, false))
+    if (href && repoUrl) link.setAttribute('href', resolveReadmeUrl(href, repoUrl, false, props.repoRef))
     link.target = '_blank'
     link.rel = 'noopener noreferrer'
   })
   parsedDocument.querySelectorAll('img').forEach(img => {
     const src = img.getAttribute('src')
-    if (src && repoUrl) img.setAttribute('src', resolveReadmeUrl(src, repoUrl, true))
+    if (src && repoUrl) img.setAttribute('src', resolveReadmeUrl(src, repoUrl, true, props.repoRef))
   })
   return parsedDocument.body.innerHTML
-}
-
-// A plugin README is authored inside its repository, so relative URLs must be
-// rewritten against the repository base instead of resolving against the
-// WebUI origin. GitHub repos get default-branch URLs (raw for images, blob
-// for links); other hosts fall back to generic URL joining.
-function resolveReadmeUrl(raw: string, repoUrl: string, isImage: boolean): string {
-  let candidate = raw.trim()
-  if (!candidate || candidate.startsWith('#')) return raw
-  if (candidate.startsWith('//')) candidate = `https:${candidate}`
-  try {
-    // Parseable without a base means the URL is already absolute (http:, mailto:, ...).
-    new URL(candidate)
-    return raw
-  } catch {
-    // Relative reference — resolve it below.
-  }
-  try {
-    // Resolve ./, ../ and percent-encoding against a neutral root first.
-    const resolved = new URL(candidate, 'https://readme.invalid/')
-    const path = resolved.pathname + resolved.search + resolved.hash
-    const repo = parseGitHubRepoUrl(repoUrl)
-    if (repo) {
-      return isImage
-        ? `https://raw.githubusercontent.com/${repo.owner}/${repo.name}/HEAD${path}`
-        : `https://github.com/${repo.owner}/${repo.name}/blob/HEAD${path}`
-    }
-    const base = repoUrl.endsWith('/') ? repoUrl : `${repoUrl}/`
-    return new URL(candidate, base).toString()
-  } catch {
-    return raw
-  }
-}
-
-function parseGitHubRepoUrl(repoUrl: string): { owner: string; name: string } | null {
-  try {
-    const url = new URL(repoUrl)
-    if (url.protocol !== 'https:' && url.protocol !== 'http:') return null
-    if (url.hostname !== 'github.com' && url.hostname !== 'www.github.com') return null
-    const segments = url.pathname.split('/').filter(Boolean)
-    if (segments.length < 2) return null
-    return { owner: segments[0], name: segments[1].replace(/\.git$/, '') }
-  } catch {
-    return null
-  }
 }
 </script>
 

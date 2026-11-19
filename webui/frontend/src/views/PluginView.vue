@@ -895,7 +895,7 @@
 
     <!-- Plugin Details Dialog -->
     <Modal v-model="pluginDetailsVisible" content-class="max-w-4xl">
-      <div v-if="selectedPlugin" class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col overflow-hidden" style="max-height: 90vh;">
+      <div v-if="selectedPlugin" class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full h-[90dvh] flex flex-col overflow-hidden">
         <div class="flex items-start justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <div class="min-w-0 pr-4">
             <h3 class="text-lg font-semibold text-theme-strong">{{ $t('plugin.details_title') }}</h3>
@@ -970,8 +970,8 @@
               </button>
             </div>
             <div v-show="pluginDetailsTab === 'readme'" id="plugin-details-panel-readme" role="tabpanel" aria-labelledby="plugin-details-tab-readme" tabindex="0" class="pt-4">
-              <PluginReadme v-if="pluginReadmeLoading || pluginReadme" :readme="pluginReadme" :loading="pluginReadmeLoading" :repo-url="pluginDetailsRepo" />
-              <p v-else class="text-sm text-theme-subtle">{{ $t('plugin.no_readme') }}</p>
+              <PluginReadme v-if="pluginReadmeLoading || pluginReadme" :readme="pluginReadme" :loading="pluginReadmeLoading" :repo-url="pluginDetailsRepo" :repo-ref="pluginReadmeRef" />
+              <p v-else class="text-sm text-theme-subtle">{{ $t(selectedPluginInstalled ? 'plugin.no_readme' : 'plugin.store_readme_unavailable') }}</p>
             </div>
             <div v-show="pluginDetailsTab === 'components'" id="plugin-details-panel-components" role="tabpanel" aria-labelledby="plugin-details-tab-components" tabindex="0" class="pt-4">
               <p v-if="pluginComponentsLoading" class="text-sm text-theme-subtle">{{ $t('plugin.status_loading') }}</p>
@@ -1170,6 +1170,7 @@ import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import FileDropzone from '@/components/common/FileDropzone.vue'
 import AlertHint from '@/components/common/AlertHint.vue'
 import PluginReadme from '@/components/common/PluginReadme.vue'
+import { fetchStoreReadme, getStoreReadmeRef } from '@/utils/pluginReadme'
 import PluginComponents from '@/components/common/PluginComponents.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
@@ -1277,6 +1278,7 @@ const pluginDetailsVisible = ref(false)
 const selectedPlugin = ref<PluginItem | PluginStoreItem | null>(null)
 const pluginReadme = ref<string | null>(null)
 const pluginReadmeLoading = ref(false)
+const pluginReadmeRef = ref('HEAD')
 let pluginDetailsRequest = 0
 const pluginDetailsRepo = computed(() => {
   const repo = selectedPlugin.value?.repo
@@ -1409,16 +1411,16 @@ async function openPluginDetails(plugin: PluginItem | PluginStoreItem) {
   pluginDetailsVisible.value = true
   pluginReadme.value = null
   const installedPlugin = plugins.value.find(item => item.id === plugin.id)
-  if (!installedPlugin) {
-    pluginReadmeLoading.value = false
-    return
-  }
+  const readmeRef = installedPlugin ? 'HEAD' : getStoreReadmeRef('commit_sha' in plugin ? plugin.commit_sha : null)
+  pluginReadmeRef.value = readmeRef
 
-  const componentsRequest = loadPluginComponents(installedPlugin.id, request)
+  const componentsRequest = installedPlugin && loadPluginComponents(installedPlugin.id, request)
   pluginReadmeLoading.value = true
   try {
-    const res = await getPluginReadme(installedPlugin.id)
-    if (request === pluginDetailsRequest) pluginReadme.value = res.data.readme
+    const readme = installedPlugin
+      ? (await getPluginReadme(installedPlugin.id)).data.readme
+      : await fetchStoreReadme(pluginDetailsRepo.value, readmeRef)
+    if (request === pluginDetailsRequest) pluginReadme.value = readme
   } catch {
     // README is optional and must not prevent opening plugin details.
   } finally {
