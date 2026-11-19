@@ -61,7 +61,7 @@ class SubAgentExecutionHooks(AgentExecutionHooks[SubAgentExecutionContext]):
         self._request_system_message: OpenAIMessage | None = None
 
     async def on_llm_request(self, ctx: SubAgentExecutionContext, request: LLMRequest) -> None:
-        if self.config.instruction_source == "persona":
+        if self.config.instruction_source in {"persona", "mixed"}:
             original = self._persona_message
             system = await self._refresh_persona(ctx)
         else:
@@ -88,9 +88,12 @@ class SubAgentExecutionHooks(AgentExecutionHooks[SubAgentExecutionContext]):
         persona = await self.persona_manager.get_persona(self.config.persona_id)
         if persona is None:
             raise ValueError(f"Subagent persona is unavailable: {self.config.persona_id or 'active'}")
+        content = persona.content or ""
+        if self.config.instruction_source == "mixed" and self.config.instruction:
+            content = "\n\n".join(filter(None, (content, self.config.instruction)))
         message = OpenAIMessage(
             role="system",
-            content=persona.content or "",
+            content=content,
         )
         ctx.messages[:] = [item for item in ctx.messages if item is not self._persona_message]
         ctx.messages.insert(0, message)

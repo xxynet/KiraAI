@@ -34,7 +34,7 @@ class SubAgentPreset(BaseModel):
         default="",
         max_length=2000,
     )
-    instruction_source: Literal["persona", "custom"] = "persona"
+    instruction_source: Literal["persona", "custom", "mixed"] = "persona"
     persona_id: str | None = Field(default=None, min_length=1)
     instruction: str = Field(
         default="",
@@ -105,9 +105,9 @@ class SubAgentPreset(BaseModel):
                 max_steps=self.max_steps,
                 tool_config=tool_config,
             ),
-            instruction=self.instruction if self.instruction_source == "custom" else "",
+            instruction=self.instruction if self.instruction_source != "persona" else "",
             instruction_source=self.instruction_source,
-            persona_id=self.persona_id if self.instruction_source == "persona" else None,
+            persona_id=self.persona_id if self.instruction_source != "custom" else None,
             tool_mode=self.tool_mode,
             tool_names=tuple(self.tools) if self.tool_mode == "custom" else (),
             excluded_tools=tuple(self.tools) if self.tool_mode == "exclude" else (),

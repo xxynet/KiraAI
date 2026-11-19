@@ -1011,7 +1011,10 @@ async def test_custom_preset_skips_unavailable_tools_and_restores_them_when_regi
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("persona_id", [None, "reviewer"])
-async def test_preset_persona_follows_edits_for_existing_and_restored_agents(agents, tmp_path, persona_id):
+@pytest.mark.parametrize("instruction_source", ["persona", "mixed"])
+async def test_preset_persona_follows_edits_for_existing_and_restored_agents(
+    agents, tmp_path, persona_id, instruction_source,
+):
 
     from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
     from core.config import KiraConfig
@@ -1024,10 +1027,14 @@ async def test_preset_persona_follows_edits_for_existing_and_restored_agents(age
     await personas.create_persona(PersonaInfo(id="reviewer", name="Reviewer", content="Review persona"))
     await personas.set_active_persona("active")
     manager.presets = SubAgentPresetStore(tmp_path / "presets.json")
+    instruction = "Focus on regressions"
+    expected_instruction = instruction if instruction_source == "mixed" else ""
+    suffix = f"\n\n{expected_instruction}" if expected_instruction else ""
     preset = await manager.presets.save(SubAgentPreset(
         name="Persona agent",
+        instruction_source=instruction_source,
         persona_id=persona_id,
-        instruction="This inactive custom prompt must be ignored",
+        instruction=instruction,
     ))
     tool = SpawnAgentTool(
         ctx=SimpleNamespace(
@@ -1050,22 +1057,22 @@ async def test_preset_persona_follows_edits_for_existing_and_restored_agents(age
 
     first = await spawn()
     original = "Review persona" if persona_id else "Active persona"
-    assert model.chat.await_args.args[0].messages[0].content == original
+    assert model.chat.await_args.args[0].messages[0].content == original + suffix
     child = await sessions.resolve_session(first["id"])
     settings = child.data["subagent"]["settings"]
-    assert settings["instruction_source"] == "persona"
+    assert settings["instruction_source"] == instruction_source
     assert settings["persona_id"] == persona_id
-    assert settings["instruction"] == ""
+    assert settings["instruction"] == expected_instruction
     await personas.update_persona(PersonaInfo(
         id=persona_id or "active",
         content="Updated persona",
     ))
     second = await spawn()
-    assert model.chat.await_args.args[0].messages[0].content == "Updated persona"
+    assert model.chat.await_args.args[0].messages[0].content == "Updated persona" + suffix
     assert second["id"] != first["id"]
     await manager.followup(first["id"], "continue", caller_id=parent.internal_id)
     await manager.wait(first["id"], timeout=2)
-    assert model.chat.await_args.args[0].messages[0].content == "Updated persona"
+    assert model.chat.await_args.args[0].messages[0].content == "Updated persona" + suffix
     assert sum(message.role == "system" for message in model.chat.await_args.args[0].messages) == 1
     manager._agents.clear()
     await personas.update_persona(PersonaInfo(
@@ -1074,13 +1081,13 @@ async def test_preset_persona_follows_edits_for_existing_and_restored_agents(age
     ))
     await manager.followup(first["id"], "continue", caller_id=parent.internal_id)
     await manager.wait(first["id"], timeout=2)
-    assert model.chat.await_args.args[0].messages[0].content == "Updated again after restoration"
+    assert model.chat.await_args.args[0].messages[0].content == "Updated again after restoration" + suffix
     assert sum(message.role == "system" for message in model.chat.await_args.args[0].messages) == 1
     if persona_id is None:
         await personas.set_active_persona("reviewer")
         await manager.followup(first["id"], "active persona changed", caller_id=parent.internal_id)
         await manager.wait(first["id"], timeout=2)
-        assert model.chat.await_args.args[0].messages[0].content == "Review persona"
+        assert model.chat.await_args.args[0].messages[0].content == "Review persona" + suffix
     if persona_id:
         await personas.delete_persona(persona_id)
     else:
