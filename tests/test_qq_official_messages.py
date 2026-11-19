@@ -10,7 +10,8 @@ from botpy.connection import ConnectionState
 from core.adapter.src.qq_official import im as im_module
 from core.adapter.src.qq_official.message_parser import QQOfficialMessageParser
 from core.chat import MessageChain
-from core.chat.message_elements import At, File, Image, Record, Reply, Text
+from core.chat.message_elements import At, File, Forward, Image, Record, Reply, Text
+from core.workflow.src.im.message_formatter import MessageFormatter
 from tests.adapter_lifecycle import start_adapter
 from tests.test_qq_official_adapter import (
     cleanup_sdk_gateway,
@@ -210,6 +211,114 @@ def test_cards_faces_and_quoted_rich_content():
     assert [item.text for item in reply.chain] == ["[Emoji: smile]", "[Card: map - Park - Street]", "[Voice: words]"]
     bad_face = QQOfficialMessageParser().content_elements({"content": '<faceType=6, faceId="0", ext="!!!">'}, True, "group")
     assert bad_face[0].text == "[Emoji]"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("group", [False, True])
+async def test_ark_replaces_the_platform_preview_without_losing_user_text(group):
+    adapter = make_adapter()
+    body = message(
+        group,
+        message_type=3,
+        content="<@bot> 请看\n[卡片消息] 小程序\n摘要: [报名提醒]报名开放\n下周截止",
+        ark_data={
+            "ark_type": "miniapp",
+            "ark_name": "小程序",
+            "prompt": "[报名提醒]报名开放",
+            "fields": {"title": "活动报名", "desc": "活动详情", "jump_url": "https://example.com/event"},
+        },
+    )
+    await adapter.im._handle_message(body, group, True)
+    chain = adapter.ctx.event_queue.get_nowait().message.chain
+    assert isinstance(chain[0], At) and chain[0].pid == "bot"
+    text = "".join(element.text for element in chain if isinstance(element, Text))
+    assert "[卡片消息]" not in text and "摘要:" not in text
+    assert "请看" in text and "下周截止" in text
+    assert text.count("[报名提醒]报名开放") == 1
+    assert "[Card: 小程序 - 活动报名 - 活动详情 - [报名提醒]报名开放 - https://example.com/event]" in text
+
+
+def test_ark_without_details_keeps_the_official_preview():
+    content = "[卡片消息] 小程序\n摘要: 报名开放"
+    chain = make_adapter().im._message_chain(
+        {"message_type": 3, "content": content, "ark_data": {"ark_type": "miniapp", "fields": None}},
+        False, "user-openid",
+    )
+    assert [element.text for element in chain] == [content]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("group", [False, True])
+async def test_structured_history_keeps_nested_cards_and_attachments(group):
+    adapter = make_adapter()
+    body = message(
+        group,
+        message_type=102,
+        content="[聊天记录]",
+        msg_elements=[
+            {"message_type": 0, "content": "first"},
+            {
+                "message_type": 101,
+                "msg_elements": [
+                    {"message_type": 3, "ark_data": {"ark_type": "map", "fields": {"title": "Park"}}},
+                    {
+                        "message_type": 102,
+                        "content": "[转发消息]",
+                        "msg_elements": [
+                            {
+                                "message_type": 0,
+                                "content": "nested",
+                                "attachments": [{"content_type": "image/png", "url": "https://example.com/a.png"}],
+                            }
+                        ],
+                    },
+                ],
+            },
+        ],
+    )
+    await adapter.im._handle_message(body, group, True)
+    (forward,) = adapter.ctx.event_queue.get_nowait().message.chain
+    assert isinstance(forward, Forward)
+    assert [element.text for element in forward.chains[0]] == ["first"]
+    nested = forward.chains[1]
+    assert [element.text for element in nested if isinstance(element, Text) and element.text.strip()] == [
+        "[Card: map - Park]", "nested",
+    ]
+    (image,) = [element for element in nested if isinstance(element, Image)]
+    assert image.file == "https://example.com/a.png"
+    assert not any(isinstance(element, Forward) for element in nested)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_only_history_children_use_the_forward_parsing_setting(enabled):
+    chain = make_adapter().im._message_chain(
+        {
+            "message_type": 101,
+            "msg_elements": [
+                {"content": "parallel text"},
+                {"message_type": 102, "msg_elements": [{"content": "forwarded text"}]},
+            ],
+        },
+        False, "user-openid",
+    )
+    config = SimpleNamespace(get_config=lambda _key, default=None: default)
+    text = await MessageFormatter(config).format_to_text(
+        chain, capabilities={"forward_parsing": {"enabled": enabled}},
+    )
+    assert "parallel text" in text
+    assert ("forwarded text" in text) is enabled
+    if not enabled:
+        assert "[Forward message]" in text
+
+
+def test_history_without_usable_elements_keeps_its_preview():
+    content = "[转发消息]"
+    chain = make_adapter().im._message_chain(
+        {"message_type": 102, "content": content, "msg_elements": [None, {}]},
+        True, "group-openid",
+    )
+    assert [element.text for element in chain] == [content]
 
 
 @pytest.mark.asyncio
