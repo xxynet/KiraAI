@@ -360,6 +360,7 @@ export default {
     details_title: 'Plugin Details',
     readme_title: 'README',
     no_readme: 'No README available',
+    store_readme_unavailable: 'Unable to load the README from GitHub',
     components_title: 'Plugin Components',
     page_open_in_webui: 'Open in WebUI',
     page_open_new_tab: 'Open in new tab',
