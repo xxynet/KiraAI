@@ -416,6 +416,8 @@ export default {
       instruction_source: '系统提示词来源',
       source_persona: '选择现有人设',
       source_custom: '直接填写',
+      source_mixed: '混合模式（人设 + 自定义提示词）',
+      instruction_mixed_hint: '自定义提示词会追加在人设内容之后。',
       persona: '人设',
       persona_active: '当前启用的人设',
       persona_hint: '子代理每次调用模型前都会读取最新人设内容，修改人设后，已有子代理也会跟随更新。',

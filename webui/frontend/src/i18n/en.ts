@@ -416,6 +416,8 @@ export default {
       instruction_source: 'System Prompt Source',
       source_persona: 'Choose an existing persona',
       source_custom: 'Enter directly',
+      source_mixed: 'Mixed (persona + custom prompt)',
+      instruction_mixed_hint: 'The custom prompt is appended after the persona content.',
       persona: 'Persona',
       persona_active: 'Currently active persona',
       persona_hint: 'Subagents read the latest persona content before every model call. Persona edits also apply to existing subagents.',

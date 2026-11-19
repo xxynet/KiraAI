@@ -4,7 +4,7 @@ export interface SubagentPreset {
   id: string
   name: string
   description: string
-  instruction_source: 'persona' | 'custom'
+  instruction_source: 'persona' | 'custom' | 'mixed'
   persona_id: string | null
   instruction: string
   max_steps: number

@@ -55,7 +55,7 @@ class SubAgentConfig:
     tool_names: tuple[str, ...] = ()
     excluded_tools: tuple[str, ...] = ()
     instruction: str = "Complete the delegated task. Return your findings to the delegating agent in plain text."
-    instruction_source: Literal["custom", "persona"] = "custom"
+    instruction_source: Literal["custom", "persona", "mixed"] = "custom"
     persona_id: str | None = None
     skill_names: tuple[str, ...] = ()
 
@@ -66,7 +66,7 @@ class SubAgentConfig:
             raise TypeError("execution must be an AgentExecutionConfig")
         if not isinstance(self.instruction, str):
             raise TypeError("instruction must be a string")
-        if self.instruction_source not in {"custom", "persona"}:
+        if self.instruction_source not in {"custom", "persona", "mixed"}:
             raise ValueError("Unknown subagent instruction source")
         if self.persona_id is not None and (not isinstance(self.persona_id, str) or not self.persona_id.strip()):
             raise ValueError("Persona ID must be a non-empty string or None")

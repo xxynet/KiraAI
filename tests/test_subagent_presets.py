@@ -162,6 +162,9 @@ async def test_presets_routes_validate_persist_edit_delete_and_require_auth(tmp_
             "name": "Changed",
             "enabled": False,
             "max_steps": 100,
+            "instruction_source": "mixed",
+            "persona_id": "reviewer",
+            "instruction": "Focus on regressions",
         })
         assert changed.status_code == 200
         assert changed.json()["id"] == identity
@@ -170,6 +173,12 @@ async def test_presets_routes_validate_persist_edit_delete_and_require_auth(tmp_
         assert changed.json()["max_steps"] == 100
         assert changed.json()["skills"] == []
         assert changed.json()["exclude_tools_from_main"] is False
+        assert changed.json()["instruction_source"] == "mixed"
+        assert changed.json()["persona_id"] == "reviewer"
+        assert changed.json()["instruction"] == "Focus on regressions"
+        restored = SubAgentPresetStore(store.path)
+        await restored.initialize()
+        assert restored.list() == [changed.json()]
         missing = await client.put("/api/subagents/presets/missing", json={"name": "Unknown"})
         assert missing.status_code == 404
         deleted = await client.delete(f"/api/subagents/presets/{identity}")

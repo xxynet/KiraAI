@@ -163,7 +163,7 @@
             <p class="block text-sm font-medium text-theme-body mb-1">{{ $t('plugin.subagents.instruction_source') }}</p>
             <CustomSelect v-model="form.instruction_source" :options="instructionSourceOptions" :disabled="saving" />
           </div>
-          <div v-if="form.instruction_source === 'persona'">
+          <div v-if="form.instruction_source !== 'custom'">
             <p class="block text-sm font-medium text-theme-body mb-1">{{ $t('plugin.subagents.persona') }}</p>
             <CustomSelect
               :model-value="form.persona_id || ''"
@@ -178,9 +178,10 @@
               <button type="button" class="mt-1 text-blue-600 hover:underline dark:text-blue-400" :disabled="saving || personasLoading" @click="loadPersonaOptions">{{ $t('common.refresh') }}</button>
             </div>
           </div>
-          <div v-else>
+          <div v-if="form.instruction_source !== 'persona'">
             <label for="subagent-preset-instruction" class="block text-sm font-medium text-theme-body mb-1">{{ $t('plugin.subagents.instruction') }}</label>
             <UiTextarea id="subagent-preset-instruction" v-model="form.instruction" :placeholder="$t('plugin.subagents.instruction_placeholder')" class="w-full rounded-lg px-3 py-2" rows="6" maxlength="50000" />
+            <p v-if="form.instruction_source === 'mixed'" class="mt-1 text-xs text-theme-subtle">{{ $t('plugin.subagents.instruction_mixed_hint') }}</p>
           </div>
           <div>
             <label for="subagent-preset-steps" class="block text-sm font-medium text-theme-body mb-1">{{ $t('plugin.subagents.max_steps') }}</label>
@@ -294,7 +295,7 @@ const skillOptions = computed(() => availableSkills.value.map(({ name, enabled }
   value: name,
   label: enabled ? name : t('plugin.subagents.skill_disabled', { name }),
 })))
-const instructionSourceOptions = computed(() => ['persona', 'custom'].map(value => ({
+const instructionSourceOptions = computed(() => ['persona', 'custom', 'mixed'].map(value => ({
   value,
   label: t('plugin.subagents.source_' + value),
 })))
@@ -440,8 +441,8 @@ async function savePreset() {
     const payload: SubagentPresetInput = {
       ...form.value,
       name: form.value.name.trim(),
-      persona_id: form.value.instruction_source === 'persona' ? form.value.persona_id : null,
-      instruction: form.value.instruction_source === 'custom' ? form.value.instruction : '',
+      persona_id: form.value.instruction_source !== 'custom' ? form.value.persona_id : null,
+      instruction: form.value.instruction_source !== 'persona' ? form.value.instruction : '',
       tools: form.value.tool_mode === 'inherit' ? [] : [...new Set(form.value.tools.map(name => name.trim()).filter(Boolean))],
       skills: form.value.tool_mode === 'inherit' ? [] : form.value.skills,
     }
