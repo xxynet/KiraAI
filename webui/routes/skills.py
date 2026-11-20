@@ -63,6 +63,13 @@ class SkillsRoutes(Routes):
                 tags=["skills"],
                 dependencies=[Depends(require_auth)],
             ),
+            RouteDefinition(
+                path="/api/skills/{skill_name}/readme",
+                methods=["GET"],
+                endpoint=self.get_skill_readme,
+                tags=["skills"],
+                dependencies=[Depends(require_auth)],
+            ),
         ]
 
     def _get_skill(self, skill_name: str):
@@ -72,6 +79,24 @@ class SkillsRoutes(Routes):
             if skill.name == skill_name:
                 return skill
         raise HTTPException(status_code=404, detail=f"Skill '{skill_name}' not found")
+
+    async def get_skill_readme(self, skill_name: str):
+        """Return the SKILL.md content for an installed skill."""
+        skill = self._get_skill(skill_name)
+        skill_dir = skill.path
+
+        def read_skill_md() -> str | None:
+            for name in ("SKILL.md", "skill.md", "SKILL.MD"):
+                md_path = skill_dir / name
+                if md_path.is_file():
+                    return md_path.read_text(encoding="utf-8", errors="replace")[:1_000_000]
+            return None
+
+        try:
+            return {"readme": await asyncio.to_thread(read_skill_md)}
+        except Exception as e:
+            logger.warning(f"Failed to read SKILL.md for skill {skill_name}: {e}")
+            return {"readme": None}
 
     @staticmethod
     def _folder_size(path) -> int:

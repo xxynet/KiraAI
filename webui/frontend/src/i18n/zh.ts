@@ -575,6 +575,7 @@ export default {
     skills_export_success: '技能导出成功',
     skills_export_error: '技能导出失败',
     skills_delete: '删除',
+    skills_no_readme: '该技能未包含 SKILL.md 文件。',
     skills_delete_confirm: '确定要删除技能“{name}”吗？',
     skills_delete_success: '技能删除成功',
     skills_delete_error: '技能删除失败',

@@ -36,3 +36,7 @@ export function exportSkill(skillName: string) {
 export function deleteSkill(skillName: string) {
   return apiClient.delete(`/skills/${encodeURIComponent(skillName)}`)
 }
+
+export function getSkillReadme(skillName: string) {
+  return apiClient.get<{ readme: string | null }>(`/skills/${encodeURIComponent(skillName)}/readme`)
+}

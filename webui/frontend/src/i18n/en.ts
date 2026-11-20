@@ -575,6 +575,7 @@ export default {
     skills_export_success: 'Skill exported successfully',
     skills_export_error: 'Failed to export skill',
     skills_delete: 'Delete',
+    skills_no_readme: 'No SKILL.md found for this skill.',
     skills_delete_confirm: 'Are you sure you want to delete skill "{name}"?',
     skills_delete_success: 'Skill deleted successfully',
     skills_delete_error: 'Failed to delete skill',
