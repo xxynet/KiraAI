@@ -64,6 +64,7 @@ export default {
     update_stage_pending: '等待中',
   },
   nav: {
+    more_features: '更多功能',
     overview: '概览',
     provider: '提供商',
     adapter: '适配器',

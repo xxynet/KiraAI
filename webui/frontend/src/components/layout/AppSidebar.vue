@@ -13,28 +13,59 @@
 
     <!-- Navigation -->
     <nav class="flex-1 p-4 space-y-2 overflow-y-auto">
-      <router-link
-        v-for="item in navItems"
-        :key="item.route"
-        :to="item.route"
-        class="nav-item flex items-center justify-between px-4 py-3 rounded-lg transition-colors"
-        :class="{ active: isActive(item.route) }"
-      >
-        <div class="flex items-center gap-3">
-          <!--
-            Plugin icons referenced by URL are rendered inline (sanitized) so
-            stroke="currentColor" follows the nav text color across themes.
-          -->
-          <InlineSvgIcon v-if="item.iconUrl" :src="item.iconUrl" class="w-5 h-5">
-            <template #fallback>
-              <component :is="item.icon" class="w-5 h-5" />
-            </template>
-          </InlineSvgIcon>
-          <component :is="item.icon" v-else class="w-5 h-5" />
-          <span>{{ item.isPlugin ? item.label : $t(item.label) }}</span>
+      <div v-for="group in navGroups" :key="group.id" class="space-y-2">
+        <button
+          v-if="group.label"
+          :id="`sidebar-group-${group.id}`"
+          type="button"
+          class="nav-item flex items-center justify-between w-full px-4 py-3 rounded-lg text-left"
+          :class="{ active: group.items.some(item => isActive(item.route)) }"
+          :aria-expanded="expandedGroups.has(group.id)"
+          :aria-controls="`sidebar-group-items-${group.id}`"
+          @click="toggleGroup(group.id)"
+        >
+          <span class="flex items-center gap-3">
+            <component :is="group.icon" class="w-5 h-5 shrink-0" aria-hidden="true" />
+            <span>{{ $t(group.label) }}</span>
+          </span>
+          <ArrowDown
+            class="w-4 h-4 shrink-0 transition-transform"
+            :class="{ '-rotate-90': !expandedGroups.has(group.id) }"
+            aria-hidden="true"
+          />
+        </button>
+        <div
+          v-show="!group.label || expandedGroups.has(group.id)"
+          :id="`sidebar-group-items-${group.id}`"
+          class="space-y-2"
+          :class="{ 'ml-4 pl-4 border-l border-blue-200/30': group.label }"
+          :role="group.label ? 'group' : undefined"
+          :aria-labelledby="group.label ? `sidebar-group-${group.id}` : undefined"
+        >
+          <router-link
+            v-for="item in group.items"
+            :key="item.route"
+            :to="item.route"
+            class="nav-item flex items-center justify-between gap-2 px-4 py-3 rounded-lg transition-colors"
+            :class="{ active: isActive(item.route) }"
+          >
+            <div class="flex items-center gap-3 min-w-0">
+              <!--
+                Plugin icons referenced by URL are rendered inline (sanitized) so
+                stroke="currentColor" follows the nav text color across themes.
+              -->
+              <InlineSvgIcon v-if="item.iconUrl" :src="item.iconUrl" class="w-5 h-5 shrink-0">
+                <template #fallback>
+                  <component :is="item.icon" class="w-5 h-5" />
+                </template>
+              </InlineSvgIcon>
+              <component :is="item.icon" v-else class="w-5 h-5 shrink-0" />
+              <span class="break-words min-w-0">{{ item.isPlugin ? item.label : $t(item.label) }}</span>
+            </div>
+            <span class="nav-dot shrink-0"></span>
+          </router-link>
         </div>
-        <span class="nav-dot"></span>
-      </router-link>
+      </div>
     </nav>
 
     <!-- Language Selector -->
@@ -60,7 +91,7 @@ import CustomSelect from '@/components/common/CustomSelect.vue'
 import InlineSvgIcon from '@/components/common/InlineSvgIcon.vue'
 import {
   DataAnalysis, Connection, Link, User, SetUp, Picture,
-  Setting, ChatDotRound, Document, Tools, Box,
+  Setting, ChatDotRound, Document, Tools, Box, MoreFilled, ArrowDown,
 } from '@element-plus/icons-vue'
 import { iconMap } from '@/utils/iconMap'
 
@@ -105,6 +136,13 @@ interface NavItem {
   isPlugin: boolean
 }
 
+interface NavGroup {
+  id: string
+  label?: string
+  icon?: NavItem['icon']
+  items: NavItem[]
+}
+
 const staticNavItems: NavItem[] = [
   { route: '/overview', label: 'nav.overview', icon: DataAnalysis, iconUrl: null, isPlugin: false },
   { route: '/provider', label: 'nav.provider', icon: Connection, iconUrl: null, isPlugin: false },
@@ -119,11 +157,11 @@ const staticNavItems: NavItem[] = [
   { route: '/settings', label: 'nav.settings', icon: Setting, iconUrl: null, isPlugin: false },
 ]
 
-const navItems = computed<NavItem[]>(() => {
-  const items = [...staticNavItems]
-  for (const menu of pluginMenuStore.menus) {
+const navGroups = computed<NavGroup[]>(() => {
+  const groups: NavGroup[] = [{ id: 'main', items: staticNavItems }]
+  const pluginItems = pluginMenuStore.menus.map((menu): NavItem => {
     const icon = menu.icon || ''
-    items.push({
+    return {
       route: menu.route,
       label: menu.label,
       // Plugin menu icons are either an Element Plus icon name or an
@@ -134,10 +172,32 @@ const navItems = computed<NavItem[]>(() => {
       icon: iconMap[icon] || Box,
       iconUrl: icon.startsWith('/api/') ? icon : null,
       isPlugin: true,
-    })
+    }
+  })
+  if (pluginItems.length) {
+    groups.push({ id: 'more-features', label: 'nav.more_features', icon: MoreFilled, items: pluginItems })
   }
-  return items
+  return groups
 })
+
+const expandedGroups = ref(new Set<string>())
+
+function toggleGroup(id: string) {
+  if (expandedGroups.value.has(id)) expandedGroups.value.delete(id)
+  else expandedGroups.value.add(id)
+}
+
+// Reveal the active page on navigation and when plugin menus finish loading.
+watch(
+  [
+    () => route.path,
+    () => navGroups.value.find(group => group.label && group.items.some(item => isActive(item.route)))?.id,
+  ],
+  ([, activeGroupId]) => {
+    if (activeGroupId) expandedGroups.value.add(activeGroupId)
+  },
+  { immediate: true },
+)
 
 function isActive(path: string): boolean {
   // Normalize trailing slashes so refresh (which Vue Router may canonicalise

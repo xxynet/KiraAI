@@ -64,6 +64,7 @@ export default {
     update_stage_pending: 'Pending',
   },
   nav: {
+    more_features: 'More Features',
     overview: 'Overview',
     provider: 'Provider',
     adapter: 'Adapter',
