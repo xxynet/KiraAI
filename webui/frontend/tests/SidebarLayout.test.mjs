@@ -65,7 +65,7 @@ test('new plugin pages join the default group without moving customized entries'
   assert.deepEqual(saved, snapshot)
 })
 
-test('removing more features is respected when new plugin pages arrive', () => {
+test('new plugin pages stay accessible when a saved layout has no default group', () => {
   const saved = [item('/settings'), group('personal', ['/overview'])]
   const result = reconcileSidebarLayout(saved, catalog)
   assert.equal(result.some(entry => entry.id === 'more-features'), false)
@@ -119,6 +119,18 @@ test('groups reorder only below ungrouped items and cannot cross the boundary', 
 test('removing a later group promotes all its items before the remaining groups', () => {
   const source = [item('/overview'), group('keep'), group('work', ['/plugin-page/inactive/page', '/settings'])]
   assert.deepEqual(plain(removeSidebarGroup(source, 'work')), [item('/overview'), item('/plugin-page/inactive/page'), item('/settings'), group('keep')])
+})
+
+test('the builtin plugin group cannot be removed, even if renamed; custom groups remain removable', () => {
+  const source = [
+    item('/overview'),
+    group('more-features', ['/plugin-page/demo/a'], 'Renamed builtin'),
+    group('custom', ['/settings'], 'More Features'),
+  ]
+  assert.deepEqual(plain(removeSidebarGroup(source, 'more-features')), source)
+  assert.deepEqual(plain(removeSidebarGroup(source, 'custom')), [
+    item('/overview'), item('/settings'), group('more-features', ['/plugin-page/demo/a'], 'Renamed builtin'),
+  ])
 })
 
 test('normalization always places ungrouped items first without changing group membership', () => {
@@ -516,12 +528,32 @@ test('group removal opens confirmation first; cancellation preserves layout and 
 
 test('resetting a layout clears pending deletion and closes the confirmation modal', () => {
   const { props, state } = editorSetup()
+  state.newGroupName.value = 'Personal'
+  state.addGroup()
+  const id = props.modelValue.at(-1).id
   let closed = 0
   state.removeConfirmRef.value = { open() {}, close() { closed++ } }
-  state.requestRemoveGroup('more-features')
+  state.requestRemoveGroup(id)
+  assert.equal(state.pendingGroupId.value, id)
   state.resetLayout()
   assert.equal(closed, 1)
   assert.equal(state.pendingGroupId.value, null)
   state.confirmRemoveGroup()
   assert.equal(props.modelValue, null)
+})
+
+test('editor blocks builtin group deletion before confirmation and preserves its hidden state', () => {
+  const { props, state } = editorSetup()
+  state.toggleHidden('more-features')
+  const original = plain(state.layout.value)
+  let opened = 0
+  state.removeConfirmRef.value = { open() { opened++ }, close() {} }
+  state.requestRemoveGroup('more-features')
+  assert.equal(opened, 0)
+  assert.equal(state.pendingGroupId.value, null)
+  state.removeGroup('more-features')
+  state.pendingGroupId.value = 'more-features'
+  state.confirmRemoveGroup()
+  assert.deepEqual(plain(state.layout.value), original)
+  assert.deepEqual(plain(props.hiddenItems), ['more-features'])
 })
