@@ -28,9 +28,9 @@
           :aria-controls="`sidebar-group-items-${group.id}`"
           @click="toggleGroup(group.id)"
         >
-          <span class="flex items-center gap-3">
+          <span class="flex items-center gap-3 min-w-0">
             <component v-if="!isSectionGroupStyle" :is="group.icon" class="w-5 h-5 shrink-0" aria-hidden="true" />
-            <span>{{ $t(group.label) }}</span>
+            <span class="break-words min-w-0">{{ group.label }}</span>
           </span>
           <ArrowDown
             class="shrink-0 transition-transform"
@@ -96,11 +96,8 @@ import { usePluginMenuStore } from '@/stores/pluginMenu'
 import { getVersion } from '@/api/overview'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import InlineSvgIcon from '@/components/common/InlineSvgIcon.vue'
-import {
-  DataAnalysis, Connection, Link, User, SetUp, Picture,
-  Setting, ChatDotRound, Document, Tools, Box, MoreFilled, ArrowDown,
-} from '@element-plus/icons-vue'
-import { iconMap } from '@/utils/iconMap'
+import { ArrowDown } from '@element-plus/icons-vue'
+import { useSidebarNavigation } from '@/composables/useSidebarNavigation'
 
 defineProps<{ open: boolean }>()
 
@@ -109,6 +106,7 @@ const route = useRoute()
 const appStore = useAppStore()
 const isSectionGroupStyle = computed(() => appStore.sidebarGroupStyle === 'section')
 const pluginMenuStore = usePluginMenuStore()
+const { navGroups } = useSidebarNavigation()
 const { locale } = useI18n()
 
 // Re-resolve plugin page labels when UI language changes
@@ -135,58 +133,6 @@ const languageOptions = [
   { value: 'en', label: 'English' },
   { value: 'zh', label: '中文' },
 ]
-
-interface NavItem {
-  route: string
-  label: string
-  icon: any
-  iconUrl: string | null
-  isPlugin: boolean
-}
-
-interface NavGroup {
-  id: string
-  label?: string
-  icon?: NavItem['icon']
-  items: NavItem[]
-}
-
-const staticNavItems: NavItem[] = [
-  { route: '/overview', label: 'nav.overview', icon: DataAnalysis, iconUrl: null, isPlugin: false },
-  { route: '/provider', label: 'nav.provider', icon: Connection, iconUrl: null, isPlugin: false },
-  { route: '/adapter', label: 'nav.adapter', icon: Link, iconUrl: null, isPlugin: false },
-  { route: '/persona', label: 'nav.persona', icon: User, iconUrl: null, isPlugin: false },
-  { route: '/sticker', label: 'nav.sticker', icon: Picture, iconUrl: null, isPlugin: false },
-  { route: '/configuration', label: 'nav.configuration', icon: Tools, iconUrl: null, isPlugin: false },
-  { route: '/plugin', label: 'nav.plugin', icon: SetUp, iconUrl: null, isPlugin: false },
-  { route: '/webchat', label: 'nav.webchat', icon: ChatDotRound, iconUrl: null, isPlugin: false },
-  { route: '/sessions', label: 'nav.sessions', icon: ChatDotRound, iconUrl: null, isPlugin: false },
-  { route: '/logs', label: 'nav.logs', icon: Document, iconUrl: null, isPlugin: false },
-  { route: '/settings', label: 'nav.settings', icon: Setting, iconUrl: null, isPlugin: false },
-]
-
-const navGroups = computed<NavGroup[]>(() => {
-  const groups: NavGroup[] = [{ id: 'main', items: staticNavItems }]
-  const pluginItems = pluginMenuStore.menus.map((menu): NavItem => {
-    const icon = menu.icon || ''
-    return {
-      route: menu.route,
-      label: menu.label,
-      // Plugin menu icons are either an Element Plus icon name or an
-      // API URL to a custom image (e.g. an SVG file from the plugin).
-      // Only backend-issued /api/ URLs count as URLs: a raw path that the
-      // backend left unresolved (e.g. a typo) would otherwise trigger a
-      // guaranteed 404 fetch before falling back to the icon component.
-      icon: iconMap[icon] || Box,
-      iconUrl: icon.startsWith('/api/') ? icon : null,
-      isPlugin: true,
-    }
-  })
-  if (pluginItems.length) {
-    groups.push({ id: 'more-features', label: 'nav.more_features', icon: MoreFilled, items: pluginItems })
-  }
-  return groups
-})
 
 const expandedGroups = ref(new Set<string>())
 

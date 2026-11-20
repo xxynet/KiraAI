@@ -255,6 +255,8 @@
         </div>
       </fieldset>
 
+      <SidebarLayoutEditor v-model="sidebarLayout" />
+
       <div>
         <label for="custom-webui-title" class="block text-sm font-medium text-theme-body mb-2">
           {{ $t('settings.custom_webui_title') }}
@@ -454,12 +456,15 @@ import axios from 'axios'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
+import { useSidebarStore } from '@/stores/sidebar'
+import { normalizeSidebarLayout, type SidebarLayoutEntry } from '@/navigation/sidebarLayout'
 import { notify } from '@/composables/useNotification'
 import { openChangeTokenModal } from '@/composables/useChangeTokenModal'
 import apiClient from '@/api/client'
 import { getAuthConfig } from '@/api/auth'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import CollapsibleSection from '@/components/common/CollapsibleSection.vue'
+import SidebarLayoutEditor from '@/components/layout/SidebarLayoutEditor.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import Modal from '@/components/common/Modal.vue'
 import FileDropzone from '@/components/common/FileDropzone.vue'
@@ -483,6 +488,7 @@ import { restartAndWait } from '@/composables/useRestart'
 const { t } = useI18n()
 const router = useRouter()
 const appStore = useAppStore()
+const sidebarStore = useSidebarStore()
 const saving = ref(false)
 const activeTab = ref('storage')
 const authEnabled = ref(true)
@@ -501,6 +507,7 @@ const customJS = ref('')
 const customCodeCollapsed = ref(true)
 const customWebUITitle = ref('')
 const sidebarGroupStyle = ref(appStore.sidebarGroupStyle)
+const sidebarLayout = ref<SidebarLayoutEntry[] | null>(normalizeSidebarLayout(sidebarStore.layout))
 const sidebarGroupStyleOptions = computed(() => [
   { value: 'section', label: t('settings.sidebar_group_style_section'), description: t('settings.sidebar_group_style_section_desc') },
   { value: 'nested', label: t('settings.sidebar_group_style_nested'), description: t('settings.sidebar_group_style_nested_desc') },
@@ -801,6 +808,7 @@ async function handleSave() {
     localStorage.setItem('custom_css', customCSS.value)
     localStorage.setItem('custom_js', customJS.value)
     appStore.setSidebarGroupStyle(sidebarGroupStyle.value)
+    sidebarStore.setLayout(sidebarLayout.value)
     applyWebUITitle(customWebUITitle.value)
     applyCustomCSS()
     applyCustomJS()
