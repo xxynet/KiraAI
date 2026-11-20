@@ -13,28 +13,66 @@
 
     <!-- Navigation -->
     <nav class="flex-1 p-4 space-y-2 overflow-y-auto">
-      <router-link
-        v-for="item in navItems"
-        :key="item.route"
-        :to="item.route"
-        class="nav-item flex items-center justify-between px-4 py-3 rounded-lg transition-colors"
-        :class="{ active: isActive(item.route) }"
-      >
-        <div class="flex items-center gap-3">
-          <!--
-            Plugin icons referenced by URL are rendered inline (sanitized) so
-            stroke="currentColor" follows the nav text color across themes.
-          -->
-          <InlineSvgIcon v-if="item.iconUrl" :src="item.iconUrl" class="w-5 h-5">
-            <template #fallback>
-              <component :is="item.icon" class="w-5 h-5" />
-            </template>
-          </InlineSvgIcon>
-          <component :is="item.icon" v-else class="w-5 h-5" />
-          <span>{{ item.isPlugin ? item.label : $t(item.label) }}</span>
+      <div v-for="group in navGroups" :key="group.id" class="space-y-2" :class="{ 'pt-4': group.label && isSectionGroupStyle }">
+        <button
+          v-if="group.label"
+          :id="`sidebar-group-${group.id}`"
+          type="button"
+          class="flex items-center justify-between gap-2 w-full px-4 rounded-lg text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+          :class="{
+            'sidebar-group-toggle--section py-2 text-xs font-semibold text-theme-subtle text-theme-subtle-hover': isSectionGroupStyle,
+            'nav-item py-3': !isSectionGroupStyle,
+            active: !isSectionGroupStyle && group.items.some(item => isActive(item.route)),
+          }"
+          :aria-expanded="expandedGroups.has(group.id)"
+          :aria-controls="`sidebar-group-items-${group.id}`"
+          @click="toggleGroup(group.id)"
+        >
+          <span class="flex items-center gap-3 min-w-0">
+            <component v-if="!isSectionGroupStyle" :is="group.icon" class="w-5 h-5 shrink-0" aria-hidden="true" />
+            <span class="break-words min-w-0">{{ group.label }}</span>
+          </span>
+          <ArrowDown
+            class="shrink-0 transition-transform"
+            :class="[
+              isSectionGroupStyle ? 'w-3.5 h-3.5' : 'w-4 h-4',
+              { '-rotate-90': !expandedGroups.has(group.id) },
+            ]"
+            aria-hidden="true"
+          />
+        </button>
+        <div
+          v-show="!group.label || expandedGroups.has(group.id)"
+          :id="`sidebar-group-items-${group.id}`"
+          class="space-y-2"
+          :class="{ 'ml-4 pl-4 border-l border-blue-200/30': group.label && !isSectionGroupStyle }"
+          :role="group.label ? 'group' : undefined"
+          :aria-labelledby="group.label ? `sidebar-group-${group.id}` : undefined"
+        >
+          <router-link
+            v-for="item in group.items"
+            :key="item.route"
+            :to="item.route"
+            class="nav-item flex items-center justify-between gap-2 px-4 py-3 rounded-lg transition-colors"
+            :class="{ active: isActive(item.route) }"
+          >
+            <div class="flex items-center gap-3 min-w-0">
+              <!--
+                Plugin icons referenced by URL are rendered inline (sanitized) so
+                stroke="currentColor" follows the nav text color across themes.
+              -->
+              <InlineSvgIcon v-if="item.iconUrl" :src="item.iconUrl" class="w-5 h-5 shrink-0">
+                <template #fallback>
+                  <component :is="item.icon" class="w-5 h-5" />
+                </template>
+              </InlineSvgIcon>
+              <component :is="item.icon" v-else class="w-5 h-5 shrink-0" />
+              <span class="break-words min-w-0">{{ item.isPlugin ? item.label : $t(item.label) }}</span>
+            </div>
+            <span class="nav-dot shrink-0"></span>
+          </router-link>
         </div>
-        <span class="nav-dot"></span>
-      </router-link>
+      </div>
     </nav>
 
     <!-- Language Selector -->
@@ -58,18 +96,17 @@ import { usePluginMenuStore } from '@/stores/pluginMenu'
 import { getVersion } from '@/api/overview'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import InlineSvgIcon from '@/components/common/InlineSvgIcon.vue'
-import {
-  DataAnalysis, Connection, Link, User, SetUp, Picture,
-  Setting, ChatDotRound, Document, Tools, Box,
-} from '@element-plus/icons-vue'
-import { iconMap } from '@/utils/iconMap'
+import { ArrowDown } from '@element-plus/icons-vue'
+import { useSidebarNavigation } from '@/composables/useSidebarNavigation'
 
 defineProps<{ open: boolean }>()
 
 const appVersion = ref('-')
 const route = useRoute()
 const appStore = useAppStore()
+const isSectionGroupStyle = computed(() => appStore.sidebarGroupStyle === 'section')
 const pluginMenuStore = usePluginMenuStore()
+const { navGroups } = useSidebarNavigation()
 const { locale } = useI18n()
 
 // Re-resolve plugin page labels when UI language changes
@@ -97,47 +134,24 @@ const languageOptions = [
   { value: 'zh', label: '中文' },
 ]
 
-interface NavItem {
-  route: string
-  label: string
-  icon: any
-  iconUrl: string | null
-  isPlugin: boolean
+const expandedGroups = ref(new Set<string>())
+
+function toggleGroup(id: string) {
+  if (expandedGroups.value.has(id)) expandedGroups.value.delete(id)
+  else expandedGroups.value.add(id)
 }
 
-const staticNavItems: NavItem[] = [
-  { route: '/overview', label: 'nav.overview', icon: DataAnalysis, iconUrl: null, isPlugin: false },
-  { route: '/provider', label: 'nav.provider', icon: Connection, iconUrl: null, isPlugin: false },
-  { route: '/adapter', label: 'nav.adapter', icon: Link, iconUrl: null, isPlugin: false },
-  { route: '/persona', label: 'nav.persona', icon: User, iconUrl: null, isPlugin: false },
-  { route: '/sticker', label: 'nav.sticker', icon: Picture, iconUrl: null, isPlugin: false },
-  { route: '/configuration', label: 'nav.configuration', icon: Tools, iconUrl: null, isPlugin: false },
-  { route: '/plugin', label: 'nav.plugin', icon: SetUp, iconUrl: null, isPlugin: false },
-  { route: '/webchat', label: 'nav.webchat', icon: ChatDotRound, iconUrl: null, isPlugin: false },
-  { route: '/sessions', label: 'nav.sessions', icon: ChatDotRound, iconUrl: null, isPlugin: false },
-  { route: '/logs', label: 'nav.logs', icon: Document, iconUrl: null, isPlugin: false },
-  { route: '/settings', label: 'nav.settings', icon: Setting, iconUrl: null, isPlugin: false },
-]
-
-const navItems = computed<NavItem[]>(() => {
-  const items = [...staticNavItems]
-  for (const menu of pluginMenuStore.menus) {
-    const icon = menu.icon || ''
-    items.push({
-      route: menu.route,
-      label: menu.label,
-      // Plugin menu icons are either an Element Plus icon name or an
-      // API URL to a custom image (e.g. an SVG file from the plugin).
-      // Only backend-issued /api/ URLs count as URLs: a raw path that the
-      // backend left unresolved (e.g. a typo) would otherwise trigger a
-      // guaranteed 404 fetch before falling back to the icon component.
-      icon: iconMap[icon] || Box,
-      iconUrl: icon.startsWith('/api/') ? icon : null,
-      isPlugin: true,
-    })
-  }
-  return items
-})
+// Reveal the active page on navigation and when plugin menus finish loading.
+watch(
+  [
+    () => route.path,
+    () => navGroups.value.find(group => group.label && group.items.some(item => isActive(item.route)))?.id,
+  ],
+  ([, activeGroupId]) => {
+    if (activeGroupId) expandedGroups.value.add(activeGroupId)
+  },
+  { immediate: true },
+)
 
 function isActive(path: string): boolean {
   // Normalize trailing slashes so refresh (which Vue Router may canonicalise
@@ -152,6 +166,14 @@ function isActive(path: string): boolean {
   width: 16rem;
   overflow: hidden;
   transition: width 0.25s ease;
+}
+
+.dark .sidebar-group-toggle--section {
+  color: var(--color-text-subtle-hover);
+}
+
+.dark .sidebar-group-toggle--section:hover {
+  color: var(--color-text-subtle);
 }
 
 @media (min-width: 1025px) {
