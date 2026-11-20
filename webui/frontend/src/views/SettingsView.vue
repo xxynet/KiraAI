@@ -225,8 +225,36 @@
       </div>
     </div>
 
-    <!-- Custom CSS/JS Tab -->
+    <!-- Customization Tab -->
     <div v-show="activeTab === 'custom'" class="space-y-6">
+      <fieldset>
+        <legend class="text-sm font-medium text-theme-body mb-2">
+          {{ $t('settings.sidebar_group_style') }}
+        </legend>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label
+            v-for="option in sidebarGroupStyleOptions"
+            :key="option.value"
+            class="flex items-start gap-3 p-4 border rounded-lg cursor-pointer transition-colors"
+            :class="sidebarGroupStyle === option.value
+              ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+              : 'border-gray-300 dark:border-gray-600 hover:border-blue-400'"
+          >
+            <input
+              v-model="sidebarGroupStyle"
+              type="radio"
+              name="sidebar-group-style"
+              :value="option.value"
+              class="w-4 h-4 mt-0.5 shrink-0 accent-blue-600"
+            />
+            <span>
+              <span class="block text-sm font-medium text-theme-body">{{ option.label }}</span>
+              <span class="block text-xs text-theme-subtle mt-1">{{ option.description }}</span>
+            </span>
+          </label>
+        </div>
+      </fieldset>
+
       <div>
         <label for="custom-webui-title" class="block text-sm font-medium text-theme-body mb-2">
           {{ $t('settings.custom_webui_title') }}
@@ -240,31 +268,38 @@
         />
       </div>
 
-      <div>
-        <label class="block text-sm font-medium text-theme-body mb-2">
-          {{ $t('settings.custom_css') }}
-        </label>
-        <div class="border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden" style="height: 300px;">
-          <MonacoEditor
-            v-model="customCSS"
-            language="css"
-            :height="300"
-          />
-        </div>
-      </div>
+      <CollapsibleSection
+        v-model:collapsed="customCodeCollapsed"
+        :title="$t('settings.custom_code')"
+      >
+        <div class="space-y-6">
+          <div>
+            <label class="block text-sm font-medium text-theme-body mb-2">
+              {{ $t('settings.custom_css') }}
+            </label>
+            <div class="border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden" style="height: 300px;">
+              <MonacoEditor
+                v-model="customCSS"
+                language="css"
+                :height="300"
+              />
+            </div>
+          </div>
 
-      <div>
-        <label class="block text-sm font-medium text-theme-body mb-2">
-          {{ $t('settings.custom_js') }}
-        </label>
-        <div class="border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden" style="height: 300px;">
-          <MonacoEditor
-            v-model="customJS"
-            language="javascript"
-            :height="300"
-          />
+          <div>
+            <label class="block text-sm font-medium text-theme-body mb-2">
+              {{ $t('settings.custom_js') }}
+            </label>
+            <div class="border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden" style="height: 300px;">
+              <MonacoEditor
+                v-model="customJS"
+                language="javascript"
+                :height="300"
+              />
+            </div>
+          </div>
         </div>
-      </div>
+      </CollapsibleSection>
 
       <div class="flex justify-end">
         <button
@@ -418,11 +453,13 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import axios from 'axios'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
+import { useAppStore } from '@/stores/app'
 import { notify } from '@/composables/useNotification'
 import { openChangeTokenModal } from '@/composables/useChangeTokenModal'
 import apiClient from '@/api/client'
 import { getAuthConfig } from '@/api/auth'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
+import CollapsibleSection from '@/components/common/CollapsibleSection.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import Modal from '@/components/common/Modal.vue'
 import FileDropzone from '@/components/common/FileDropzone.vue'
@@ -445,6 +482,7 @@ import { restartAndWait } from '@/composables/useRestart'
 
 const { t } = useI18n()
 const router = useRouter()
+const appStore = useAppStore()
 const saving = ref(false)
 const activeTab = ref('storage')
 const authEnabled = ref(true)
@@ -460,7 +498,13 @@ const tabs = computed(() => [
 
 const customCSS = ref('')
 const customJS = ref('')
+const customCodeCollapsed = ref(true)
 const customWebUITitle = ref('')
+const sidebarGroupStyle = ref(appStore.sidebarGroupStyle)
+const sidebarGroupStyleOptions = computed(() => [
+  { value: 'section', label: t('settings.sidebar_group_style_section'), description: t('settings.sidebar_group_style_section_desc') },
+  { value: 'nested', label: t('settings.sidebar_group_style_nested'), description: t('settings.sidebar_group_style_nested_desc') },
+])
 
 // ── Storage ─────────────────────────────────────────────────────────────
 
@@ -756,6 +800,7 @@ async function handleSave() {
     localStorage.setItem(CUSTOM_WEBUI_TITLE_KEY, customWebUITitle.value)
     localStorage.setItem('custom_css', customCSS.value)
     localStorage.setItem('custom_js', customJS.value)
+    appStore.setSidebarGroupStyle(sidebarGroupStyle.value)
     applyWebUITitle(customWebUITitle.value)
     applyCustomCSS()
     applyCustomJS()

@@ -13,24 +13,31 @@
 
     <!-- Navigation -->
     <nav class="flex-1 p-4 space-y-2 overflow-y-auto">
-      <div v-for="group in navGroups" :key="group.id" class="space-y-2">
+      <div v-for="group in navGroups" :key="group.id" class="space-y-2" :class="{ 'pt-4': group.label && isSectionGroupStyle }">
         <button
           v-if="group.label"
           :id="`sidebar-group-${group.id}`"
           type="button"
-          class="nav-item flex items-center justify-between w-full px-4 py-3 rounded-lg text-left"
-          :class="{ active: group.items.some(item => isActive(item.route)) }"
+          class="flex items-center justify-between gap-2 w-full px-4 rounded-lg text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+          :class="{
+            'sidebar-group-toggle--section py-2 text-xs font-semibold text-theme-subtle text-theme-subtle-hover': isSectionGroupStyle,
+            'nav-item py-3': !isSectionGroupStyle,
+            active: !isSectionGroupStyle && group.items.some(item => isActive(item.route)),
+          }"
           :aria-expanded="expandedGroups.has(group.id)"
           :aria-controls="`sidebar-group-items-${group.id}`"
           @click="toggleGroup(group.id)"
         >
           <span class="flex items-center gap-3">
-            <component :is="group.icon" class="w-5 h-5 shrink-0" aria-hidden="true" />
+            <component v-if="!isSectionGroupStyle" :is="group.icon" class="w-5 h-5 shrink-0" aria-hidden="true" />
             <span>{{ $t(group.label) }}</span>
           </span>
           <ArrowDown
-            class="w-4 h-4 shrink-0 transition-transform"
-            :class="{ '-rotate-90': !expandedGroups.has(group.id) }"
+            class="shrink-0 transition-transform"
+            :class="[
+              isSectionGroupStyle ? 'w-3.5 h-3.5' : 'w-4 h-4',
+              { '-rotate-90': !expandedGroups.has(group.id) },
+            ]"
             aria-hidden="true"
           />
         </button>
@@ -38,7 +45,7 @@
           v-show="!group.label || expandedGroups.has(group.id)"
           :id="`sidebar-group-items-${group.id}`"
           class="space-y-2"
-          :class="{ 'ml-4 pl-4 border-l border-blue-200/30': group.label }"
+          :class="{ 'ml-4 pl-4 border-l border-blue-200/30': group.label && !isSectionGroupStyle }"
           :role="group.label ? 'group' : undefined"
           :aria-labelledby="group.label ? `sidebar-group-${group.id}` : undefined"
         >
@@ -100,6 +107,7 @@ defineProps<{ open: boolean }>()
 const appVersion = ref('-')
 const route = useRoute()
 const appStore = useAppStore()
+const isSectionGroupStyle = computed(() => appStore.sidebarGroupStyle === 'section')
 const pluginMenuStore = usePluginMenuStore()
 const { locale } = useI18n()
 
@@ -212,6 +220,14 @@ function isActive(path: string): boolean {
   width: 16rem;
   overflow: hidden;
   transition: width 0.25s ease;
+}
+
+.dark .sidebar-group-toggle--section {
+  color: var(--color-text-subtle-hover);
+}
+
+.dark .sidebar-group-toggle--section:hover {
+  color: var(--color-text-subtle);
 }
 
 @media (min-width: 1025px) {

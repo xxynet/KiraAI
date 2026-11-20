@@ -4,8 +4,10 @@ import i18n from '@/i18n'
 
 const ALLOWED_THEMES = ['light', 'dark'] as const
 const ALLOWED_LANGUAGES = ['en', 'zh'] as const
+const ALLOWED_SIDEBAR_GROUP_STYLES = ['section', 'nested'] as const
 type Theme = (typeof ALLOWED_THEMES)[number]
 type Language = (typeof ALLOWED_LANGUAGES)[number]
+type SidebarGroupStyle = (typeof ALLOWED_SIDEBAR_GROUP_STYLES)[number]
 
 const THEME_TRANSITION_DURATION = 250
 let themeTransitionTimer: number | undefined
@@ -29,9 +31,16 @@ function sanitizeLanguage(value: string | null): Language {
     : 'en'
 }
 
+function sanitizeSidebarGroupStyle(value: string | null): SidebarGroupStyle {
+  return (ALLOWED_SIDEBAR_GROUP_STYLES as readonly string[]).includes(value ?? '')
+    ? (value as SidebarGroupStyle)
+    : 'section'
+}
+
 export const useAppStore = defineStore('app', () => {
   const theme = ref<Theme>(getInitialTheme())
   const language = ref<Language>(sanitizeLanguage(localStorage.getItem('language')))
+  const sidebarGroupStyle = ref<SidebarGroupStyle>(sanitizeSidebarGroupStyle(localStorage.getItem('sidebar_group_style')))
 
   const isDark = ref(theme.value === 'dark')
   const isThemeTransitioning = ref(false)
@@ -94,6 +103,12 @@ export const useAppStore = defineStore('app', () => {
     i18n.global.locale.value = validated
   }
 
+  function setSidebarGroupStyle(style: string) {
+    const validated = sanitizeSidebarGroupStyle(style)
+    localStorage.setItem('sidebar_group_style', validated)
+    sidebarGroupStyle.value = validated
+  }
+
   // Theme side effects are applied by App.vue on mount via
   // appStore.setTheme(appStore.theme); the store only holds validated state
   // so we don't double-write to the DOM and localStorage on creation.
@@ -101,9 +116,11 @@ export const useAppStore = defineStore('app', () => {
   return {
     theme,
     language,
+    sidebarGroupStyle,
     isDark,
     setTheme,
     toggleTheme,
     setLanguage,
+    setSidebarGroupStyle,
   }
 })
