@@ -63,6 +63,7 @@
               <ArrowDown class="w-4 h-4" />
             </button>
             <button
+              v-if="entry.id !== DEFAULT_PLUGIN_GROUP_ID"
               type="button" class="p-1.5 rounded text-theme-subtle hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30"
               :aria-label="$t('settings.sidebar_layout_remove_group', { name: groupLabel(entry) })"
               @click="requestRemoveGroup(entry.id)"
@@ -120,7 +121,7 @@ import SidebarLayoutItem from './SidebarLayoutItem.vue'
 import { useSidebarNavigation, type SidebarNavItem } from '@/composables/useSidebarNavigation'
 import { useSidebarDrag, type SidebarDragSource, type SidebarDropTarget } from '@/composables/useSidebarDrag'
 import {
-  reconcileSidebarLayout, moveSidebarItem, moveSidebarGroup, removeSidebarGroup,
+  reconcileSidebarLayout, moveSidebarItem, moveSidebarGroup, removeSidebarGroup, DEFAULT_PLUGIN_GROUP_ID,
   type SidebarLayoutEntry, type SidebarGroupEntry,
 } from '@/navigation/sidebarLayout'
 
@@ -168,11 +169,13 @@ function renameGroup(group: SidebarGroupEntry, event: Event) {
 }
 
 function removeGroup(id: string) {
+  if (id === DEFAULT_PLUGIN_GROUP_ID) return
   emit('update:modelValue', removeSidebarGroup(layout.value, id))
   emit('update:hiddenItems', props.hiddenItems.filter(hiddenId => hiddenId !== id))
 }
 
 function requestRemoveGroup(id: string) {
+  if (id === DEFAULT_PLUGIN_GROUP_ID) return
   if (!layout.value.some(entry => entry.type === 'group' && entry.id === id)) return
   pendingGroupId.value = id
   removeConfirmRef.value?.open()

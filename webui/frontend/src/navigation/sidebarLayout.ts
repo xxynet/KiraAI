@@ -117,6 +117,7 @@ export function moveSidebarGroup(layout: SidebarLayoutEntry[], id: string, befor
 }
 
 export function removeSidebarGroup(layout: SidebarLayoutEntry[], id: string): SidebarLayoutEntry[] {
+  if (id === DEFAULT_PLUGIN_GROUP_ID) return normalizeSidebarLayout(layout) ?? []
   const result = layout.flatMap(entry => entry.type === 'group' && entry.id === id
     ? entry.items.map(itemId => ({ type: 'item' as const, id: itemId }))
     : [entry])
