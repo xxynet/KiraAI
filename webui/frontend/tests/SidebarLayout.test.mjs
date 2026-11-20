@@ -4,6 +4,7 @@ import { test } from 'node:test'
 import { runInNewContext } from 'node:vm'
 import ts from 'typescript'
 import { computed, ref, reactive, defineComponent } from 'vue'
+import * as Vue from 'vue'
 import { parse, compileScript } from '@vue/compiler-sfc'
 
 function load(path, mocks = {}, globals = {}) {
@@ -145,8 +146,9 @@ test('ungrouping and newly discovered pages always insert before groups', () => 
   assert.ok(updated.some(entry => entry.id === '/plugin-page/demo/b'))
 })
 
-function storageSetup(saved = null) {
+function storageSetup(saved = null, openedItems = null) {
   const storage = new Map(saved === null ? [] : [['sidebar_layout', saved]])
+  if (openedItems !== null) storage.set('sidebar_opened_items', openedItems)
   const errors = []
   const localStorage = {
     getItem: key => storage.get(key) ?? null,
@@ -179,6 +181,105 @@ test('failed persistence does not apply an unsaved layout', () => {
   localStorage.setItem = () => { throw new Error('Storage full') }
   assert.throws(() => store.setLayout([item('/settings')]), /Storage full/)
   assert.equal(store.layout.value, null)
+})
+
+test('opened groups are saved immediately and survive reload and layout changes', () => {
+  const { store, storage } = storageSetup()
+  assert.equal(store.hasSavedOpenedItems.value, false)
+  store.setGroupExpanded('work', true)
+  store.setGroupExpanded('more-features', true)
+  assert.equal(store.hasSavedOpenedItems.value, true)
+  assert.deepEqual(JSON.parse(storage.get('sidebar_opened_items')), ['work', 'more-features'])
+  store.setGroupExpanded('work', false)
+  store.setLayout([group('more-features', ['/plugin-page/demo/a'], '')])
+  const reloaded = storageSetup(null, storage.get('sidebar_opened_items')).store
+  assert.deepEqual(Array.from(reloaded.expandedGroups.value), ['more-features'])
+  assert.equal(reloaded.hasSavedOpenedItems.value, true)
+  assert.equal(storage.has('sidebar_openedItems'), false)
+})
+
+test('opened group input is validated, deduplicated and malformed records are reported', () => {
+  const loaded = storageSetup(null, '["work","work",null,123,"/overview","","bad id","more-features"]')
+  assert.deepEqual(Array.from(loaded.store.expandedGroups.value), ['work', 'more-features'])
+  for (const invalid of ['{invalid', '{}']) {
+    const { store, errors } = storageSetup(null, invalid)
+    assert.equal(store.expandedGroups.value.size, 0)
+    assert.equal(store.hasSavedOpenedItems.value, false)
+    assert.equal(errors.length, 1)
+    assert.ok(errors[0][1])
+  }
+})
+
+test('a storage failure is logged and does not prevent toggling groups in memory', () => {
+  const { store, localStorage, errors } = storageSetup()
+  localStorage.setItem = () => { throw new Error('Storage blocked') }
+  store.setGroupExpanded('work', true)
+  assert.equal(store.expandedGroups.value.has('work'), true)
+  assert.equal(errors.length, 1)
+  assert.match(String(errors[0][1]), /Storage blocked/)
+  store.setGroupExpanded('work', true)
+  assert.equal(errors.length, 1)
+  store.setGroupExpanded('work', false)
+  assert.equal(store.expandedGroups.value.has('work'), false)
+})
+
+function sidebarSetup(openedItems, path = '/settings', initialGroups) {
+  const storageState = storageSetup(null, openedItems)
+  const sidebarStore = reactive(storageState.store)
+  const route = reactive({ path })
+  const groups = ref(initialGroups ?? [
+    { id: 'work', label: 'Work', items: [{ route: '/settings' }] },
+    { id: 'more-features', label: 'More', items: [{ route: '/plugin-page/demo/page' }] },
+  ])
+  const { descriptor } = parse(readFileSync(new URL('../src/components/layout/AppSidebar.vue', import.meta.url), 'utf8'))
+  const script = compileScript(descriptor, { id: 'sidebar-expansion-test' })
+  const component = evaluate(script.content, {
+    vue: { ...Vue, onMounted() {} }, 'vue-router': { useRoute: () => route },
+    'vue-i18n': { useI18n: () => ({ locale: ref('en') }) },
+    '@/stores/app': { useAppStore: () => ({ sidebarGroupStyle: 'section', language: 'en' }) },
+    '@/stores/sidebar': { useSidebarStore: () => sidebarStore },
+    '@/stores/pluginMenu': { usePluginMenuStore: () => ({ reResolveLabels() {} }) },
+    '@/composables/useSidebarNavigation': { useSidebarNavigation: () => ({ navGroups: groups }) },
+    '@/api/overview': {}, '@/components/common/CustomSelect.vue': {}, '@/components/common/InlineSvgIcon.vue': {},
+    '@element-plus/icons-vue': {},
+  }).default
+  const scope = Vue.effectScope()
+  const mount = () => scope.run(() => component.setup({ open: true }, { expose() {} }))
+  return { ...storageState, store: sidebarStore, route, groups, state: mount(), remount: mount, stop: () => scope.stop() }
+}
+
+test('first use reveals the current group, while a manual collapse survives menu refresh and remount', async t => {
+  const env = sidebarSetup(null)
+  t.after(env.stop)
+  assert.equal(env.state.expandedGroups.value.has('work'), true)
+  env.state.toggleGroup('work')
+  assert.deepEqual(JSON.parse(env.storage.get('sidebar_opened_items')), [])
+  const groups = env.groups.value
+  env.groups.value = []
+  await Vue.nextTick()
+  env.groups.value = groups
+  await Vue.nextTick()
+  assert.equal(env.store.expandedGroups.has('work'), false)
+  env.remount()
+  assert.equal(env.store.expandedGroups.has('work'), false)
+})
+
+test('saved collapse wins on refresh and delayed menu loading; navigation still reveals groups', async t => {
+  const env = sidebarSetup('[]', '/plugin-page/demo/page', [])
+  t.after(env.stop)
+  env.groups.value = [
+    { id: 'work', label: 'Work', items: [{ route: '/settings' }] },
+    { id: 'more-features', label: 'More', items: [{ route: '/plugin-page/demo/page' }] },
+  ]
+  await Vue.nextTick()
+  assert.equal(env.store.expandedGroups.size, 0)
+  env.route.path = '/settings'
+  await Vue.nextTick()
+  assert.equal(env.store.expandedGroups.has('work'), true)
+  env.route.path = '/plugin-page/demo/page'
+  await Vue.nextTick()
+  assert.equal(env.store.expandedGroups.has('more-features'), true)
+  assert.deepEqual(JSON.parse(env.storage.get('sidebar_opened_items')), ['work', 'more-features'])
 })
 
 test('navigation resolves live plugin pages, literal group names and missing entries reactively', () => {

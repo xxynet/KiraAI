@@ -92,6 +92,7 @@ import { computed, ref, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
+import { useSidebarStore } from '@/stores/sidebar'
 import { usePluginMenuStore } from '@/stores/pluginMenu'
 import { getVersion } from '@/api/overview'
 import CustomSelect from '@/components/common/CustomSelect.vue'
@@ -104,6 +105,7 @@ defineProps<{ open: boolean }>()
 const appVersion = ref('-')
 const route = useRoute()
 const appStore = useAppStore()
+const sidebarStore = useSidebarStore()
 const isSectionGroupStyle = computed(() => appStore.sidebarGroupStyle === 'section')
 const pluginMenuStore = usePluginMenuStore()
 const { navGroups } = useSidebarNavigation()
@@ -134,21 +136,26 @@ const languageOptions = [
   { value: 'zh', label: '中文' },
 ]
 
-const expandedGroups = ref(new Set<string>())
+const expandedGroups = computed(() => sidebarStore.expandedGroups)
+let revealCurrentPage = !sidebarStore.hasSavedOpenedItems
 
 function toggleGroup(id: string) {
-  if (expandedGroups.value.has(id)) expandedGroups.value.delete(id)
-  else expandedGroups.value.add(id)
+  sidebarStore.setGroupExpanded(id, !expandedGroups.value.has(id))
 }
 
-// Reveal the active page on navigation and when plugin menus finish loading.
+// Restore saved state on refresh, including when plugin menus arrive later.
+// After navigation, reveal the active page as before.
 watch(
   [
     () => route.path,
     () => navGroups.value.find(group => group.label && group.items.some(item => isActive(item.route)))?.id,
   ],
-  ([, activeGroupId]) => {
-    if (activeGroupId) expandedGroups.value.add(activeGroupId)
+  ([path, activeGroupId], [previousPath]) => {
+    if (previousPath !== undefined && path !== previousPath) revealCurrentPage = true
+    if (activeGroupId && revealCurrentPage) {
+      sidebarStore.setGroupExpanded(activeGroupId, true)
+      revealCurrentPage = false
+    }
   },
   { immediate: true },
 )
