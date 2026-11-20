@@ -4,6 +4,7 @@ import { normalizeSidebarLayout, type SidebarLayoutEntry } from '@/navigation/si
 
 const STORAGE_KEY = 'sidebar_layout'
 const OPENED_ITEMS_KEY = 'sidebar_opened_items'
+const HIDDEN_ITEMS_KEY = 'sidebar_hidden_items'
 
 function loadLayout(): SidebarLayoutEntry[] | null {
   const saved = localStorage.getItem(STORAGE_KEY)
@@ -29,11 +30,28 @@ function loadOpenedItems(): Set<string> | null {
   }
 }
 
+function normalizeHiddenItems(value: unknown): Set<string> {
+  if (!Array.isArray(value)) throw new Error('Sidebar hidden items must be an array')
+  return new Set(value.filter((id): id is string => typeof id === 'string'
+    && (id.startsWith('/') || /^[a-zA-Z0-9_-]+$/.test(id))))
+}
+
+function loadHiddenItems(): Set<string> {
+  try {
+    const saved = localStorage.getItem(HIDDEN_ITEMS_KEY)
+    return saved === null ? new Set() : normalizeHiddenItems(JSON.parse(saved))
+  } catch (error) {
+    console.error('Failed to load sidebar hidden items:', error)
+    return new Set()
+  }
+}
+
 export const useSidebarStore = defineStore('sidebar', () => {
   const layout = ref<SidebarLayoutEntry[] | null>(loadLayout())
   const savedOpenedItems = loadOpenedItems()
   const expandedGroups = ref(savedOpenedItems ?? new Set<string>())
   const hasSavedOpenedItems = ref(savedOpenedItems !== null)
+  const hiddenItems = ref(loadHiddenItems())
 
   function setLayout(value: SidebarLayoutEntry[] | null) {
     const normalized = normalizeSidebarLayout(value)
@@ -56,5 +74,11 @@ export const useSidebarStore = defineStore('sidebar', () => {
     }
   }
 
-  return { layout, setLayout, expandedGroups, hasSavedOpenedItems, setGroupExpanded }
+  function setHiddenItems(ids: string[]) {
+    const next = normalizeHiddenItems(ids)
+    localStorage.setItem(HIDDEN_ITEMS_KEY, JSON.stringify([...next]))
+    hiddenItems.value = next
+  }
+
+  return { layout, setLayout, expandedGroups, hasSavedOpenedItems, setGroupExpanded, hiddenItems, setHiddenItems }
 })

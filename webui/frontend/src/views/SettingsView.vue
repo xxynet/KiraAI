@@ -255,7 +255,7 @@
         </div>
       </fieldset>
 
-      <SidebarLayoutEditor v-model="sidebarLayout" />
+      <SidebarLayoutEditor v-model="sidebarLayout" v-model:hidden-items="sidebarHiddenItems" />
 
       <div>
         <label for="custom-webui-title" class="block text-sm font-medium text-theme-body mb-2">
@@ -508,6 +508,7 @@ const customCodeCollapsed = ref(true)
 const customWebUITitle = ref('')
 const sidebarGroupStyle = ref(appStore.sidebarGroupStyle)
 const sidebarLayout = ref<SidebarLayoutEntry[] | null>(normalizeSidebarLayout(sidebarStore.layout))
+const sidebarHiddenItems = ref([...sidebarStore.hiddenItems])
 const sidebarGroupStyleOptions = computed(() => [
   { value: 'section', label: t('settings.sidebar_group_style_section'), description: t('settings.sidebar_group_style_section_desc') },
   { value: 'nested', label: t('settings.sidebar_group_style_nested'), description: t('settings.sidebar_group_style_nested_desc') },
@@ -809,12 +810,14 @@ async function handleSave() {
     localStorage.setItem('custom_js', customJS.value)
     appStore.setSidebarGroupStyle(sidebarGroupStyle.value)
     sidebarStore.setLayout(sidebarLayout.value)
+    sidebarStore.setHiddenItems(sidebarHiddenItems.value)
     applyWebUITitle(customWebUITitle.value)
     applyCustomCSS()
     applyCustomJS()
 
     notify(t('settings.saved'), 'success')
-  } catch {
+  } catch (error) {
+    console.error('Failed to save custom settings:', error)
     notify(t('settings.save_failed'), 'error')
   } finally {
     saving.value = false
