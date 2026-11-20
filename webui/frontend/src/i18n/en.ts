@@ -1,5 +1,6 @@
 export default {
   common: {
+    cancel: 'Cancel',
     on: 'On',
     off: 'Off',
     delete: 'Delete',
@@ -1135,6 +1136,8 @@ export default {
     sidebar_layout_group_name: 'Group name',
     sidebar_layout_add_group: 'New group',
     sidebar_layout_remove_group: 'Remove group {name}',
+    sidebar_layout_remove_group_title: 'Delete group',
+    sidebar_layout_remove_group_confirm: 'Delete the group "{name}"? Its menu items will move to the end of the top-level navigation and will not be deleted.',
     sidebar_layout_reset: 'Restore default layout',
     sidebar_layout_move_up: 'Move {name} up',
     sidebar_layout_move_down: 'Move {name} down',

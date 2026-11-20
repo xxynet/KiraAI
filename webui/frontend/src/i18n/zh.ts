@@ -1,5 +1,6 @@
 export default {
   common: {
+    cancel: '取消',
     on: '启用',
     off: '禁用',
     delete: '删除',
@@ -1135,6 +1136,8 @@ export default {
     sidebar_layout_group_name: '分组名称',
     sidebar_layout_add_group: '新建分组',
     sidebar_layout_remove_group: '移除分组 {name}',
+    sidebar_layout_remove_group_title: '删除分组',
+    sidebar_layout_remove_group_confirm: '确定删除分组“{name}”吗？组内菜单将移至顶层末尾，不会删除菜单项。',
     sidebar_layout_reset: '恢复默认布局',
     sidebar_layout_move_up: '上移 {name}',
     sidebar_layout_move_down: '下移 {name}',

@@ -62,7 +62,11 @@
             <button type="button" class="layout-action" :disabled="!canMoveRoot(entry, 1)" :aria-label="$t('settings.sidebar_layout_move_down', { name: groupLabel(entry) })" @click="moveRoot(entry.id, 1)">
               <ArrowDown class="w-4 h-4" />
             </button>
-            <button type="button" class="layout-action" :aria-label="$t('settings.sidebar_layout_remove_group', { name: groupLabel(entry) })" @click="removeGroup(entry.id)">
+            <button
+              type="button" class="p-1.5 rounded text-theme-subtle hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30"
+              :aria-label="$t('settings.sidebar_layout_remove_group', { name: groupLabel(entry) })"
+              @click="requestRemoveGroup(entry.id)"
+            >
               <Delete class="w-4 h-4" />
             </button>
           </div>
@@ -94,6 +98,16 @@
         :class="{ 'bg-blue-50 dark:bg-blue-900/20': dragged?.type === 'group' }"
       >{{ $t('settings.sidebar_layout_drop_group_end') }}</div>
     </div>
+    <ConfirmModal
+      ref="removeConfirmRef"
+      variant="danger"
+      :title="$t('settings.sidebar_layout_remove_group_title')"
+      :message="$t('settings.sidebar_layout_remove_group_confirm', { name: pendingGroup ? groupLabel(pendingGroup) : '' })"
+      :cancel-text="$t('common.cancel')"
+      :confirm-text="$t('common.delete')"
+      @confirm="confirmRemoveGroup"
+      @cancel="cancelRemoveGroup"
+    />
   </section>
 </template>
 
@@ -101,6 +115,7 @@
 import { computed, ref } from 'vue'
 import { Rank, Folder, ArrowUp, ArrowDown, Delete, View, Hide } from '@element-plus/icons-vue'
 import UiInput from '@/components/ui/UiInput.vue'
+import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import SidebarLayoutItem from './SidebarLayoutItem.vue'
 import { useSidebarNavigation, type SidebarNavItem } from '@/composables/useSidebarNavigation'
 import { useSidebarDrag, type SidebarDragSource, type SidebarDropTarget } from '@/composables/useSidebarDrag'
@@ -119,6 +134,9 @@ const layout = computed(() => reconcileSidebarLayout(props.modelValue, items.val
 const visibleEntries = computed(() => layout.value.filter(entry => entry.type === 'group' || itemMap.value.has(entry.id)))
 const hasGroups = computed(() => layout.value.some(entry => entry.type === 'group'))
 const newGroupName = ref('')
+const removeConfirmRef = ref<InstanceType<typeof ConfirmModal>>()
+const pendingGroupId = ref<string | null>(null)
+const pendingGroup = computed(() => layout.value.find((entry): entry is SidebarGroupEntry => entry.type === 'group' && entry.id === pendingGroupId.value))
 const editorRef = ref<HTMLElement>()
 const { dragged, startDrag } = useSidebarDrag(editorRef, applyDrop)
 
@@ -154,6 +172,22 @@ function removeGroup(id: string) {
   emit('update:hiddenItems', props.hiddenItems.filter(hiddenId => hiddenId !== id))
 }
 
+function requestRemoveGroup(id: string) {
+  if (!layout.value.some(entry => entry.type === 'group' && entry.id === id)) return
+  pendingGroupId.value = id
+  removeConfirmRef.value?.open()
+}
+
+function confirmRemoveGroup() {
+  const id = pendingGroup.value?.id
+  pendingGroupId.value = null
+  if (id) removeGroup(id)
+}
+
+function cancelRemoveGroup() {
+  pendingGroupId.value = null
+}
+
 function toggleHidden(id: string) {
   const hidden = new Set(props.hiddenItems)
   if (hidden.has(id)) hidden.delete(id)
@@ -162,6 +196,8 @@ function toggleHidden(id: string) {
 }
 
 function resetLayout() {
+  cancelRemoveGroup()
+  removeConfirmRef.value?.close()
   emit('update:modelValue', null)
   emit('update:hiddenItems', [])
 }

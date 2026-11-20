@@ -370,6 +370,7 @@ function editorSetup() {
   const component = evaluate(script.content, {
     vue: { ref, computed, defineComponent }, '@element-plus/icons-vue': {},
     '@/components/ui/UiInput.vue': {}, './SidebarLayoutItem.vue': {},
+    '@/components/common/ConfirmModal.vue': {},
     '@/navigation/sidebarLayout': model,
     '@/composables/useSidebarDrag': { useSidebarDrag: () => ({ dragged: ref(null), startDrag() {} }) },
     '@/composables/useSidebarNavigation': { useSidebarNavigation: () => ({
@@ -483,4 +484,44 @@ test('editor keeps hidden entries editable and resets visibility with the defaul
   state.resetLayout()
   assert.equal(props.modelValue, null)
   assert.deepEqual(plain(props.hiddenItems), [])
+})
+
+test('group removal opens confirmation first; cancellation preserves layout and visibility', () => {
+  const { props, state } = editorSetup()
+  state.newGroupName.value = 'Personal'
+  state.addGroup()
+  const id = props.modelValue.at(-1).id
+  state.moveItem('/plugin-page/demo/a', id)
+  state.toggleHidden(id)
+  const original = plain(props.modelValue)
+  const hidden = plain(props.hiddenItems)
+  let opened = 0
+  state.removeConfirmRef.value = { open() { opened++ }, close() {} }
+  state.requestRemoveGroup(id)
+  assert.equal(opened, 1)
+  assert.equal(state.pendingGroup.value.name, 'Personal')
+  assert.deepEqual(plain(props.modelValue), original)
+  assert.deepEqual(plain(props.hiddenItems), hidden)
+  state.cancelRemoveGroup()
+  state.confirmRemoveGroup()
+  assert.equal(state.pendingGroupId.value, null)
+  assert.deepEqual(plain(props.modelValue), original)
+  assert.deepEqual(plain(props.hiddenItems), hidden)
+  state.requestRemoveGroup(id)
+  state.confirmRemoveGroup()
+  assert.equal(props.modelValue.some(entry => entry.id === id), false)
+  assert.equal(props.modelValue.some(entry => entry.type === 'item' && entry.id === '/plugin-page/demo/a'), true)
+  assert.equal(props.hiddenItems.includes(id), false)
+})
+
+test('resetting a layout clears pending deletion and closes the confirmation modal', () => {
+  const { props, state } = editorSetup()
+  let closed = 0
+  state.removeConfirmRef.value = { open() {}, close() { closed++ } }
+  state.requestRemoveGroup('more-features')
+  state.resetLayout()
+  assert.equal(closed, 1)
+  assert.equal(state.pendingGroupId.value, null)
+  state.confirmRemoveGroup()
+  assert.equal(props.modelValue, null)
 })
