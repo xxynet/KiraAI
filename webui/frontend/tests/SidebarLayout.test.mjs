@@ -4,6 +4,7 @@ import { test } from 'node:test'
 import { runInNewContext } from 'node:vm'
 import ts from 'typescript'
 import { computed, ref, reactive, defineComponent } from 'vue'
+import * as Vue from 'vue'
 import { parse, compileScript } from '@vue/compiler-sfc'
 
 function load(path, mocks = {}, globals = {}) {
@@ -145,8 +146,10 @@ test('ungrouping and newly discovered pages always insert before groups', () => 
   assert.ok(updated.some(entry => entry.id === '/plugin-page/demo/b'))
 })
 
-function storageSetup(saved = null) {
+function storageSetup(saved = null, openedItems = null, hiddenItems = null) {
   const storage = new Map(saved === null ? [] : [['sidebar_layout', saved]])
+  if (openedItems !== null) storage.set('sidebar_opened_items', openedItems)
+  if (hiddenItems !== null) storage.set('sidebar_hidden_items', hiddenItems)
   const errors = []
   const localStorage = {
     getItem: key => storage.get(key) ?? null,
@@ -181,6 +184,132 @@ test('failed persistence does not apply an unsaved layout', () => {
   assert.equal(store.layout.value, null)
 })
 
+test('opened groups are saved immediately and survive reload and layout changes', () => {
+  const { store, storage } = storageSetup()
+  assert.equal(store.hasSavedOpenedItems.value, false)
+  store.setGroupExpanded('work', true)
+  store.setGroupExpanded('more-features', true)
+  assert.equal(store.hasSavedOpenedItems.value, true)
+  assert.deepEqual(JSON.parse(storage.get('sidebar_opened_items')), ['work', 'more-features'])
+  store.setGroupExpanded('work', false)
+  store.setLayout([group('more-features', ['/plugin-page/demo/a'], '')])
+  const reloaded = storageSetup(null, storage.get('sidebar_opened_items')).store
+  assert.deepEqual(Array.from(reloaded.expandedGroups.value), ['more-features'])
+  assert.equal(reloaded.hasSavedOpenedItems.value, true)
+  assert.equal(storage.has('sidebar_openedItems'), false)
+})
+
+test('opened group input is validated, deduplicated and malformed records are reported', () => {
+  const loaded = storageSetup(null, '["work","work",null,123,"/overview","","bad id","more-features"]')
+  assert.deepEqual(Array.from(loaded.store.expandedGroups.value), ['work', 'more-features'])
+  for (const invalid of ['{invalid', '{}']) {
+    const { store, errors } = storageSetup(null, invalid)
+    assert.equal(store.expandedGroups.value.size, 0)
+    assert.equal(store.hasSavedOpenedItems.value, false)
+    assert.equal(errors.length, 1)
+    assert.ok(errors[0][1])
+  }
+})
+
+test('a storage failure is logged and does not prevent toggling groups in memory', () => {
+  const { store, localStorage, errors } = storageSetup()
+  localStorage.setItem = () => { throw new Error('Storage blocked') }
+  store.setGroupExpanded('work', true)
+  assert.equal(store.expandedGroups.value.has('work'), true)
+  assert.equal(errors.length, 1)
+  assert.match(String(errors[0][1]), /Storage blocked/)
+  store.setGroupExpanded('work', true)
+  assert.equal(errors.length, 1)
+  store.setGroupExpanded('work', false)
+  assert.equal(store.expandedGroups.value.has('work'), false)
+})
+
+test('hidden items and groups survive reload without modifying layout or opened groups', () => {
+  const { store, storage } = storageSetup()
+  store.setLayout([group('work', ['/settings', '/plugin-page/demo/a'])])
+  store.setGroupExpanded('work', true)
+  store.setHiddenItems(['/settings', 'work', '/plugin-page/demo/a', 'work'])
+  assert.deepEqual(JSON.parse(storage.get('sidebar_hidden_items')), ['/settings', 'work', '/plugin-page/demo/a'])
+  const reloaded = storageSetup(storage.get('sidebar_layout'), storage.get('sidebar_opened_items'), storage.get('sidebar_hidden_items')).store
+  assert.deepEqual(Array.from(reloaded.hiddenItems.value), ['/settings', 'work', '/plugin-page/demo/a'])
+  assert.equal(reloaded.expandedGroups.value.has('work'), true)
+  assert.deepEqual(plain(reloaded.layout.value), [group('work', ['/settings', '/plugin-page/demo/a'])])
+  reloaded.setHiddenItems([])
+  assert.equal(reloaded.hiddenItems.value.size, 0)
+})
+
+test('malformed hidden settings are reported and failed saves retain the previous visibility', () => {
+  for (const invalid of ['{invalid', '{}']) {
+    const { store, errors } = storageSetup(null, null, invalid)
+    assert.equal(store.hiddenItems.value.size, 0)
+    assert.equal(errors.length, 1)
+  }
+  const { store, localStorage } = storageSetup(null, null, '["work",null,"",123,"bad id","/settings","work"]')
+  assert.deepEqual(Array.from(store.hiddenItems.value), ['work', '/settings'])
+  localStorage.setItem = () => { throw new Error('Storage full') }
+  assert.throws(() => store.setHiddenItems([]), /Storage full/)
+  assert.deepEqual(Array.from(store.hiddenItems.value), ['work', '/settings'])
+})
+
+function sidebarSetup(openedItems, path = '/settings', initialGroups) {
+  const storageState = storageSetup(null, openedItems)
+  const sidebarStore = reactive(storageState.store)
+  const route = reactive({ path })
+  const groups = ref(initialGroups ?? [
+    { id: 'work', label: 'Work', items: [{ route: '/settings' }] },
+    { id: 'more-features', label: 'More', items: [{ route: '/plugin-page/demo/page' }] },
+  ])
+  const { descriptor } = parse(readFileSync(new URL('../src/components/layout/AppSidebar.vue', import.meta.url), 'utf8'))
+  const script = compileScript(descriptor, { id: 'sidebar-expansion-test' })
+  const component = evaluate(script.content, {
+    vue: { ...Vue, onMounted() {} }, 'vue-router': { useRoute: () => route },
+    'vue-i18n': { useI18n: () => ({ locale: ref('en') }) },
+    '@/stores/app': { useAppStore: () => ({ sidebarGroupStyle: 'section', language: 'en' }) },
+    '@/stores/sidebar': { useSidebarStore: () => sidebarStore },
+    '@/stores/pluginMenu': { usePluginMenuStore: () => ({ reResolveLabels() {} }) },
+    '@/composables/useSidebarNavigation': { useSidebarNavigation: () => ({ navGroups: groups }) },
+    '@/api/overview': {}, '@/components/common/CustomSelect.vue': {}, '@/components/common/InlineSvgIcon.vue': {},
+    '@element-plus/icons-vue': {},
+  }).default
+  const scope = Vue.effectScope()
+  const mount = () => scope.run(() => component.setup({ open: true }, { expose() {} }))
+  return { ...storageState, store: sidebarStore, route, groups, state: mount(), remount: mount, stop: () => scope.stop() }
+}
+
+test('first use reveals the current group, while a manual collapse survives menu refresh and remount', async t => {
+  const env = sidebarSetup(null)
+  t.after(env.stop)
+  assert.equal(env.state.expandedGroups.value.has('work'), true)
+  env.state.toggleGroup('work')
+  assert.deepEqual(JSON.parse(env.storage.get('sidebar_opened_items')), [])
+  const groups = env.groups.value
+  env.groups.value = []
+  await Vue.nextTick()
+  env.groups.value = groups
+  await Vue.nextTick()
+  assert.equal(env.store.expandedGroups.has('work'), false)
+  env.remount()
+  assert.equal(env.store.expandedGroups.has('work'), false)
+})
+
+test('saved collapse wins on refresh and delayed menu loading; navigation still reveals groups', async t => {
+  const env = sidebarSetup('[]', '/plugin-page/demo/page', [])
+  t.after(env.stop)
+  env.groups.value = [
+    { id: 'work', label: 'Work', items: [{ route: '/settings' }] },
+    { id: 'more-features', label: 'More', items: [{ route: '/plugin-page/demo/page' }] },
+  ]
+  await Vue.nextTick()
+  assert.equal(env.store.expandedGroups.size, 0)
+  env.route.path = '/settings'
+  await Vue.nextTick()
+  assert.equal(env.store.expandedGroups.has('work'), true)
+  env.route.path = '/plugin-page/demo/page'
+  await Vue.nextTick()
+  assert.equal(env.store.expandedGroups.has('more-features'), true)
+  assert.deepEqual(JSON.parse(env.storage.get('sidebar_opened_items')), ['work', 'more-features'])
+})
+
 test('navigation resolves live plugin pages, literal group names and missing entries reactively', () => {
   const menus = ref([{ route: '/plugin-page/demo/a', label: 'Plugin page', icon: '/api/plugins/demo/icon' }])
   const layout = ref([group('custom', ['/plugin-page/demo/a', '/settings'], 'My tools')])
@@ -188,7 +317,7 @@ test('navigation resolves live plugin pages, literal group names and missing ent
     vue: { computed }, 'vue-i18n': { useI18n: () => ({ t: key => `translated:${key}` }) },
     '@element-plus/icons-vue': { Box: 'box', MoreFilled: 'more', Folder: 'folder' },
     '@/stores/pluginMenu': { usePluginMenuStore: () => ({ get menus() { return menus.value } }) },
-    '@/stores/sidebar': { useSidebarStore: () => ({ get layout() { return layout.value } }) },
+    '@/stores/sidebar': { useSidebarStore: () => ({ get layout() { return layout.value }, hiddenItems: new Set() }) },
     '@/utils/iconMap': { iconMap: {} }, '@/navigation/sidebarLayout': model,
   })
   const nav = useSidebarNavigation()
@@ -207,6 +336,33 @@ test('navigation resolves live plugin pages, literal group names and missing ent
   assert.equal(custom(), undefined)
 })
 
+test('hiding builtin items, plugin pages and groups only filters navigation and preserves editor sources', () => {
+  const layout = ref([item('/overview'), group('work', ['/settings', '/plugin-page/demo/a'], 'Work')])
+  const hiddenItems = ref(new Set())
+  const { useSidebarNavigation } = load('../src/composables/useSidebarNavigation.ts', {
+    vue: { computed }, 'vue-i18n': { useI18n: () => ({ t: key => key }) },
+    '@element-plus/icons-vue': { Box: 'box', MoreFilled: 'more', Folder: 'folder' },
+    '@/stores/pluginMenu': { usePluginMenuStore: () => ({ menus: [{ route: '/plugin-page/demo/a', label: 'Plugin page', icon: null }] }) },
+    '@/stores/sidebar': { useSidebarStore: () => ({ get layout() { return layout.value }, get hiddenItems() { return hiddenItems.value } }) },
+    '@/utils/iconMap': { iconMap: {} }, '@/navigation/sidebarLayout': model,
+  })
+  const nav = useSidebarNavigation()
+  const groupItems = () => nav.navGroups.value.find(entry => entry.id === 'work')?.items.map(entry => entry.id)
+  const original = plain(layout.value)
+  hiddenItems.value = new Set(['/overview', '/plugin-page/demo/a'])
+  assert.equal(nav.navGroups.value.some(entry => entry.id === '/overview'), false)
+  assert.deepEqual(Array.from(groupItems()), ['/settings'])
+  assert.equal(nav.itemMap.value.has('/overview'), true)
+  assert.equal(nav.itemMap.value.has('/plugin-page/demo/a'), true)
+  hiddenItems.value = new Set(['work'])
+  assert.equal(groupItems(), undefined)
+  hiddenItems.value = new Set(['/settings', '/plugin-page/demo/a'])
+  assert.equal(groupItems(), undefined)
+  hiddenItems.value = new Set()
+  assert.deepEqual(Array.from(groupItems()), ['/settings', '/plugin-page/demo/a'])
+  assert.deepEqual(plain(layout.value), original)
+})
+
 function editorSetup() {
   const sources = ref(catalog.map(entry => ({ ...entry, route: entry.id, label: entry.id })))
   const { descriptor } = parse(readFileSync(new URL('../src/components/layout/SidebarLayoutEditor.vue', import.meta.url), 'utf8'))
@@ -214,6 +370,7 @@ function editorSetup() {
   const component = evaluate(script.content, {
     vue: { ref, computed, defineComponent }, '@element-plus/icons-vue': {},
     '@/components/ui/UiInput.vue': {}, './SidebarLayoutItem.vue': {},
+    '@/components/common/ConfirmModal.vue': {},
     '@/navigation/sidebarLayout': model,
     '@/composables/useSidebarDrag': { useSidebarDrag: () => ({ dragged: ref(null), startDrag() {} }) },
     '@/composables/useSidebarNavigation': { useSidebarNavigation: () => ({
@@ -221,10 +378,13 @@ function editorSetup() {
       groupLabel: entry => entry.name || 'More Features',
     }) },
   }, { crypto: globalThis.crypto, Uint32Array }).default
-  const props = reactive({ modelValue: null })
+  const props = reactive({ modelValue: null, hiddenItems: [] })
   const state = component.setup(props, { expose() {}, emit: (name, value) => {
-    assert.equal(name, 'update:modelValue')
-    props.modelValue = value
+    if (name === 'update:modelValue') props.modelValue = value
+    else {
+      assert.equal(name, 'update:hiddenItems')
+      props.hiddenItems = value
+    }
   } })
   return { props, state, sources }
 }
@@ -299,4 +459,69 @@ test('invalid cross-type pointer drops do not change the layout', () => {
   state.applyDrop({ type: 'item', id: '/settings' }, { type: 'group' })
   state.applyDrop({ type: 'group', id: 'more-features' }, { type: 'item', groupId: null })
   assert.deepEqual(plain(state.layout.value), original)
+})
+
+test('editor keeps hidden entries editable and resets visibility with the default layout', () => {
+  const { props, state } = editorSetup()
+  state.toggleHidden('/settings')
+  assert.equal(props.modelValue, null)
+  assert.deepEqual(plain(props.hiddenItems), ['/settings'])
+  assert.ok(state.visibleEntries.value.some(entry => entry.id === '/settings'))
+  state.toggleHidden('/settings')
+  assert.deepEqual(plain(props.hiddenItems), [])
+  state.newGroupName.value = 'Personal'
+  state.addGroup()
+  const id = props.modelValue.at(-1).id
+  state.moveItem('/plugin-page/demo/a', id)
+  state.toggleHidden(id)
+  state.toggleHidden('/plugin-page/demo/a')
+  assert.deepEqual(plain(props.hiddenItems), [id, '/plugin-page/demo/a'])
+  const personal = state.visibleEntries.value.find(entry => entry.id === id)
+  assert.ok(personal)
+  assert.equal(state.groupItems(personal)[0].id, '/plugin-page/demo/a')
+  state.removeGroup(id)
+  assert.deepEqual(plain(props.hiddenItems), ['/plugin-page/demo/a'])
+  state.resetLayout()
+  assert.equal(props.modelValue, null)
+  assert.deepEqual(plain(props.hiddenItems), [])
+})
+
+test('group removal opens confirmation first; cancellation preserves layout and visibility', () => {
+  const { props, state } = editorSetup()
+  state.newGroupName.value = 'Personal'
+  state.addGroup()
+  const id = props.modelValue.at(-1).id
+  state.moveItem('/plugin-page/demo/a', id)
+  state.toggleHidden(id)
+  const original = plain(props.modelValue)
+  const hidden = plain(props.hiddenItems)
+  let opened = 0
+  state.removeConfirmRef.value = { open() { opened++ }, close() {} }
+  state.requestRemoveGroup(id)
+  assert.equal(opened, 1)
+  assert.equal(state.pendingGroup.value.name, 'Personal')
+  assert.deepEqual(plain(props.modelValue), original)
+  assert.deepEqual(plain(props.hiddenItems), hidden)
+  state.cancelRemoveGroup()
+  state.confirmRemoveGroup()
+  assert.equal(state.pendingGroupId.value, null)
+  assert.deepEqual(plain(props.modelValue), original)
+  assert.deepEqual(plain(props.hiddenItems), hidden)
+  state.requestRemoveGroup(id)
+  state.confirmRemoveGroup()
+  assert.equal(props.modelValue.some(entry => entry.id === id), false)
+  assert.equal(props.modelValue.some(entry => entry.type === 'item' && entry.id === '/plugin-page/demo/a'), true)
+  assert.equal(props.hiddenItems.includes(id), false)
+})
+
+test('resetting a layout clears pending deletion and closes the confirmation modal', () => {
+  const { props, state } = editorSetup()
+  let closed = 0
+  state.removeConfirmRef.value = { open() {}, close() { closed++ } }
+  state.requestRemoveGroup('more-features')
+  state.resetLayout()
+  assert.equal(closed, 1)
+  assert.equal(state.pendingGroupId.value, null)
+  state.confirmRemoveGroup()
+  assert.equal(props.modelValue, null)
 })

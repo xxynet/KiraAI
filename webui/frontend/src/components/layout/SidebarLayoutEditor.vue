@@ -2,7 +2,7 @@
   <section ref="editorRef" class="space-y-3" aria-labelledby="sidebar-layout-title" @dragstart.prevent>
     <div class="flex flex-wrap items-center justify-between gap-2">
       <h4 id="sidebar-layout-title" class="text-sm font-medium text-theme-body">{{ $t('settings.sidebar_layout_title') }}</h4>
-      <button type="button" class="text-sm text-blue-600 dark:text-blue-400 hover:underline" @click="$emit('update:modelValue', null)">
+      <button type="button" class="text-sm text-blue-600 dark:text-blue-400 hover:underline" @click="resetLayout">
         {{ $t('settings.sidebar_layout_reset') }}
       </button>
     </div>
@@ -28,11 +28,13 @@
         <SidebarLayoutItem
           v-if="entry.type === 'item' && itemMap.has(entry.id)"
           :item="itemMap.get(entry.id)!"
+          :hidden="hiddenItems.includes(entry.id)"
           :can-move-up="canMoveRoot(entry, -1)" :can-move-down="canMoveRoot(entry, 1)"
           @move="moveRoot(entry.id, $event)"
           @drag="startDrag($event, { type: 'item', id: entry.id })"
+          @visibility="toggleHidden(entry.id)"
         />
-        <div v-else-if="entry.type === 'group'" :data-sidebar-group="entry.id" class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden bg-white dark:bg-gray-900">
+        <div v-else-if="entry.type === 'group'" :data-sidebar-group="entry.id" class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden bg-white dark:bg-gray-900" :class="{ 'opacity-60': hiddenItems.includes(entry.id) }">
           <div
             class="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-800 cursor-grab active:cursor-grabbing touch-none select-none"
             @pointerdown="startDrag($event, { type: 'group', id: entry.id })"
@@ -47,13 +49,24 @@
               :value="groupLabel(entry)" :aria-label="$t('settings.sidebar_layout_group_name')"
               @change="renameGroup(entry, $event)"
             />
+            <span v-if="hiddenItems.includes(entry.id)" class="text-xs text-theme-subtle">{{ $t('settings.sidebar_layout_hidden') }}</span>
+            <button
+              type="button" class="layout-action" :aria-pressed="hiddenItems.includes(entry.id)"
+              :aria-label="$t(hiddenItems.includes(entry.id) ? 'settings.sidebar_layout_show' : 'settings.sidebar_layout_hide', { name: groupLabel(entry) })"
+              :title="$t(hiddenItems.includes(entry.id) ? 'settings.sidebar_layout_show' : 'settings.sidebar_layout_hide', { name: groupLabel(entry) })"
+              @click="toggleHidden(entry.id)"
+            ><component :is="hiddenItems.includes(entry.id) ? Hide : View" class="w-4 h-4" /></button>
             <button type="button" class="layout-action" :disabled="!canMoveRoot(entry, -1)" :aria-label="$t('settings.sidebar_layout_move_up', { name: groupLabel(entry) })" @click="moveRoot(entry.id, -1)">
               <ArrowUp class="w-4 h-4" />
             </button>
             <button type="button" class="layout-action" :disabled="!canMoveRoot(entry, 1)" :aria-label="$t('settings.sidebar_layout_move_down', { name: groupLabel(entry) })" @click="moveRoot(entry.id, 1)">
               <ArrowDown class="w-4 h-4" />
             </button>
-            <button type="button" class="layout-action" :aria-label="$t('settings.sidebar_layout_remove_group', { name: groupLabel(entry) })" @click="removeGroup(entry.id)">
+            <button
+              type="button" class="p-1.5 rounded text-theme-subtle hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30"
+              :aria-label="$t('settings.sidebar_layout_remove_group', { name: groupLabel(entry) })"
+              @click="requestRemoveGroup(entry.id)"
+            >
               <Delete class="w-4 h-4" />
             </button>
           </div>
@@ -61,10 +74,12 @@
             <SidebarLayoutItem
               v-for="(item, itemIndex) in groupItems(entry)" :key="item.id"
               :item="item"
+              :hidden="hiddenItems.includes(item.id)"
               :data-sidebar-group-id="entry.id"
               :can-move-up="itemIndex > 0" :can-move-down="itemIndex < groupItems(entry).length - 1"
               @move="moveInGroup(entry, item.id, $event)"
               @drag="startDrag($event, { type: 'item', id: item.id })"
+              @visibility="toggleHidden(item.id)"
             />
             <p v-if="!groupItems(entry).length" class="p-2 text-xs text-theme-faint">{{ $t('settings.sidebar_layout_empty_group') }}</p>
           </div>
@@ -83,13 +98,24 @@
         :class="{ 'bg-blue-50 dark:bg-blue-900/20': dragged?.type === 'group' }"
       >{{ $t('settings.sidebar_layout_drop_group_end') }}</div>
     </div>
+    <ConfirmModal
+      ref="removeConfirmRef"
+      variant="danger"
+      :title="$t('settings.sidebar_layout_remove_group_title')"
+      :message="$t('settings.sidebar_layout_remove_group_confirm', { name: pendingGroup ? groupLabel(pendingGroup) : '' })"
+      :cancel-text="$t('common.cancel')"
+      :confirm-text="$t('common.delete')"
+      @confirm="confirmRemoveGroup"
+      @cancel="cancelRemoveGroup"
+    />
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Rank, Folder, ArrowUp, ArrowDown, Delete } from '@element-plus/icons-vue'
+import { Rank, Folder, ArrowUp, ArrowDown, Delete, View, Hide } from '@element-plus/icons-vue'
 import UiInput from '@/components/ui/UiInput.vue'
+import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import SidebarLayoutItem from './SidebarLayoutItem.vue'
 import { useSidebarNavigation, type SidebarNavItem } from '@/composables/useSidebarNavigation'
 import { useSidebarDrag, type SidebarDragSource, type SidebarDropTarget } from '@/composables/useSidebarDrag'
@@ -98,13 +124,19 @@ import {
   type SidebarLayoutEntry, type SidebarGroupEntry,
 } from '@/navigation/sidebarLayout'
 
-const props = defineProps<{ modelValue: SidebarLayoutEntry[] | null }>()
-const emit = defineEmits<{ 'update:modelValue': [value: SidebarLayoutEntry[] | null] }>()
+const props = defineProps<{ modelValue: SidebarLayoutEntry[] | null; hiddenItems: string[] }>()
+const emit = defineEmits<{
+  'update:modelValue': [value: SidebarLayoutEntry[] | null]
+  'update:hiddenItems': [value: string[]]
+}>()
 const { items, itemMap, groupLabel } = useSidebarNavigation()
 const layout = computed(() => reconcileSidebarLayout(props.modelValue, items.value))
 const visibleEntries = computed(() => layout.value.filter(entry => entry.type === 'group' || itemMap.value.has(entry.id)))
 const hasGroups = computed(() => layout.value.some(entry => entry.type === 'group'))
 const newGroupName = ref('')
+const removeConfirmRef = ref<InstanceType<typeof ConfirmModal>>()
+const pendingGroupId = ref<string | null>(null)
+const pendingGroup = computed(() => layout.value.find((entry): entry is SidebarGroupEntry => entry.type === 'group' && entry.id === pendingGroupId.value))
 const editorRef = ref<HTMLElement>()
 const { dragged, startDrag } = useSidebarDrag(editorRef, applyDrop)
 
@@ -137,6 +169,37 @@ function renameGroup(group: SidebarGroupEntry, event: Event) {
 
 function removeGroup(id: string) {
   emit('update:modelValue', removeSidebarGroup(layout.value, id))
+  emit('update:hiddenItems', props.hiddenItems.filter(hiddenId => hiddenId !== id))
+}
+
+function requestRemoveGroup(id: string) {
+  if (!layout.value.some(entry => entry.type === 'group' && entry.id === id)) return
+  pendingGroupId.value = id
+  removeConfirmRef.value?.open()
+}
+
+function confirmRemoveGroup() {
+  const id = pendingGroup.value?.id
+  pendingGroupId.value = null
+  if (id) removeGroup(id)
+}
+
+function cancelRemoveGroup() {
+  pendingGroupId.value = null
+}
+
+function toggleHidden(id: string) {
+  const hidden = new Set(props.hiddenItems)
+  if (hidden.has(id)) hidden.delete(id)
+  else hidden.add(id)
+  emit('update:hiddenItems', [...hidden])
+}
+
+function resetLayout() {
+  cancelRemoveGroup()
+  removeConfirmRef.value?.close()
+  emit('update:modelValue', null)
+  emit('update:hiddenItems', [])
 }
 
 function moveItem(id: string, groupId: string | null, beforeId?: string) {
