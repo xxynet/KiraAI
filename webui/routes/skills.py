@@ -1,21 +1,29 @@
 import asyncio
+import mimetypes
 import os
 import shutil
+import stat
 import tempfile
 import zipfile
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from fastapi import Depends, File, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from starlette.background import BackgroundTask
 
-from core.logging_manager import get_logger
 from core.agent.skills_mgr import SkillsManager
-from core.utils.path_utils import safe_extract_zip
-from webui.models import SkillItem, SkillContentUpdateRequest
+from core.logging_manager import get_logger
+from core.utils.path_utils import is_within_directory, safe_extract_zip
+from webui.models import SkillItem, SkillFileItem, SkillFileUpdateRequest
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
 
 logger = get_logger("webui", "blue")
+MAX_EDITABLE_FILE_BYTES = 2 * 1024 * 1024
+IMAGE_MIME_TYPES = frozenset({
+    "image/png", "image/jpeg", "image/gif", "image/webp", "image/avif",
+    "image/bmp", "image/x-icon", "image/vnd.microsoft.icon",
+})
 
 
 class SkillsRoutes(Routes):
@@ -62,16 +70,31 @@ class SkillsRoutes(Routes):
                 dependencies=[Depends(require_auth)],
             ),
             RouteDefinition(
-                path="/api/skills/{skill_name}/content",
+                path="/api/skills/{skill_name}/files",
                 methods=["GET"],
-                endpoint=self.get_skill_content,
+                endpoint=self.list_skill_files,
+                response_model=list[SkillFileItem],
                 tags=["skills"],
                 dependencies=[Depends(require_auth)],
             ),
             RouteDefinition(
-                path="/api/skills/{skill_name}/content",
+                path="/api/skills/{skill_name}/file",
+                methods=["GET"],
+                endpoint=self.get_skill_file,
+                tags=["skills"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/skills/{skill_name}/file",
                 methods=["PUT"],
-                endpoint=self.update_skill_content,
+                endpoint=self.update_skill_file,
+                tags=["skills"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/skills/{skill_name}/file/download",
+                methods=["GET"],
+                endpoint=self.download_skill_file,
                 tags=["skills"],
                 dependencies=[Depends(require_auth)],
             ),
@@ -96,48 +119,144 @@ class SkillsRoutes(Routes):
     def _folder_size(path) -> int:
         return sum(item.stat().st_size for item in path.rglob("*") if item.is_file())
 
-    def _content_path(self, skill):
+    def _skill_path(self, skill) -> Path:
         skill_path = skill.path.resolve()
         skills_dir = self.lifecycle.skills_manager.skills_dir.resolve()
-        content_path = (skill_path / "SKILL.md").resolve()
-        if skill_path.parent != skills_dir or content_path.parent != skill_path:
+        if skill_path.parent != skills_dir:
             raise HTTPException(status_code=400, detail="Invalid skill path")
-        if not content_path.is_file():
-            raise HTTPException(status_code=404, detail="SKILL.md not found")
-        return content_path
+        if not skill_path.is_dir():
+            raise HTTPException(status_code=404, detail="Skill directory not found")
+        return skill_path
 
-    async def get_skill_content(self, skill_name: str):
+    def _file_path(self, skill, path: str) -> Path:
+        if (
+            not path or "\x00" in path or "\\" in path or ":" in path
+            or PurePosixPath(path).is_absolute() or PureWindowsPath(path).drive
+            or ".." in PurePosixPath(path).parts
+        ):
+            raise HTTPException(status_code=400, detail="Invalid skill file path")
+        skill_path = self._skill_path(skill)
+        file_path = (skill_path / path).resolve()
+        if not is_within_directory(skill_path, file_path):
+            raise HTTPException(status_code=400, detail="Invalid skill file path")
+        if not file_path.is_file():
+            raise HTTPException(status_code=404, detail=f"Skill file not found: {path}")
+        return file_path
+
+    @staticmethod
+    def _read_text_file(file_path: Path) -> str:
+        with file_path.open("rb") as file:
+            data = file.read(MAX_EDITABLE_FILE_BYTES + 1)
+        if len(data) > MAX_EDITABLE_FILE_BYTES:
+            raise HTTPException(status_code=413, detail="Text editing is limited to files up to 2 MiB")
+        if b"\x00" in data:
+            raise HTTPException(status_code=415, detail="Binary files cannot be edited as text")
+        try:
+            return data.decode("utf-8")
+        except UnicodeDecodeError as e:
+            raise HTTPException(status_code=415, detail="Only UTF-8 text files can be edited") from e
+
+    async def list_skill_files(self, skill_name: str):
         try:
             skill = self._get_skill(skill_name)
 
-            def read_content():
-                return self._content_path(skill).read_text(encoding="utf-8")
+            def scan_files():
+                skill_path = self._skill_path(skill)
+                items = []
 
-            return {"content": await asyncio.to_thread(read_content)}
+                def on_error(error):
+                    raise error
+
+                for root, directories, files in os.walk(skill_path, onerror=on_error):
+                    root_path = Path(root)
+                    directories[:] = sorted(
+                        name for name in directories
+                        if (root_path / name).resolve() == (root_path / name).absolute()
+                    )
+                    for name in files:
+                        file_path = root_path / name
+                        if file_path.is_file() and is_within_directory(skill_path, file_path):
+                            items.append(SkillFileItem(
+                                path=file_path.relative_to(skill_path).as_posix(),
+                                size_bytes=file_path.stat().st_size,
+                            ))
+                return sorted(items, key=lambda item: (item.path != "SKILL.md", item.path.casefold()))
+
+            return await asyncio.to_thread(scan_files)
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Failed to read skill {skill_name}: {e}")
-            raise HTTPException(status_code=500, detail="Failed to read SKILL.md")
+            logger.error(f"Failed to list files for skill {skill_name}: {e}")
+            raise HTTPException(status_code=500, detail="Failed to list skill files")
 
-    async def update_skill_content(self, skill_name: str, payload: SkillContentUpdateRequest):
+    async def get_skill_file(self, skill_name: str, path: str):
+        try:
+            skill = self._get_skill(skill_name)
+
+            def read_file():
+                file_path = self._file_path(skill, path)
+                result = {"path": path, "size_bytes": file_path.stat().st_size, "content": None}
+                if result["size_bytes"] > MAX_EDITABLE_FILE_BYTES:
+                    return {**result, "kind": "binary", "reason": "too_large"}
+                if mimetypes.guess_type(file_path.name)[0] in IMAGE_MIME_TYPES:
+                    return {**result, "kind": "image", "reason": None}
+                try:
+                    content = self._read_text_file(file_path)
+                except HTTPException as e:
+                    if e.status_code not in (413, 415):
+                        raise
+                    return {**result, "kind": "binary", "reason": "too_large" if e.status_code == 413 else "non_text"}
+                return {**result, "kind": "text", "content": content, "reason": None}
+
+            return await asyncio.to_thread(read_file)
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to read skill file {skill_name}/{path}: {e}")
+            raise HTTPException(status_code=500, detail="Failed to read skill file")
+
+    async def download_skill_file(self, skill_name: str, path: str):
+        try:
+            skill = self._get_skill(skill_name)
+            file_path = await asyncio.to_thread(self._file_path, skill, path)
+            return FileResponse(
+                file_path, filename=file_path.name, media_type="application/octet-stream",
+                headers={"X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox"},
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to download skill file {skill_name}/{path}: {e}")
+            raise HTTPException(status_code=500, detail="Failed to download skill file")
+
+    async def update_skill_file(self, skill_name: str, payload: SkillFileUpdateRequest, path: str):
         try:
             async with self._content_lock:
                 skill = self._get_skill(skill_name)
 
                 def save_content():
-                    content_path = self._content_path(skill)
+                    content_path = self._file_path(skill, path)
                     try:
-                        info = SkillsManager.parse_skill_content(payload.content, skill.path)
-                    except ValueError as e:
-                        raise HTTPException(status_code=400, detail=str(e)) from e
-                    if info.name != skill.name:
-                        raise HTTPException(status_code=400, detail="Skill name cannot be changed")
-                    if content_path.read_text(encoding="utf-8") != payload.original_content:
+                        content_bytes = payload.content.encode("utf-8")
+                    except UnicodeEncodeError as e:
+                        raise HTTPException(status_code=400, detail="Content must be valid UTF-8") from e
+                    if len(content_bytes) > MAX_EDITABLE_FILE_BYTES:
+                        raise HTTPException(status_code=413, detail="Text editing is limited to files up to 2 MiB")
+                    if b"\x00" in content_bytes:
+                        raise HTTPException(status_code=415, detail="Binary files cannot be edited as text")
+                    if self._read_text_file(content_path) != payload.original_content:
                         raise HTTPException(
                             status_code=409,
-                            detail="SKILL.md has changed. Reopen the preview before editing again.",
+                            detail="The file has changed. Reopen it before editing again.",
                         )
+                    info = None
+                    if content_path == (self._skill_path(skill) / "SKILL.md").resolve():
+                        try:
+                            info = SkillsManager.parse_skill_content(payload.content, skill.path)
+                        except ValueError as e:
+                            raise HTTPException(status_code=400, detail=str(e)) from e
+                        if info.name != skill.name:
+                            raise HTTPException(status_code=400, detail="Skill name cannot be changed")
                     temporary_path = None
                     try:
                         with tempfile.NamedTemporaryFile(
@@ -146,6 +265,7 @@ class SkillsRoutes(Routes):
                         ) as temporary_file:
                             temporary_path = temporary_file.name
                             temporary_file.write(payload.content)
+                        os.chmod(temporary_path, stat.S_IMODE(content_path.stat().st_mode))
                         os.replace(temporary_path, content_path)
                     finally:
                         if temporary_path and os.path.exists(temporary_path):
@@ -153,13 +273,20 @@ class SkillsRoutes(Routes):
                     return info
 
                 info = await asyncio.to_thread(save_content)
-                skill.description = info.description
-                return {"skill_name": skill.name, "description": skill.description, "saved": True}
+                if info:
+                    for current_skill in self.lifecycle.skills_manager.skills_info:
+                        if current_skill.name == skill.name and current_skill.path == skill.path:
+                            current_skill.description = info.description
+                return {
+                    "skill_name": skill.name, "path": path, "saved": True,
+                    "description": info.description if info else skill.description,
+                    "size_bytes": len(payload.content.encode("utf-8")),
+                }
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Failed to save skill {skill_name}: {e}")
-            raise HTTPException(status_code=500, detail="Failed to save SKILL.md")
+            logger.error(f"Failed to save skill file {skill_name}/{path}: {e}")
+            raise HTTPException(status_code=500, detail="Failed to save skill file")
 
     @staticmethod
     def _create_skill_archive(skill_path, archive_path) -> None:

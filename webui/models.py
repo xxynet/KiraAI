@@ -472,7 +472,12 @@ class SkillItem(BaseModel):
     size_bytes: int = 0
 
 
-class SkillContentUpdateRequest(BaseModel):
+class SkillFileItem(BaseModel):
+    path: str
+    size_bytes: int
+
+
+class SkillFileUpdateRequest(BaseModel):
     content: str = Field(strict=True)
     original_content: str = Field(strict=True)
 

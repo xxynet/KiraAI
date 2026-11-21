@@ -13,14 +13,36 @@ export function getSkills() {
   return apiClient.get<SkillItem[]>('/skills')
 }
 
-export function getSkillContent(skillName: string) {
-  return apiClient.get<{ content: string }>(`/skills/${encodeURIComponent(skillName)}/content`)
+export interface SkillFileItem {
+  path: string
+  size_bytes: number
 }
 
-export function updateSkillContent(skillName: string, content: string, originalContent: string) {
-  return apiClient.put<{ skill_name: string; description: string; saved: boolean }>(
-    `/skills/${encodeURIComponent(skillName)}/content`,
+export interface SkillFileContent extends SkillFileItem {
+  content: string | null
+  kind: 'text' | 'image' | 'binary'
+  reason: 'too_large' | 'non_text' | null
+}
+
+export function getSkillFiles(skillName: string) {
+  return apiClient.get<SkillFileItem[]>(`/skills/${encodeURIComponent(skillName)}/files`)
+}
+
+export function getSkillFile(skillName: string, path: string) {
+  return apiClient.get<SkillFileContent>(`/skills/${encodeURIComponent(skillName)}/file`, { params: { path } })
+}
+
+export function downloadSkillFile(skillName: string, path: string) {
+  return apiClient.get<Blob>(`/skills/${encodeURIComponent(skillName)}/file/download`, {
+    params: { path }, responseType: 'blob',
+  })
+}
+
+export function updateSkillFile(skillName: string, path: string, content: string, originalContent: string) {
+  return apiClient.put<{ skill_name: string; description: string; size_bytes: number; saved: boolean }>(
+    `/skills/${encodeURIComponent(skillName)}/file`,
     { content, original_content: originalContent },
+    { params: { path } },
   )
 }
 
