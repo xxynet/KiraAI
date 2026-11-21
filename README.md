@@ -133,6 +133,7 @@ scripts/run.sh
 Run the project & enter webui to configure:
 - Providers
 - Adapters
+  - QQ Official uses structured card and chat-history content when available. The forward parsing setting controls chat-history expansion.
 - Persona
 ...
 
