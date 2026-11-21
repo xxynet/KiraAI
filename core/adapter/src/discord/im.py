@@ -210,7 +210,7 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
                 ),
                 sender=User(
                     user_id=user_id,
-                    nickname=message.author.display_name or str(message.author),
+                    nickname=message.author.global_name or message.author.name,
                     group_nickname=group_nickname,
                 ),
                 is_mentioned=is_mentioned,

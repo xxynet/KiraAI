@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import discord
 import pytest
 
 from core.chat import Group, KiraIMMessage, MessageChain, User
@@ -70,14 +71,14 @@ async def test_discord_server_nickname_per_guild_empty_missing_and_dm(adapter_fa
     adapter = adapter_factory("Discord", {"permission_mode": "deny_list"})
 
     # Same user with different server nicknames in two channels/guilds
-    await adapter.im._handle_message(dc_message(adapter, True, author=SimpleNamespace(id=123, display_name="Alice", nick="Server One")))
-    await adapter.im._handle_message(dc_message(adapter, True, author=SimpleNamespace(id=123, display_name="Alice", nick="Server Two")))
+    await adapter.im._handle_message(dc_message(adapter, True, author=SimpleNamespace(id=123, name="alice", global_name="Alice", display_name="Server One", nick="Server One")))
+    await adapter.im._handle_message(dc_message(adapter, True, author=SimpleNamespace(id=123, name="alice", global_name="Alice", display_name="Server Two", nick="Server Two")))
     # Missing or empty nick normalizes to None
-    await adapter.im._handle_message(dc_message(adapter, True, author=SimpleNamespace(id=123, display_name="Alice", nick=None)))
-    await adapter.im._handle_message(dc_message(adapter, True, author=SimpleNamespace(id=123, display_name="Alice", nick="  ")))
-    await adapter.im._handle_message(dc_message(adapter, True, author=SimpleNamespace(id=123, display_name="Alice")))
+    await adapter.im._handle_message(dc_message(adapter, True, author=SimpleNamespace(id=123, name="alice", global_name="Alice", display_name="Alice", nick=None)))
+    await adapter.im._handle_message(dc_message(adapter, True, author=SimpleNamespace(id=123, name="alice", global_name="Alice", display_name="  ", nick="  ")))
+    await adapter.im._handle_message(dc_message(adapter, True, author=SimpleNamespace(id=123, name="alice", global_name="Alice", display_name="Alice")))
     # Direct message keeps group_nickname as None
-    await adapter.im._handle_message(dc_message(adapter, False, author=SimpleNamespace(id=123, display_name="Alice", nick="Ignored")))
+    await adapter.im._handle_message(dc_message(adapter, False, author=SimpleNamespace(id=123, name="alice", global_name="Alice", display_name="Alice", nick="Ignored")))
 
     events = [adapter.ctx.event_queue.get_nowait() for _ in range(6)]
     assert [(e.message.sender.nickname, e.message.sender.group_nickname) for e in events] == [
@@ -88,6 +89,35 @@ async def test_discord_server_nickname_per_guild_empty_missing_and_dm(adapter_fa
         ("Alice", None),
         ("Alice", None),
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("global_name, expected_nickname", [("Alice", "Alice"), (None, "alice")])
+@pytest.mark.parametrize("nick", ["Server Alice", None, ""])
+async def test_discord_user_nickname_is_independent_of_server_nickname(
+    adapter_factory, global_name, expected_nickname, nick,
+):
+    adapter = adapter_factory("Discord", {"permission_mode": "deny_list"})
+    client = discord.Client(intents=discord.Intents.none())
+    member = discord.Member(
+        data={
+            "user": {
+                "id": "123", "username": "alice", "global_name": global_name,
+                "discriminator": "0", "avatar": None,
+            },
+            "roles": [],
+            "nick": nick,
+        },
+        guild=SimpleNamespace(id=456),
+        state=client._connection,
+    )
+    assert member.display_name == (nick or expected_nickname)
+
+    await adapter.im._handle_message(dc_message(adapter, True, author=member))
+
+    event = adapter.ctx.event_queue.get_nowait()
+    assert event.message.sender.nickname == expected_nickname
+    assert event.message.sender.group_nickname == (nick or None)
 
 
 def test_format_user_message_includes_group_nickname_only_when_present():

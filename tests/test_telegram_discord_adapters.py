@@ -150,7 +150,7 @@ def tg_update(group=False, **kwargs):
 def dc_message(adapter, group=False, **kwargs):
     guild = NS(me=NS(roles=[NS(id=8)]), get_role=lambda rid: NS(name="Bot role"), get_member=lambda uid: NS(display_name="Tester")) if group else None
     fields = {
-        "id": 42, "author": NS(id=123, display_name="Tester"), "guild": guild,
+        "id": 42, "author": NS(id=123, name="Tester", global_name=None, display_name="Tester"), "guild": guild,
         "channel": NS(id=456, name="thread-or-channel"), "created_at": datetime(2026, 10, 4, tzinfo=timezone.utc),
         "content": "hello", "mentions": [], "role_mentions": [], "mention_everyone": False, "reference": None, "attachments": [], "stickers": [],
     }
