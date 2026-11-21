@@ -15,8 +15,8 @@
           <p class="mt-2 text-sm text-theme-supporting whitespace-pre-wrap break-words">{{ description }}</p>
         </section>
         <div class="grid grid-cols-1 md:grid-cols-[14rem_minmax(0,1fr)] gap-5">
-          <nav :aria-label="$t('plugin.skills_files')" class="min-w-0">
-            <div class="flex items-center justify-between gap-3 mb-3">
+          <nav :aria-label="$t('plugin.skills_files')" class="min-w-0 md:sticky md:top-0 md:self-start md:flex md:max-h-[calc(90vh-11rem)] md:flex-col">
+            <div class="flex shrink-0 items-center justify-between gap-3 mb-3">
               <h4 class="font-medium text-theme-high">{{ $t('plugin.skills_files') }}</h4>
               <button type="button" class="p-1 rounded-md text-theme-subtle enabled:hover:bg-gray-100 dark:enabled:hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" :disabled="saving || filesLoading" :aria-label="$t('common.refresh')" @click="requestAction(loadFiles)">
                 <IconRefresh class="w-4 h-4" />
@@ -33,7 +33,7 @@
               <button type="button" class="mt-2 text-sm text-blue-600 dark:text-blue-400 hover:underline" @click="loadFiles">{{ $t('plugin.skills_retry') }}</button>
             </template>
             <p v-else-if="!files.length" class="text-sm text-theme-subtle">{{ $t('plugin.skills_no_files') }}</p>
-            <ul v-else class="max-h-48 md:max-h-[50vh] overflow-y-auto overflow-x-hidden space-y-1">
+            <ul v-else class="max-h-48 md:min-h-0 md:max-h-[50vh] overflow-y-auto overflow-x-hidden space-y-1">
               <li v-for="item in files" :key="item.path">
                 <button type="button" class="flex items-start gap-2 w-full rounded-md px-3 py-2 text-left text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed" :class="activePath === item.path ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'text-theme-body enabled:hover:bg-gray-100 dark:enabled:hover:bg-gray-800'" :aria-current="activePath === item.path ? 'true' : undefined" :disabled="saving" @click="selectFile(item.path)">
                   <IconFileText class="w-4 h-4 mt-0.5 shrink-0" />
