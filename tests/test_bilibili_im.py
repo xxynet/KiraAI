@@ -47,7 +47,7 @@ async def test_im_enabled_by_default_and_correct_credential_field():
 
 
 @pytest.mark.asyncio
-async def test_missing_sessdata_does_not_schedule_dm_listener(monkeypatch):
+async def test_missing_sessdata_does_not_schedule_dm_listener(monkeypatch, sdk_client):
     adapter = make_adapter(enable_im=True, sessdata="", enable_comment_notifications=False)
     start_im = AsyncMock()
     monkeypatch.setattr(adapter, "_start_im", start_im)
