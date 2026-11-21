@@ -318,7 +318,13 @@
         <div
           v-for="skill in skills"
           :key="skill.id"
-          class="bg-white dark:bg-gray-900 rounded-lg shadow p-4 flex flex-col"
+          class="bg-white dark:bg-gray-900 rounded-lg shadow p-4 flex flex-col cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
+          role="button"
+          tabindex="0"
+          :aria-label="$t('plugin.skills_preview_label', { name: skill.name })"
+          @click="openSkillDetails(skill)"
+          @keydown.enter.self.prevent="openSkillDetails(skill)"
+          @keydown.space.self.prevent="openSkillDetails(skill)"
         >
           <div class="flex items-start justify-between mb-3">
             <div>
@@ -329,7 +335,7 @@
               class="ml-2 relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none"
               :class="skill.enabled ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500' : 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600'"
               :aria-pressed="skill.enabled ? 'true' : 'false'"
-              @click="toggleSkillItem(skill)"
+              @click.stop="toggleSkillItem(skill)"
             >
               <span
                 class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
@@ -349,7 +355,7 @@
                 type="button"
                 class="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-theme-body hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-800 transition-colors"
                 :title="$t('plugin.skills_export')"
-                @click="handleExportSkill(skill)"
+                @click.stop="handleExportSkill(skill)"
               >
                 <IconDownload class="w-3.5 h-3.5 inline-block mr-1" />{{ $t('plugin.skills_export') }}
               </button>
@@ -357,7 +363,7 @@
                 type="button"
                 class="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors"
                 :title="$t('plugin.skills_delete')"
-                @click="handleDeleteSkill(skill)"
+                @click.stop="handleDeleteSkill(skill)"
               >
                 <IconTrash class="w-3.5 h-3.5 inline-block mr-1" />{{ $t('plugin.skills_delete') }}
               </button>
@@ -1017,6 +1023,8 @@
       </div>
     </Modal>
 
+    <SkillDetails v-model="skillDetailsVisible" :skill="selectedSkill" @saved="loadSkills" />
+
     <!-- Skills Upload Dialog -->
     <Modal v-model="skillsUploadVisible" content-class="max-w-md">
       <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col" style="max-height: 90vh;">
@@ -1170,6 +1178,7 @@ import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import FileDropzone from '@/components/common/FileDropzone.vue'
 import AlertHint from '@/components/common/AlertHint.vue'
 import PluginReadme from '@/components/common/PluginReadme.vue'
+import SkillDetails from '@/components/common/SkillDetails.vue'
 import { fetchStoreReadme, getStoreReadmeRef } from '@/utils/pluginReadme'
 import PluginComponents from '@/components/common/PluginComponents.vue'
 import UiInput from '@/components/ui/UiInput.vue'
@@ -1189,6 +1198,7 @@ import {
 import {
   getSkills, toggleSkill as apiToggleSkill, refreshSkills as apiRefreshSkills, uploadSkill as apiUploadSkill,
   exportSkill as apiExportSkill, deleteSkill as apiDeleteSkill,
+  type SkillItem,
 } from '@/api/skills'
 import { getScope, updateScope } from '@/api/scope'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
@@ -1352,7 +1362,9 @@ const mcpTemplateOptions = computed(() => [
 const savingMcp = ref(false)
 
 // Skills
-const skills = ref<any[]>([])
+const skills = ref<SkillItem[]>([])
+const selectedSkill = ref<SkillItem | null>(null)
+const skillDetailsVisible = ref(false)
 const skillsError = ref<string | null>(null)
 const skillsUploadVisible = ref(false)
 const skillUploadFile = ref<File | null>(null)
@@ -2105,6 +2117,11 @@ async function loadSkills() {
     skillsError.value = e?.message || t('plugin.skills_load_failed')
     notify(skillsError.value!, 'error')
   }
+}
+
+function openSkillDetails(skill: SkillItem) {
+  selectedSkill.value = skill
+  skillDetailsVisible.value = true
 }
 
 function formatBytes(bytes: number): string {
