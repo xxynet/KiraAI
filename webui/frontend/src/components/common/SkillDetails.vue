@@ -103,7 +103,7 @@ import PluginReadme from './PluginReadme.vue'
 
 const props = defineProps<{ modelValue: boolean; skill: SkillItem | null }>()
 const emit = defineEmits<{ 'update:modelValue': [value: boolean]; saved: [] }>()
-const { t } = useI18n()
+const { t, te } = useI18n()
 const content = ref('')
 const originalContent = ref('')
 const description = ref('')
@@ -261,6 +261,14 @@ async function loadContent(path: string) {
 
 function errorMessage(key: string, e: any): string {
   const detail = e?.response?.data?.detail || e?.message
+  if (detail && typeof detail === 'object' && typeof detail.code === 'string') {
+    const reasonKey = `plugin.skills_errors.${detail.code}`
+    if (te(reasonKey)) {
+      const reason = t(reasonKey)
+      const diagnostic = typeof detail.diagnostic === 'string' ? `: ${detail.diagnostic}` : ''
+      return `${t(key)}: ${reason}${diagnostic}`
+    }
+  }
   return detail ? `${t(key)}: ${typeof detail === 'string' ? detail : JSON.stringify(detail)}` : t(key)
 }
 
@@ -314,7 +322,7 @@ async function saveContent() {
     notify(t('plugin.skills_save_success'), 'success')
     emit('saved')
   } catch (e: any) {
-    error.value = errorMessage(e?.response?.status === 409 ? 'plugin.skills_save_conflict' : 'plugin.skills_save_failed', e)
+    notify(errorMessage('plugin.skills_save_failed', e), 'error', 5000)
   } finally {
     saving.value = false
   }

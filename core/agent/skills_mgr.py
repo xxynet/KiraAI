@@ -20,6 +20,12 @@ class SkillInfo:
     enabled: bool = True
 
 
+class SkillValidationError(ValueError):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
 class SkillsManager:
     def __init__(self):
         self.skills_dir = get_data_path() / "skills"
@@ -112,16 +118,20 @@ class SkillsManager:
         """Parse and validate skill metadata before loading or saving it."""
         parts = text.split('---', 2)
         if len(parts) < 3:
-            raise ValueError("SKILL.md must contain YAML frontmatter between --- delimiters")
+            raise SkillValidationError(
+                "missing_frontmatter", "SKILL.md must contain YAML frontmatter between --- delimiters",
+            )
         try:
             data = yaml.safe_load(parts[1])
         except yaml.YAMLError as e:
-            raise ValueError(f"Invalid SKILL.md frontmatter: {e}") from e
+            raise SkillValidationError("invalid_yaml", f"Invalid SKILL.md frontmatter: {e}") from e
         if not isinstance(data, dict) or any(
             not isinstance(data.get(key), str) or not data[key].strip()
             for key in ("name", "description")
         ):
-            raise ValueError("SKILL.md must contain non-empty string name and description fields")
+            raise SkillValidationError(
+                "invalid_metadata", "SKILL.md must contain non-empty string name and description fields",
+            )
         return SkillInfo(name=data["name"], description=data["description"], path=skill_path)
 
     def build_skills_prompt(self, skills_info: list[SkillInfo] | None = None) -> Prompt:

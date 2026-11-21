@@ -90,6 +90,25 @@ def test_invalid_edits_leave_file_and_runtime_unchanged(skill_setup, content):
     assert skill_setup.manager.skills_info[0].description == 'Original description'
 
 
+@pytest.mark.parametrize('content,code', [
+    (ORIGINAL.replace('name: demo', 'name: renamed'), 'name_immutable'),
+    ('# Missing frontmatter', 'missing_frontmatter'),
+    ('---\nname: [broken\n---\nBody', 'invalid_yaml'),
+    ('---\nname: demo\n---\nBody', 'invalid_metadata'),
+])
+def test_save_errors_expose_localizable_codes_and_original_diagnostics(skill_setup, content, code):
+    response = save(skill_setup.client, content)
+    assert response.status_code == 400
+    detail = response.json()['detail']
+    assert detail['code'] == code
+    assert isinstance(detail['message'], str) and detail['message']
+    if code == 'name_immutable':
+        assert detail['message'] == 'Skill name cannot be changed'
+    if code == 'invalid_yaml':
+        assert 'Invalid SKILL.md frontmatter:' in detail['message']
+        assert 'line' in detail['message']
+
+
 @pytest.mark.parametrize('payload', [{}, {'content': UPDATED}, {'content': 123, 'original_content': ORIGINAL}])
 def test_save_requires_string_content_and_original_version(skill_setup, payload):
     assert skill_setup.client.put(CONTENT_URL, json=payload).status_code == 422
@@ -100,6 +119,7 @@ def test_stale_editor_cannot_overwrite_external_changes(skill_setup):
     skill_setup.content_path.write_text(UPDATED, encoding='utf-8')
     response = save(skill_setup.client, ORIGINAL)
     assert response.status_code == 409
+    assert response.json()['detail']['code'] == 'file_changed'
     assert skill_setup.content_path.read_text(encoding='utf-8') == UPDATED
 
 
@@ -108,7 +128,10 @@ def test_failed_replacement_keeps_original_and_cleans_temporary_file(skill_setup
         raise OSError('Simulated write failure')
 
     monkeypatch.setattr('webui.routes.skills.os.replace', fail_replace)
-    assert save(skill_setup.client).status_code == 500
+    response = save(skill_setup.client)
+    assert response.status_code == 500
+    assert response.json()['detail']['code'] == 'write_failed'
+    assert response.json()['detail']['diagnostic'] == 'Simulated write failure'
     assert skill_setup.content_path.read_text(encoding='utf-8') == ORIGINAL
     assert skill_setup.manager.skills_info[0].description == 'Original description'
     assert not list(skill_setup.content_path.parent.glob('.skill-*.tmp'))

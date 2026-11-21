@@ -11,7 +11,7 @@ from fastapi import Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from starlette.background import BackgroundTask
 
-from core.agent.skills_mgr import SkillsManager
+from core.agent.skills_mgr import SkillsManager, SkillValidationError
 from core.logging_manager import get_logger
 from core.utils.path_utils import is_within_directory, safe_extract_zip
 from webui.models import SkillItem, SkillFileItem, SkillFileUpdateRequest
@@ -239,7 +239,9 @@ class SkillsRoutes(Routes):
                     try:
                         content_bytes = payload.content.encode("utf-8")
                     except UnicodeEncodeError as e:
-                        raise HTTPException(status_code=400, detail="Content must be valid UTF-8") from e
+                        raise HTTPException(status_code=400, detail={
+                            "code": "invalid_encoding", "message": "Content must be valid UTF-8",
+                        }) from e
                     if len(content_bytes) > MAX_EDITABLE_FILE_BYTES:
                         raise HTTPException(status_code=413, detail="Text editing is limited to files up to 2 MiB")
                     if b"\x00" in content_bytes:
@@ -253,10 +255,12 @@ class SkillsRoutes(Routes):
                     if content_path == (self._skill_path(skill) / "SKILL.md").resolve():
                         try:
                             info = SkillsManager.parse_skill_content(payload.content, skill.path)
-                        except ValueError as e:
-                            raise HTTPException(status_code=400, detail=str(e)) from e
+                        except SkillValidationError as e:
+                            raise HTTPException(status_code=400, detail={"code": e.code, "message": str(e)}) from e
                         if info.name != skill.name:
-                            raise HTTPException(status_code=400, detail="Skill name cannot be changed")
+                            raise HTTPException(status_code=400, detail={
+                                "code": "name_immutable", "message": "Skill name cannot be changed",
+                            })
                     temporary_path = None
                     try:
                         with tempfile.NamedTemporaryFile(
@@ -282,11 +286,19 @@ class SkillsRoutes(Routes):
                     "description": info.description if info else skill.description,
                     "size_bytes": len(payload.content.encode("utf-8")),
                 }
-        except HTTPException:
+        except HTTPException as e:
+            codes = {
+                400: "invalid_path", 404: "not_found", 409: "file_changed",
+                413: "too_large", 415: "not_text", 503: "unavailable",
+            }
+            if isinstance(e.detail, str) and e.status_code in codes:
+                e.detail = {"code": codes[e.status_code], "message": e.detail}
             raise
         except Exception as e:
             logger.error(f"Failed to save skill file {skill_name}/{path}: {e}")
-            raise HTTPException(status_code=500, detail="Failed to save skill file")
+            raise HTTPException(status_code=500, detail={
+                "code": "write_failed", "message": "Failed to save skill file", "diagnostic": str(e),
+            })
 
     @staticmethod
     def _create_skill_archive(skill_path, archive_path) -> None:
