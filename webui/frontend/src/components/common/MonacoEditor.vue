@@ -15,6 +15,7 @@ const props = withDefaults(
     readOnly?: boolean
     folding?: boolean
     stickyScroll?: boolean
+    horizontalScrollbar?: 'auto' | 'visible' | 'hidden'
   }>(),
   {
     language: 'json',
@@ -22,6 +23,7 @@ const props = withDefaults(
     readOnly: false,
     folding: true,
     stickyScroll: true,
+    horizontalScrollbar: 'auto',
   },
 )
 
@@ -53,6 +55,7 @@ onMounted(() => {
     minimap: { enabled: false },
     scrollBeyondLastLine: false,
     wordWrap: 'on',
+    scrollbar: { horizontal: props.horizontalScrollbar },
     fontSize: 14,
   })
 

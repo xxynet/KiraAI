@@ -1,6 +1,6 @@
 import apiClient from './client'
 
-interface SkillItem {
+export interface SkillItem {
   id: string
   name: string
   description: string
@@ -11,6 +11,17 @@ interface SkillItem {
 
 export function getSkills() {
   return apiClient.get<SkillItem[]>('/skills')
+}
+
+export function getSkillContent(skillName: string) {
+  return apiClient.get<{ content: string }>(`/skills/${encodeURIComponent(skillName)}/content`)
+}
+
+export function updateSkillContent(skillName: string, content: string, originalContent: string) {
+  return apiClient.put<{ skill_name: string; description: string; saved: boolean }>(
+    `/skills/${encodeURIComponent(skillName)}/content`,
+    { content, original_content: originalContent },
+  )
 }
 
 export function toggleSkill(skillName: string, enabled: boolean) {

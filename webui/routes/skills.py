@@ -9,8 +9,9 @@ from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 
 from core.logging_manager import get_logger
+from core.agent.skills_mgr import SkillsManager
 from core.utils.path_utils import safe_extract_zip
-from webui.models import SkillItem
+from webui.models import SkillItem, SkillContentUpdateRequest
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
 
@@ -18,6 +19,10 @@ logger = get_logger("webui", "blue")
 
 
 class SkillsRoutes(Routes):
+    def __init__(self, app, lifecycle=None):
+        super().__init__(app, lifecycle)
+        self._content_lock = asyncio.Lock()
+
     def get_routes(self):
         return [
             RouteDefinition(
@@ -57,6 +62,20 @@ class SkillsRoutes(Routes):
                 dependencies=[Depends(require_auth)],
             ),
             RouteDefinition(
+                path="/api/skills/{skill_name}/content",
+                methods=["GET"],
+                endpoint=self.get_skill_content,
+                tags=["skills"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
+                path="/api/skills/{skill_name}/content",
+                methods=["PUT"],
+                endpoint=self.update_skill_content,
+                tags=["skills"],
+                dependencies=[Depends(require_auth)],
+            ),
+            RouteDefinition(
                 path="/api/skills/{skill_name}",
                 methods=["DELETE"],
                 endpoint=self.delete_skill,
@@ -76,6 +95,71 @@ class SkillsRoutes(Routes):
     @staticmethod
     def _folder_size(path) -> int:
         return sum(item.stat().st_size for item in path.rglob("*") if item.is_file())
+
+    def _content_path(self, skill):
+        skill_path = skill.path.resolve()
+        skills_dir = self.lifecycle.skills_manager.skills_dir.resolve()
+        content_path = (skill_path / "SKILL.md").resolve()
+        if skill_path.parent != skills_dir or content_path.parent != skill_path:
+            raise HTTPException(status_code=400, detail="Invalid skill path")
+        if not content_path.is_file():
+            raise HTTPException(status_code=404, detail="SKILL.md not found")
+        return content_path
+
+    async def get_skill_content(self, skill_name: str):
+        try:
+            skill = self._get_skill(skill_name)
+
+            def read_content():
+                return self._content_path(skill).read_text(encoding="utf-8")
+
+            return {"content": await asyncio.to_thread(read_content)}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to read skill {skill_name}: {e}")
+            raise HTTPException(status_code=500, detail="Failed to read SKILL.md")
+
+    async def update_skill_content(self, skill_name: str, payload: SkillContentUpdateRequest):
+        try:
+            async with self._content_lock:
+                skill = self._get_skill(skill_name)
+
+                def save_content():
+                    content_path = self._content_path(skill)
+                    try:
+                        info = SkillsManager.parse_skill_content(payload.content, skill.path)
+                    except ValueError as e:
+                        raise HTTPException(status_code=400, detail=str(e)) from e
+                    if info.name != skill.name:
+                        raise HTTPException(status_code=400, detail="Skill name cannot be changed")
+                    if content_path.read_text(encoding="utf-8") != payload.original_content:
+                        raise HTTPException(
+                            status_code=409,
+                            detail="SKILL.md has changed. Reopen the preview before editing again.",
+                        )
+                    temporary_path = None
+                    try:
+                        with tempfile.NamedTemporaryFile(
+                            mode="w", encoding="utf-8", newline="", dir=content_path.parent,
+                            prefix=".skill-", suffix=".tmp", delete=False,
+                        ) as temporary_file:
+                            temporary_path = temporary_file.name
+                            temporary_file.write(payload.content)
+                        os.replace(temporary_path, content_path)
+                    finally:
+                        if temporary_path and os.path.exists(temporary_path):
+                            os.unlink(temporary_path)
+                    return info
+
+                info = await asyncio.to_thread(save_content)
+                skill.description = info.description
+                return {"skill_name": skill.name, "description": skill.description, "saved": True}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to save skill {skill_name}: {e}")
+            raise HTTPException(status_code=500, detail="Failed to save SKILL.md")
 
     @staticmethod
     def _create_skill_archive(skill_path, archive_path) -> None:

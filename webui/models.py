@@ -472,6 +472,11 @@ class SkillItem(BaseModel):
     size_bytes: int = 0
 
 
+class SkillContentUpdateRequest(BaseModel):
+    content: str = Field(strict=True)
+    original_content: str = Field(strict=True)
+
+
 class DirectoryEntry(BaseModel):
     name: str
     path: str
