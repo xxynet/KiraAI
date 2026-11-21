@@ -50,7 +50,13 @@ class DefaultPlugin(BasePlugin):
             if msg.is_group_message():
                 if msg.is_notice:
                     return f"[{date_str}] Notice [group_id: {msg.group.group_id}, user_id: {msg.sender.user_id}] | {msg.message_str}"
-                return f"[{date_str}] [message_id: {msg.message_id!s}] [group_name: {msg.group.group_name} group_id: {msg.group.group_id} user_nickname: {msg.sender.nickname}, user_id: {msg.sender.user_id}] | {msg.message_str}"
+                group_nickname = msg.sender.group_nickname.strip() if isinstance(msg.sender.group_nickname, str) else ""
+                group_nickname_part = f" group_nickname: {group_nickname}," if group_nickname else ""
+                return (
+                    f"[{date_str}] [message_id: {msg.message_id!s}] "
+                    f"[group_name: {msg.group.group_name} group_id: {msg.group.group_id} "
+                    f"user_nickname: {msg.sender.nickname},{group_nickname_part} user_id: {msg.sender.user_id}] | {msg.message_str}"
+                )
             else:
                 if msg.is_notice:
                     return f"[{date_str}] Notice [user_id: {msg.sender.user_id}] | {msg.message_str}"

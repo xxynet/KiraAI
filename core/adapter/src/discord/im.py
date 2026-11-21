@@ -196,6 +196,9 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
         if isinstance(channel, discord.Thread):
             channel_name = channel.name
 
+        raw_nick = getattr(message.author, "nick", None)
+        group_nickname = raw_nick.strip() if isinstance(raw_nick, str) and raw_nick.strip() else None
+
         message_obj = KiraMessageEvent(
             adapter=self.adapter.info,
             supported_elements=list((await self.get_message_metadata()).supported_elements),
@@ -208,6 +211,7 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
                 sender=User(
                     user_id=user_id,
                     nickname=message.author.display_name or str(message.author),
+                    group_nickname=group_nickname,
                 ),
                 is_mentioned=is_mentioned,
                 message_id=str(message.id),

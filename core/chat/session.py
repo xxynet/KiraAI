@@ -16,6 +16,9 @@ class User:
 
     extra: dict = field(default_factory=dict)
 
+    """group or server member nickname"""
+    group_nickname: str | None = field(default=None, kw_only=True)
+
 
 @dataclass
 class Group:
