@@ -166,11 +166,13 @@ async def get_release_assets(
 async def download_asset(
     download_url: str,
     proxy: str | None = None,
+    max_bytes: int | None = None,
 ) -> bytes:
     """
     Download a release asset by its browser_download_url.
 
-    Raises ValueError on HTTP errors, ConnectionError on network failures.
+    Raises ValueError on HTTP errors, ConnectionError on network failures, and
+    ValueError when max_bytes is exceeded.
     """
     client_kwargs: dict = {"timeout": 120.0, "follow_redirects": True}
     if proxy:
@@ -178,15 +180,21 @@ async def download_asset(
 
     async with httpx.AsyncClient(**client_kwargs) as client:
         try:
-            resp = await client.get(download_url)
-            resp.raise_for_status()
+            async with client.stream("GET", download_url) as resp:
+                resp.raise_for_status()
+                chunks: list[bytes] = []
+                total = 0
+                async for chunk in resp.aiter_bytes():
+                    total += len(chunk)
+                    if max_bytes is not None and total > max_bytes:
+                        raise ValueError(f"Asset exceeds the {max_bytes} byte limit")
+                    chunks.append(chunk)
+                return b"".join(chunks)
         except httpx.HTTPStatusError as e:
             status = e.response.status_code
             raise ValueError(f"Failed to download asset (HTTP {status})") from e
         except httpx.HTTPError as e:
             raise ConnectionError(f"Network error while downloading asset: {e}") from e
-
-    return resp.content
 
 
 def verify_sha256(data: bytes, expected_sha: str) -> bool:
