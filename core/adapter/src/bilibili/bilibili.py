@@ -89,8 +89,14 @@ class BiliBiliAdapter(BaseAdapter):
             self.listening_task = asyncio.create_task(self._start_listening())
             tasks.append(self.listening_task)
         if self.im is not None:
-            self._dm_task = asyncio.create_task(self._start_im())
-            tasks.append(self._dm_task)
+            if not self.credential.sessdata:
+                self.logger.warning(
+                    "Bilibili private messages are enabled but sessdata is missing; "
+                    "scan the QR code or set a credential, then restart the adapter"
+                )
+            else:
+                self._dm_task = asyncio.create_task(self._start_im())
+                tasks.append(self._dm_task)
         if tasks:
             await asyncio.gather(*tasks)
         else:
