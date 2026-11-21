@@ -101,9 +101,11 @@ class KiraConfig(dict):
         finally:
             if temporary is not None:
                 try:
+                    if os.name == "nt":
+                        os.chmod(temporary, stat.S_IWRITE)
                     os.unlink(temporary)
-                except OSError:
-                    pass
+                except OSError as cleanup_error:
+                    logger.error(f"Failed to remove temporary config file {temporary}: {cleanup_error}")
 
     def get_config(self, key: str, default: Optional = None, splitter: str = "."):
         keys = key.split(splitter)
