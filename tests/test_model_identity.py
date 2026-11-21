@@ -248,10 +248,10 @@ def test_model_save_failure_returns_error_without_changing_memory_or_disk(
     original_file = config_loader.CONFIG_PATH.read_bytes()
     model_id = model_manager.get_model_info("provider", NAME, "llm").model_id
 
-    def fail_open(*args, **kwargs):
+    def fail_replace(*args, **kwargs):
         raise PermissionError("Simulated model save failure")
 
-    monkeypatch.setattr(config_loader, "open", fail_open, raising=False)
+    monkeypatch.setattr(config_loader.os, "replace", fail_replace)
     url = f"/api/providers/provider/models/llm/{model_id}"
     if operation == "create":
         response = api.post("/api/providers/provider/models", json={"model_type": "llm", "model_name": "new"})
