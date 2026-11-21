@@ -34,10 +34,11 @@
             </template>
             <p v-else-if="!files.length" class="text-sm text-theme-subtle">{{ $t('plugin.skills_no_files') }}</p>
             <ul v-else class="max-h-48 md:min-h-0 md:max-h-[50vh] overflow-y-auto overflow-x-hidden space-y-1">
-              <li v-for="item in files" :key="item.path">
-                <button type="button" class="flex items-start gap-2 w-full rounded-md px-3 py-2 text-left text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed" :class="activePath === item.path ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'text-theme-body enabled:hover:bg-gray-100 dark:enabled:hover:bg-gray-800'" :aria-current="activePath === item.path ? 'true' : undefined" :disabled="saving" @click="selectFile(item.path)">
-                  <IconFileText class="w-4 h-4 mt-0.5 shrink-0" />
-                  <span class="min-w-0 break-all">{{ item.path }}</span>
+              <li v-for="item in visibleFileNodes" :key="item.path">
+                <button type="button" class="flex items-start gap-2 w-full rounded-md px-3 py-2 text-left text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed" :class="activePath === item.path ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'text-theme-body enabled:hover:bg-gray-100 dark:enabled:hover:bg-gray-800'" :style="{ paddingInlineStart: `${0.75 + item.depth * 0.75}rem` }" :title="item.path" :aria-expanded="item.children ? expandedDirectories.has(item.path) : undefined" :aria-current="activePath === item.path ? 'true' : undefined" :disabled="saving" @click="item.children ? toggleDirectory(item.path) : selectFile(item.path)">
+                  <IconChevronDown v-if="item.children" class="w-4 h-4 mt-0.5 shrink-0 transition-transform" :class="expandedDirectories.has(item.path) ? '' : '-rotate-90'" />
+                  <IconFileText v-else class="w-4 h-4 mt-0.5 shrink-0" />
+                  <span class="min-w-0 break-all">{{ item.name }}</span>
                 </button>
               </li>
             </ul>
@@ -94,7 +95,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { downloadSkillFile, getSkillFile, getSkillFiles, updateSkillFile, type SkillFileContent, type SkillFileItem, type SkillItem } from '@/api/skills'
 import { notify } from '@/composables/useNotification'
-import { IconClose, IconFileText, IconRefresh, IconSpinner } from '@/components/icons'
+import { IconChevronDown, IconClose, IconFileText, IconRefresh, IconSpinner } from '@/components/icons'
 import Modal from './Modal.vue'
 import ConfirmModal from './ConfirmModal.vue'
 import MonacoEditor from './MonacoEditor.vue'
@@ -107,6 +108,7 @@ const content = ref('')
 const originalContent = ref('')
 const description = ref('')
 const files = ref<SkillFileItem[]>([])
+const expandedDirectories = ref(new Set<string>())
 const filesLoading = ref(false)
 const filesError = ref<string | null>(null)
 const activePath = ref('')
@@ -119,6 +121,44 @@ const downloading = ref(false)
 const error = ref<string | null>(null)
 const discardModal = ref<InstanceType<typeof ConfirmModal> | null>(null)
 const dirty = computed(() => content.value !== originalContent.value)
+type SkillFileNode = { name: string; path: string; children?: SkillFileNode[] }
+const fileTree = computed(() => {
+  const roots: SkillFileNode[] = []
+  const directories = new Map<string, SkillFileNode>()
+  for (const file of files.value) {
+    const parts = file.path.split('/')
+    let siblings = roots
+    for (let index = 0; index < parts.length; index++) {
+      const name = parts[index]!
+      const path = parts.slice(0, index + 1).join('/')
+      if (index === parts.length - 1) {
+        siblings.push({ name, path })
+      } else {
+        let directory = directories.get(path)
+        if (!directory) {
+          directory = { name, path, children: [] }
+          directories.set(path, directory)
+          siblings.push(directory)
+        }
+        siblings = directory.children!
+      }
+    }
+  }
+  return roots
+})
+const visibleFileNodes = computed(() => {
+  const visible: (SkillFileNode & { depth: number })[] = []
+  function visit(nodes: SkillFileNode[], depth: number) {
+    const sorted = [...nodes].sort((a, b) =>
+      Number(!!b.children) - Number(!!a.children) || a.name.localeCompare(b.name))
+    for (const node of sorted) {
+      visible.push({ ...node, depth })
+      if (node.children && expandedDirectories.value.has(node.path)) visit(node.children, depth + 1)
+    }
+  }
+  visit(fileTree.value, 0)
+  return visible
+})
 const previewContent = computed(() => activePath.value === 'SKILL.md'
   ? content.value.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, '')
   : content.value)
@@ -139,6 +179,7 @@ const pendingAction = ref<(() => void) | null>(null)
 
 watch(() => props.modelValue, visible => {
   if (visible) {
+    expandedDirectories.value = new Set()
     description.value = props.skill?.description || ''
     void loadFiles()
   } else {
@@ -188,6 +229,10 @@ async function loadFiles() {
 
 async function loadContent(path: string) {
   if (!props.skill) return
+  const parts = path.split('/')
+  for (let index = 1; index < parts.length; index++) {
+    expandedDirectories.value.add(parts.slice(0, index).join('/'))
+  }
   const current = ++request
   const skillName = props.skill.id
   activePath.value = path
@@ -221,6 +266,11 @@ function errorMessage(key: string, e: any): string {
 
 function selectFile(path: string) {
   if (path !== activePath.value) requestAction(() => { void loadContent(path) })
+}
+
+function toggleDirectory(path: string) {
+  if (expandedDirectories.value.has(path)) expandedDirectories.value.delete(path)
+  else expandedDirectories.value.add(path)
 }
 
 function requestAction(action: () => void) {
