@@ -136,10 +136,6 @@ Run the project & enter webui to configure:
 - Persona
 ...
 
-WebUI backups capture committed SQLite data in a separate snapshot for each database,
-including changes still in its write-ahead log. Media and configuration are copied
-separately, so files updated during backup may reflect different points in time.
-
 ## 🗂️ Project Structure
 
 <details>
