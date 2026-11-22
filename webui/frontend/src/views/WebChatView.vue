@@ -23,6 +23,13 @@
           <button type="submit" :disabled="saving || deleting || !form.nickname.trim() || !form.peer_nickname.trim()" class="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 transition-colors disabled:opacity-50">{{ t(saving ? 'webchat.saving' : 'webchat.save') }}</button>
           <button v-if="profile" type="button" class="rounded-lg border border-gray-300 px-4 py-2 text-theme-body hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700 transition-colors disabled:opacity-50" :disabled="saving || deleting" @click="closeProfile">{{ t('webchat.cancel') }}</button>
         </div>
+        <div class="space-y-2 border-t border-gray-200 pt-5 dark:border-gray-700">
+          <div class="flex items-center justify-between gap-4">
+            <span id="webchat-markdown-label" class="text-sm text-theme-body">{{ t('webchat.markdown_render') }}</span>
+            <ToggleSwitch :model-value="chatMarkdownEnabled" role="switch" :aria-checked="chatMarkdownEnabled" aria-labelledby="webchat-markdown-label" aria-describedby="webchat-markdown-hint" @update:model-value="setChatMarkdownEnabled" />
+          </div>
+          <p id="webchat-markdown-hint" class="text-sm text-theme-subtle">{{ t('webchat.markdown_render_desc') }}</p>
+        </div>
         <div class="space-y-4 border-t border-gray-200 pt-5 dark:border-gray-700">
           <h5 class="text-sm font-semibold text-theme-strong">{{ t('webchat.tool_permissions') }}</h5>
           <div class="flex items-center justify-between gap-4">
@@ -55,7 +62,7 @@
                 <div class="message-bubble min-w-0 max-w-full rounded-lg break-words" :class="message.chain.length === 1 && ['image', 'sticker', 'record', 'video', 'file'].includes(message.chain[0]?.type || '')
                 ? null
                 : ['chat-bubble px-4 py-3', { 'chat-bubble--accent': message.direction === 'incoming' }]" tabindex="0" :aria-describedby="`webchat-time-${message.id}`">
-                  <MessageChain :chain="message.chain" :message-id="message.id" media-scope="webchat" />
+                  <MessageChain :chain="message.chain" :message-id="message.id" media-scope="webchat" :markdown-enabled="chatMarkdownEnabled" />
                 </div>
                 <time :id="`webchat-time-${message.id}`" class="message-time mt-1 text-xs text-theme-subtle">{{ formatTime(message.timestamp) }}</time>
               </div>
@@ -127,6 +134,7 @@ import { useI18n } from 'vue-i18n'
 import { Setting, Plus, Picture, Document, Close } from '@element-plus/icons-vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import ToggleSwitch from '@/components/common/ToggleSwitch.vue'
+import { notify } from '@/composables/useNotification'
 import MessageChain from '@/components/sessions/MessageChain.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
@@ -139,6 +147,7 @@ const form = reactive<WebChatProfile>({ nickname: '', peer_nickname: '', descrip
 const messages = ref<WebChatMessage[]>([])
 const loaded = ref(false)
 const editing = ref(false)
+const chatMarkdownEnabled = ref(localStorage.getItem('chat_markdown_render') === '1')
 const saving = ref(false)
 const adapterConfig = ref<WebChatConfig>({ allow_file_tools: true, allow_exec: false })
 const savingConfig = ref(false)
@@ -287,6 +296,15 @@ watch([messageList, messageContent], ([container, content]) => {
   scrollToLatest()
 }, { flush: 'post' })
 
+function setChatMarkdownEnabled(enabled: boolean) {
+  chatMarkdownEnabled.value = enabled
+  try {
+    localStorage.setItem('chat_markdown_render', enabled ? '1' : '0')
+  } catch (cause) {
+    console.error('Failed to save WebChat Markdown preference:', cause)
+    notify(t('webchat.markdown_save_failed'), 'warning')
+  }
+}
 function editProfile() {
   historyDeleted.value = false
   closeAttachmentMenu()
