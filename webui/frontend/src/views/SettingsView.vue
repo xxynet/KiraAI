@@ -243,7 +243,7 @@
           :aria-checked="sidebarCollapsedIcons"
           :aria-label="$t('settings.sidebar_collapsed_icons')"
           aria-describedby="sidebar-collapsed-icons-description"
-          class="shrink-0"
+          class="shrink-0 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
         />
       </div>
 
