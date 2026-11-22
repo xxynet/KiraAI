@@ -81,3 +81,54 @@ test('chat math extensions do not modify the shared Markdown parser', () => {
   setup().render('$x$')
   assert.equal(marked.parse('$x$', { async: false }), '<p>$x$</p>\n')
 })
+
+
+test('unmatched block math stays responsive at the WebChat message limit', () => {
+  const { render } = setup()
+  for (const input of [
+    '$$' + ' '.repeat(15997) + 'x',
+    '$$\n' + '\t '.repeat(7998) + 'x',
+    '$$\nx' + ' '.repeat(15993) + '$$z',
+  ]) {
+    const html = runInNewContext('render(input)', { render, input }, { timeout: 1500 })
+    assert.equal(html, marked.parse(input, { async: false }))
+  }
+})
+
+for (const tex of [
+  String.raw`\text{cost: \$5}`,
+  String.raw`\text{cost: \$5 and \$10}`,
+  String.raw`\$`,
+  String.raw`x\\`,
+  String.raw`\text{path}\\\$5`,
+]) {
+  test(`inline math preserves escaped delimiters in ${tex}`, () => {
+    const html = setup().render(`$${tex}$`)
+    const expected = katex.renderToString(tex, {
+      displayMode: false, throwOnError: false, strict: 'ignore', trust: false,
+    })
+    assert.equal(html, `<p>${expected}</p>\n`)
+    assert.doesNotMatch(html, /class="katex-error"/)
+  })
+}
+
+for (const [name, input, tex] of [
+  ['same-line block', '$$x$$', 'x'],
+  ['indented block', '   $$\nx\n$$', 'x'],
+  ['padded block', '$$ \t\nx\n \t$$ \t\n', 'x'],
+  ['multiline TeX', '$$\nx +\ny\n$$', 'x +\ny'],
+]) {
+  test(`block scanning preserves ${name}`, () => {
+    const expected = katex.renderToString(tex, {
+      displayMode: true, throwOnError: false, strict: 'ignore', trust: false,
+    })
+    assert.equal(setup().render(input), `<div class="md-math-block">${expected}</div>\n`)
+  })
+}
+
+test('unclosed escaped inline math and escaped opening markers remain text', () => {
+  const { render } = setup()
+  for (const input of [String.raw`$x\$`, String.raw`\$x$`, '$ x$', '$x $', '$x\ny$']) {
+    assert.equal(render(input), marked.parse(input, { async: false }))
+  }
+})

@@ -2,8 +2,45 @@ import DOMPurify from 'dompurify'
 import katex from 'katex'
 import { Marked } from 'marked'
 
-const BLOCK_MATH = /^ {0,3}\$\$[ \t]*\n?([\s\S]*?)\n?[ \t]*\$\$[ \t]*(?:\n|$)/
-const INLINE_MATH = /^\$(?![\s$])([^\n$]*?[^\s$])\$(?!\$)/
+function tokenizeBlockMath(source: string) {
+  const opening = /^ {0,3}\$\$[ \t]*\n?/.exec(source)
+  if (!opening) return
+  const contentStart = opening[0].length
+  for (let index = contentStart; index < source.length - 1; index++) {
+    if (source[index] !== '$' || source[index + 1] !== '$') continue
+    let end = index + 2
+    while (source[end] === ' ' || source[end] === '\t') end++
+    if (end < source.length && source[end] !== '\n') continue
+    if (source[end] === '\n') end++
+    let contentEnd = index
+    while (source[contentEnd - 1] === ' ' || source[contentEnd - 1] === '\t') contentEnd--
+    if (source[contentEnd - 1] === '\n') contentEnd--
+    return {
+      type: 'blockMath',
+      raw: source.slice(0, end),
+      tex: source.slice(contentStart, contentEnd),
+    }
+  }
+}
+
+function tokenizeInlineMath(source: string) {
+  if (source[0] !== '$' || !source[1] || /[\s$]/.test(source[1])) return
+  for (let index = 1; index < source.length; index++) {
+    if (source[index] === '\n') return
+    if (source[index] === '\\') {
+      if (source[index + 1] === '\n') return
+      index++
+      continue
+    }
+    if (source[index] !== '$') continue
+    if (/\s/.test(source[index - 1]!) || source[index + 1] === '$') return
+    return {
+      type: 'inlineMath',
+      raw: source.slice(0, index + 1),
+      tex: source.slice(1, index),
+    }
+  }
+}
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => {
@@ -28,10 +65,7 @@ const messageMarkdown = new Marked({
       name: 'blockMath',
       level: 'block',
       start: (source) => source.match(/(?:^|\n) {0,3}\$\$/)?.index,
-      tokenizer(source) {
-        const match = BLOCK_MATH.exec(source)
-        if (match) return { type: 'blockMath', raw: match[0], tex: match[1] }
-      },
+      tokenizer: tokenizeBlockMath,
       renderer(token) {
         const rendered = renderMath(token.tex, true)
         return rendered ? `<div class="md-math-block">${rendered}</div>\n` : escapeHtml(token.raw)
@@ -41,10 +75,7 @@ const messageMarkdown = new Marked({
       name: 'inlineMath',
       level: 'inline',
       start: (source) => source.indexOf('$'),
-      tokenizer(source) {
-        const match = INLINE_MATH.exec(source)
-        if (match) return { type: 'inlineMath', raw: match[0], tex: match[1] }
-      },
+      tokenizer: tokenizeInlineMath,
       renderer(token) {
         return renderMath(token.tex, false) || escapeHtml(token.raw)
       },
