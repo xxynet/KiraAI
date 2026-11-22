@@ -227,6 +227,26 @@
 
     <!-- Customization Tab -->
     <div v-show="activeTab === 'custom'" class="space-y-6">
+      <div class="flex items-center justify-between gap-4">
+        <div>
+          <label for="sidebar-collapsed-icons" class="block text-sm font-medium text-theme-body">
+            {{ $t('settings.sidebar_collapsed_icons') }}
+          </label>
+          <p id="sidebar-collapsed-icons-description" class="text-xs text-theme-subtle mt-1">
+            {{ $t('settings.sidebar_collapsed_icons_desc') }}
+          </p>
+        </div>
+        <ToggleSwitch
+          id="sidebar-collapsed-icons"
+          v-model="sidebarCollapsedIcons"
+          role="switch"
+          :aria-checked="sidebarCollapsedIcons"
+          :aria-label="$t('settings.sidebar_collapsed_icons')"
+          aria-describedby="sidebar-collapsed-icons-description"
+          class="shrink-0"
+        />
+      </div>
+
       <fieldset>
         <legend class="text-sm font-medium text-theme-body mb-2">
           {{ $t('settings.sidebar_group_style') }}
@@ -465,6 +485,7 @@ import { getAuthConfig } from '@/api/auth'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import CollapsibleSection from '@/components/common/CollapsibleSection.vue'
 import SidebarLayoutEditor from '@/components/layout/SidebarLayoutEditor.vue'
+import ToggleSwitch from '@/components/common/ToggleSwitch.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import Modal from '@/components/common/Modal.vue'
 import FileDropzone from '@/components/common/FileDropzone.vue'
@@ -507,6 +528,7 @@ const customJS = ref('')
 const customCodeCollapsed = ref(true)
 const customWebUITitle = ref('')
 const sidebarGroupStyle = ref(appStore.sidebarGroupStyle)
+const sidebarCollapsedIcons = ref(appStore.sidebarCollapsedIcons)
 const sidebarLayout = ref<SidebarLayoutEntry[] | null>(normalizeSidebarLayout(sidebarStore.layout))
 const sidebarHiddenItems = ref([...sidebarStore.hiddenItems])
 const sidebarGroupStyleOptions = computed(() => [
@@ -809,6 +831,7 @@ async function handleSave() {
     localStorage.setItem('custom_css', customCSS.value)
     localStorage.setItem('custom_js', customJS.value)
     appStore.setSidebarGroupStyle(sidebarGroupStyle.value)
+    appStore.setSidebarCollapsedIcons(sidebarCollapsedIcons.value)
     sidebarStore.setLayout(sidebarLayout.value)
     sidebarStore.setHiddenItems(sidebarHiddenItems.value)
     applyWebUITitle(customWebUITitle.value)

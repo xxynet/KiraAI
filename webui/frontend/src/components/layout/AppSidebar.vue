@@ -1,9 +1,9 @@
 <template>
   <aside
     class="sidebar-gradient h-[100dvh] shrink-0 flex flex-col text-theme-strong"
-    :class="{ 'sidebar-open': open, 'sidebar-collapsed': !open }"
-    :inert="mobile && !open"
-    :aria-hidden="mobile && !open"
+    :class="{ 'sidebar-open': open, 'sidebar-collapsed': collapsed, 'sidebar-hidden': hidden }"
+    :inert="hidden"
+    :aria-hidden="hidden"
   >
     <!-- Logo -->
     <div v-if="!collapsed" class="p-6 shrink-0 border-b border-blue-200/30">
@@ -104,11 +104,12 @@ import { ArrowDown } from '@element-plus/icons-vue'
 import { useSidebarNavigation } from '@/composables/useSidebarNavigation'
 
 const props = defineProps<{ open: boolean; mobile: boolean }>()
-const collapsed = computed(() => !props.open && !props.mobile)
 
 const appVersion = ref('-')
 const route = useRoute()
 const appStore = useAppStore()
+const collapsed = computed(() => !props.open && !props.mobile && appStore.sidebarCollapsedIcons)
+const hidden = computed(() => !props.open && !collapsed.value)
 const sidebarStore = useSidebarStore()
 const isSectionGroupStyle = computed(() => appStore.sidebarGroupStyle === 'section')
 const pluginMenuStore = usePluginMenuStore()
@@ -198,6 +199,11 @@ function isActive(path: string): boolean {
 @media (min-width: 1025px) {
   .sidebar-gradient.sidebar-collapsed {
     width: 4.5rem;
+  }
+
+  .sidebar-gradient.sidebar-hidden {
+    width: 0;
+    border-right-width: 0;
   }
 }
 

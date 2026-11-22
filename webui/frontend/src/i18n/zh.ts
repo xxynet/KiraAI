@@ -1162,6 +1162,8 @@ export default {
     theme: '主题',
     theme_light: '浅色',
     theme_dark: '深色',
+    sidebar_collapsed_icons: '收起侧边栏时显示图标',
+    sidebar_collapsed_icons_desc: '桌面端收起后保留图标导航，关闭后完全隐藏侧边栏。点击下方“保存设置”生效。',
     sidebar_group_style: '侧边栏分组样式',
     sidebar_group_style_section: '分区标题',
     sidebar_group_style_section_desc: '小号标题，组内菜单与普通菜单左对齐。',
