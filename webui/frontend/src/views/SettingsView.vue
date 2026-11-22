@@ -255,6 +255,16 @@
         </div>
       </fieldset>
 
+      <fieldset>
+        <legend class="text-sm font-medium text-theme-body mb-2">
+          {{ $t('settings.chat_markdown_render') }}
+        </legend>
+        <div class="flex items-start justify-between gap-4 p-4 border border-gray-300 dark:border-gray-600 rounded-lg">
+          <span class="text-xs text-theme-subtle leading-relaxed">{{ $t('settings.chat_markdown_render_desc') }}</span>
+          <ToggleSwitch v-model="chatMarkdownEnabled" />
+        </div>
+      </fieldset>
+
       <SidebarLayoutEditor v-model="sidebarLayout" v-model:hidden-items="sidebarHiddenItems" />
 
       <div>
@@ -464,6 +474,7 @@ import apiClient from '@/api/client'
 import { getAuthConfig } from '@/api/auth'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import CollapsibleSection from '@/components/common/CollapsibleSection.vue'
+import ToggleSwitch from '@/components/common/ToggleSwitch.vue'
 import SidebarLayoutEditor from '@/components/layout/SidebarLayoutEditor.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import Modal from '@/components/common/Modal.vue'
@@ -507,6 +518,7 @@ const customJS = ref('')
 const customCodeCollapsed = ref(true)
 const customWebUITitle = ref('')
 const sidebarGroupStyle = ref(appStore.sidebarGroupStyle)
+const chatMarkdownEnabled = ref(appStore.chatMarkdownEnabled)
 const sidebarLayout = ref<SidebarLayoutEntry[] | null>(normalizeSidebarLayout(sidebarStore.layout))
 const sidebarHiddenItems = ref([...sidebarStore.hiddenItems])
 const sidebarGroupStyleOptions = computed(() => [
@@ -809,6 +821,7 @@ async function handleSave() {
     localStorage.setItem('custom_css', customCSS.value)
     localStorage.setItem('custom_js', customJS.value)
     appStore.setSidebarGroupStyle(sidebarGroupStyle.value)
+    appStore.setChatMarkdownEnabled(chatMarkdownEnabled.value)
     sidebarStore.setLayout(sidebarLayout.value)
     sidebarStore.setHiddenItems(sidebarHiddenItems.value)
     applyWebUITitle(customWebUITitle.value)
