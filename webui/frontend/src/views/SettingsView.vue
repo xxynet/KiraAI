@@ -854,7 +854,7 @@ async function handleSave() {
   outline-offset: 2px;
 }
 
-:global(.dark) .sidebar-icons-toggle:focus-visible {
+.dark .sidebar-icons-toggle:focus-visible {
   outline-color: var(--color-accent-strong);
 }
 </style>
