@@ -1126,6 +1126,8 @@ export default {
     theme: '主题',
     theme_light: '浅色',
     theme_dark: '深色',
+    chat_markdown_render: '聊天消息 Markdown 与公式渲染',
+    chat_markdown_render_desc: '开启后聊天消息按 Markdown 渲染，并支持 KaTeX 数学公式；默认关闭，代码块内内容不受影响。',
     sidebar_group_style: '侧边栏分组样式',
     sidebar_group_style_section: '分区标题',
     sidebar_group_style_section_desc: '小号标题，组内菜单与普通菜单左对齐。',
