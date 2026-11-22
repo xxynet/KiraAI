@@ -58,7 +58,11 @@ def _snapshot_sqlite(source_path: Path, snapshot_path: Path) -> None:
         if status in retry_statuses and monotonic() >= deadline:
             raise sqlite3.OperationalError(f"Timed out reading SQLite database {source_path.name}")
 
-    source_uri = source_path.as_uri() + "?mode=ro"
+    source_uri = source_path.as_uri()
+    if source_path.drive.startswith("\\\\"):
+        # Keep Windows UNC and verbatim prefixes in the path, not the URI authority.
+        source_uri = "file:////" + source_uri.removeprefix("file://")
+    source_uri += "?mode=ro"
     with (
         closing(sqlite3.connect(source_uri, uri=True, timeout=1)) as source,
         closing(sqlite3.connect(snapshot_path)) as snapshot,
