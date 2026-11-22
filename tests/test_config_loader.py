@@ -1,3 +1,6 @@
+import os
+import stat
+
 import pytest
 
 from core.config.config_loader import KiraConfig
@@ -139,11 +142,119 @@ def test_save_config_opt_in_errors_preserve_existing_caller_behavior(monkeypatch
     config = KiraConfig({'test': True})
     assert config.save_config(raise_on_error=True) is None
 
-    def fail_open(*args, **kwargs):
-        raise PermissionError('Simulated write failure')
+    before = config_loader.CONFIG_PATH.read_text(encoding='utf-8')
 
-    monkeypatch.setattr(config_loader, 'open', fail_open, raising=False)
+    def fail_replace(*args, **kwargs):
+        raise OSError('Simulated write failure')
+
+    monkeypatch.setattr(config_loader.os, 'replace', fail_replace)
     assert config.save_config() is None
+    assert config_loader.CONFIG_PATH.read_text(encoding='utf-8') == before
     with pytest.raises(ConfigError, match='failed to save configuration') as error:
         config.save_config(raise_on_error=True)
+    assert isinstance(error.value.__cause__, OSError)
+    assert config_loader.CONFIG_PATH.read_text(encoding='utf-8') == before
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits are unavailable on Windows")
+def test_atomic_save_preserves_existing_file_mode(monkeypatch, tmp_path):
+    from core.config import config_loader
+
+    path = tmp_path / "config.json"
+    monkeypatch.setattr(config_loader, "CONFIG_PATH", path)
+    config = KiraConfig({"value": 1})
+    path.chmod(0o640)
+    config["value"] = 2
+    config.save_config(raise_on_error=True)
+    assert stat.S_IMODE(path.stat().st_mode) == 0o640
+
+
+def test_atomic_save_preserves_symlink_and_updates_target(monkeypatch, tmp_path):
+    import json
+
+    from core.config import config_loader
+
+    target = tmp_path / "mounted_config" / "config.json"
+    target.parent.mkdir()
+    target.write_text('{"value": 1}', encoding="utf-8")
+    path = tmp_path / "config.json"
+    try:
+        path.symlink_to(target)
+    except OSError as exc:
+        if isinstance(exc, PermissionError) or getattr(exc, "winerror", None) == 1314:
+            pytest.skip(f"Symbolic link creation requires privileges: {exc}")
+        raise
+    monkeypatch.setattr(config_loader, "CONFIG_PATH", path)
+    config = KiraConfig({"value": 1})
+    config["value"] = 2
+    config.save_config(raise_on_error=True)
+    assert path.is_symlink()
+    assert json.loads(target.read_text(encoding="utf-8")) == {"value": 2}
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows read-only file cleanup")
+@pytest.mark.parametrize("raise_on_error", [False, True])
+def test_atomic_save_cleans_readonly_temporary_file(monkeypatch, tmp_path, raise_on_error):
+    from core.config import ConfigError, config_loader
+
+    path = tmp_path / "config.json"
+    monkeypatch.setattr(config_loader, "CONFIG_PATH", path)
+    config = KiraConfig({"value": 1})
+    before = path.read_bytes()
+    path.chmod(stat.S_IREAD)
+    config["value"] = 2
+    try:
+        if raise_on_error:
+            with pytest.raises(ConfigError) as error:
+                config.save_config(raise_on_error=True)
+            assert isinstance(error.value.__cause__, PermissionError)
+        else:
+            assert config.save_config() is None
+        assert path.read_bytes() == before
+        assert not path.stat().st_mode & stat.S_IWRITE
+        assert not list(tmp_path.glob(".system_config.*.tmp"))
+    finally:
+        path.chmod(stat.S_IREAD | stat.S_IWRITE)
+        for temporary in tmp_path.glob(".system_config.*.tmp"):
+            temporary.chmod(stat.S_IREAD | stat.S_IWRITE)
+            temporary.unlink()
+
+
+def test_atomic_save_serialization_failure_preserves_original(monkeypatch, tmp_path):
+    from core.config import ConfigError, config_loader
+
+    path = tmp_path / "config.json"
+    monkeypatch.setattr(config_loader, "CONFIG_PATH", path)
+    config = KiraConfig({"value": 1})
+    before = path.read_bytes()
+    config["invalid"] = object()
+    with pytest.raises(ConfigError) as error:
+        config.save_config(raise_on_error=True)
+    assert isinstance(error.value.__cause__, TypeError)
+    assert path.read_bytes() == before
+    assert not list(tmp_path.glob(".system_config.*.tmp"))
+
+
+def test_atomic_save_logs_cleanup_failure_without_masking_save_error(monkeypatch, tmp_path):
+    from core.config import ConfigError, config_loader
+
+    monkeypatch.setattr(config_loader, "CONFIG_PATH", tmp_path / "config.json")
+    config = KiraConfig({"value": 1})
+    messages = []
+    monkeypatch.setattr(config_loader.logger, "error", messages.append)
+
+    def fail_replace(*args, **kwargs):
+        raise PermissionError("Simulated replacement failure")
+
+    def fail_unlink(*args, **kwargs):
+        raise OSError("Simulated temporary file cleanup failure")
+
+    monkeypatch.setattr(config_loader.os, "replace", fail_replace)
+    monkeypatch.setattr(config_loader.os, "unlink", fail_unlink)
+    with pytest.raises(ConfigError) as error:
+        config.save_config(raise_on_error=True)
     assert isinstance(error.value.__cause__, PermissionError)
+    assert str(error.value.__cause__) == "Simulated replacement failure"
+    temporary, = tmp_path.glob(".system_config.*.tmp")
+    assert any(str(temporary) in message and "Simulated temporary file cleanup failure" in message
+               for message in messages)

@@ -227,6 +227,26 @@
 
     <!-- Customization Tab -->
     <div v-show="activeTab === 'custom'" class="space-y-6">
+      <div class="flex items-center justify-between gap-4">
+        <div>
+          <label for="sidebar-collapsed-icons" class="block text-sm font-medium text-theme-body">
+            {{ $t('settings.sidebar_collapsed_icons') }}
+          </label>
+          <p id="sidebar-collapsed-icons-description" class="text-xs text-theme-subtle mt-1">
+            {{ $t('settings.sidebar_collapsed_icons_desc') }}
+          </p>
+        </div>
+        <ToggleSwitch
+          id="sidebar-collapsed-icons"
+          v-model="sidebarCollapsedIcons"
+          role="switch"
+          :aria-checked="sidebarCollapsedIcons"
+          :aria-label="$t('settings.sidebar_collapsed_icons')"
+          aria-describedby="sidebar-collapsed-icons-description"
+          class="sidebar-icons-toggle shrink-0"
+        />
+      </div>
+
       <fieldset>
         <legend class="text-sm font-medium text-theme-body mb-2">
           {{ $t('settings.sidebar_group_style') }}
@@ -252,16 +272,6 @@
               <span class="block text-xs text-theme-subtle mt-1">{{ option.description }}</span>
             </span>
           </label>
-        </div>
-      </fieldset>
-
-      <fieldset>
-        <legend class="text-sm font-medium text-theme-body mb-2">
-          {{ $t('settings.chat_markdown_render') }}
-        </legend>
-        <div class="flex items-start justify-between gap-4 p-4 border border-gray-300 dark:border-gray-600 rounded-lg">
-          <span class="text-xs text-theme-subtle leading-relaxed">{{ $t('settings.chat_markdown_render_desc') }}</span>
-          <ToggleSwitch v-model="chatMarkdownEnabled" />
         </div>
       </fieldset>
 
@@ -474,8 +484,8 @@ import apiClient from '@/api/client'
 import { getAuthConfig } from '@/api/auth'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import CollapsibleSection from '@/components/common/CollapsibleSection.vue'
-import ToggleSwitch from '@/components/common/ToggleSwitch.vue'
 import SidebarLayoutEditor from '@/components/layout/SidebarLayoutEditor.vue'
+import ToggleSwitch from '@/components/common/ToggleSwitch.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import Modal from '@/components/common/Modal.vue'
 import FileDropzone from '@/components/common/FileDropzone.vue'
@@ -518,7 +528,7 @@ const customJS = ref('')
 const customCodeCollapsed = ref(true)
 const customWebUITitle = ref('')
 const sidebarGroupStyle = ref(appStore.sidebarGroupStyle)
-const chatMarkdownEnabled = ref(appStore.chatMarkdownEnabled)
+const sidebarCollapsedIcons = ref(appStore.sidebarCollapsedIcons)
 const sidebarLayout = ref<SidebarLayoutEntry[] | null>(normalizeSidebarLayout(sidebarStore.layout))
 const sidebarHiddenItems = ref([...sidebarStore.hiddenItems])
 const sidebarGroupStyleOptions = computed(() => [
@@ -821,7 +831,7 @@ async function handleSave() {
     localStorage.setItem('custom_css', customCSS.value)
     localStorage.setItem('custom_js', customJS.value)
     appStore.setSidebarGroupStyle(sidebarGroupStyle.value)
-    appStore.setChatMarkdownEnabled(chatMarkdownEnabled.value)
+    appStore.setSidebarCollapsedIcons(sidebarCollapsedIcons.value)
     sidebarStore.setLayout(sidebarLayout.value)
     sidebarStore.setHiddenItems(sidebarHiddenItems.value)
     applyWebUITitle(customWebUITitle.value)
@@ -837,3 +847,14 @@ async function handleSave() {
   }
 }
 </script>
+
+<style scoped>
+.sidebar-icons-toggle:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.dark .sidebar-icons-toggle:focus-visible {
+  outline-color: var(--color-accent-strong);
+}
+</style>

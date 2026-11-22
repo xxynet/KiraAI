@@ -9,7 +9,7 @@
       <blockquote v-else-if="element.type === 'reply'" class="chat-bubble-quote my-2 first:mt-0 last:mb-0 border-l-2 pl-3 space-y-2">
         <p class="chat-bubble-quote-label text-xs">{{ $t('sessions.history.reply') }} 路 {{ element.message_id }}</p>
         <p v-if="element.message_content" class="whitespace-pre-wrap">{{ element.message_content }}</p>
-        <MessageChain v-if="element.chain?.length && depth < 3" :chain="element.chain" :message-id="messageId" :path="elementPath(index)" :depth="depth + 1" :media-scope="mediaScope" />
+        <MessageChain v-if="element.chain?.length && depth < 3" :chain="element.chain" :message-id="messageId" :path="elementPath(index)" :depth="depth + 1" :media-scope="mediaScope" :markdown-enabled="markdownEnabled" />
       </blockquote>
       <MessageMedia v-else-if="['image', 'sticker', 'record', 'video', 'file'].includes(element.type)" class="my-2 first:mt-0 last:mb-0" :element="element" :message-id="messageId" :element-path="elementPath(index)" :media-scope="mediaScope" />
       <span v-else-if="element.type === 'emoji'">{{ $t('sessions.history.emoji') }} 路 {{ element.emoji_desc || element.emoji_id }}</span>
@@ -23,9 +23,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
 import type { MessageElement } from '@/types'
-import { useAppStore } from '@/stores/app'
 import { renderMessageMarkdown } from '@/utils/markdownMath'
 import MessageMedia from './MessageMedia.vue'
 
@@ -35,10 +33,8 @@ const props = withDefaults(defineProps<{
   path?: string
   depth?: number
   mediaScope?: 'sessions' | 'webchat'
-}>(), { path: '', depth: 0 })
-
-const appStore = useAppStore()
-const markdownEnabled = computed(() => appStore.chatMarkdownEnabled)
+  markdownEnabled?: boolean
+}>(), { path: '', depth: 0, markdownEnabled: false })
 
 function elementPath(index: number) {
   return props.path ? `${props.path}.${index}` : String(index)

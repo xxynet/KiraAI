@@ -5,7 +5,6 @@ import i18n from '@/i18n'
 const ALLOWED_THEMES = ['light', 'dark'] as const
 const ALLOWED_LANGUAGES = ['en', 'zh'] as const
 const ALLOWED_SIDEBAR_GROUP_STYLES = ['section', 'nested'] as const
-const CHAT_MARKDOWN_KEY = 'chat_markdown_render'
 type Theme = (typeof ALLOWED_THEMES)[number]
 type Language = (typeof ALLOWED_LANGUAGES)[number]
 type SidebarGroupStyle = (typeof ALLOWED_SIDEBAR_GROUP_STYLES)[number]
@@ -38,17 +37,11 @@ function sanitizeSidebarGroupStyle(value: string | null): SidebarGroupStyle {
     : 'section'
 }
 
-function sanitizeChatMarkdown(value: string | null): boolean {
-  return value === '1'
-}
-
 export const useAppStore = defineStore('app', () => {
   const theme = ref<Theme>(getInitialTheme())
   const language = ref<Language>(sanitizeLanguage(localStorage.getItem('language')))
   const sidebarGroupStyle = ref<SidebarGroupStyle>(sanitizeSidebarGroupStyle(localStorage.getItem('sidebar_group_style')))
-  // Chat message rendering is opt-in: Markdown/KaTeX rendering can change how
-  // existing messages look, so it stays off unless the user enables it.
-  const chatMarkdownEnabled = ref(sanitizeChatMarkdown(localStorage.getItem(CHAT_MARKDOWN_KEY)))
+  const sidebarCollapsedIcons = ref(localStorage.getItem('sidebar_collapsed_icons') !== 'false')
 
   const isDark = ref(theme.value === 'dark')
   const isThemeTransitioning = ref(false)
@@ -111,15 +104,15 @@ export const useAppStore = defineStore('app', () => {
     i18n.global.locale.value = validated
   }
 
-  function setChatMarkdownEnabled(enabled: boolean) {
-    chatMarkdownEnabled.value = enabled
-    localStorage.setItem(CHAT_MARKDOWN_KEY, enabled ? '1' : '0')
-  }
-
   function setSidebarGroupStyle(style: string) {
     const validated = sanitizeSidebarGroupStyle(style)
     localStorage.setItem('sidebar_group_style', validated)
     sidebarGroupStyle.value = validated
+  }
+
+  function setSidebarCollapsedIcons(show: boolean) {
+    localStorage.setItem('sidebar_collapsed_icons', String(show))
+    sidebarCollapsedIcons.value = show
   }
 
   // Theme side effects are applied by App.vue on mount via
@@ -130,12 +123,12 @@ export const useAppStore = defineStore('app', () => {
     theme,
     language,
     sidebarGroupStyle,
-    chatMarkdownEnabled,
+    sidebarCollapsedIcons,
     isDark,
     setTheme,
     toggleTheme,
     setLanguage,
     setSidebarGroupStyle,
-    setChatMarkdownEnabled,
+    setSidebarCollapsedIcons,
   }
 })

@@ -31,8 +31,8 @@
       </div>
     </div>
 
-    <!-- Options Dropdown (teleport to body to escape overflow clipping, always fixed) -->
-    <Teleport to="body">
+    <!-- Keep modal dropdowns inside its focus boundary, outside scrolling content. -->
+    <Teleport :to="modalPanel || 'body'">
       <div
         class="custom-select-options"
         :class="{ show: isOpen }"
@@ -66,7 +66,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, inject, onUnmounted } from 'vue'
+import { modalPanelKey } from './modalFocus'
 import { IconCheck, IconChevronDown } from '@/components/icons'
 import { useTheme } from '@/composables/useTheme'
 
@@ -90,6 +91,7 @@ const emit = defineEmits<{
 }>()
 
 const { isDark } = useTheme()
+const modalPanel = inject(modalPanelKey, ref(null))
 
 // truthiness would treat a selected numeric 0 as empty
 const hasValue = computed(() => props.modelValue !== '' && props.modelValue !== null && props.modelValue !== undefined)

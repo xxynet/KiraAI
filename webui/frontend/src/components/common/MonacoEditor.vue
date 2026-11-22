@@ -15,6 +15,7 @@ const props = withDefaults(
     readOnly?: boolean
     folding?: boolean
     stickyScroll?: boolean
+    horizontalScrollbar?: 'auto' | 'visible' | 'hidden'
   }>(),
   {
     language: 'json',
@@ -22,6 +23,7 @@ const props = withDefaults(
     readOnly: false,
     folding: true,
     stickyScroll: true,
+    horizontalScrollbar: 'auto',
   },
 )
 
@@ -53,12 +55,13 @@ onMounted(() => {
     minimap: { enabled: false },
     scrollBeyondLastLine: false,
     wordWrap: 'on',
+    scrollbar: { horizontal: props.horizontalScrollbar },
     fontSize: 14,
   })
 
   editor.onDidChangeModelContent(() => {
     if (editor) {
-      emit('update:modelValue', editor.getValue())
+      emit('update:modelValue', editor.getModel()!.getValue(monaco.editor.EndOfLinePreference.TextDefined, true))
     }
   })
 })
@@ -66,7 +69,7 @@ onMounted(() => {
 watch(
   () => props.modelValue,
   (newVal) => {
-    if (editor && editor.getValue() !== newVal) {
+    if (editor && editor.getModel()!.getValue(monaco.editor.EndOfLinePreference.TextDefined, true) !== newVal) {
       editor.setValue(newVal)
     }
   },

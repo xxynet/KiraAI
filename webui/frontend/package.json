@@ -14,6 +14,7 @@
     "dompurify": "^3.4.2",
     "echarts": "^6.1.0",
     "event-source-polyfill": "^1.0.31",
+    "katex": "^0.16.47",
     "marked": "^18.0.3",
     "monaco-editor": "^0.52.2",
     "pinia": "^2.3.0",

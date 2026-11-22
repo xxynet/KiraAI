@@ -2,13 +2,14 @@
   <Teleport to="body">
     <Transition name="modal">
       <div
+        ref="rootRef"
         v-show="modelValue"
         class="fixed inset-0 z-[100] flex items-center justify-center"
         @mousedown="onMouseDown"
         @mouseup="onMouseUp"
       >
         <div class="modal-overlay absolute inset-0 bg-black bg-opacity-50" />
-        <div ref="panelRef" class="modal-panel relative w-full mx-4" :class="contentClass" :style="contentStyle">
+        <div ref="panelRef" tabindex="-1" class="modal-panel relative w-full mx-4" :class="contentClass" :style="contentStyle">
           <slot />
         </div>
       </div>
@@ -17,23 +18,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onUnmounted } from 'vue'
-
-/* ------------------------------------------------------------------ */
-/*  Global ESC stack — only the top-most modal receives Escape          */
-/* ------------------------------------------------------------------ */
-const _stack: { close: () => void }[] = []
-
-let _globalListenerAttached = false
-function _ensureGlobalListener() {
-  if (_globalListenerAttached) return
-  _globalListenerAttached = true
-  document.addEventListener('keydown', (e: KeyboardEvent) => {
-    if (e.key !== 'Escape' || _stack.length === 0) return
-    const top = _stack[_stack.length - 1]
-    if (top) top.close()
-  })
-}
+import { provide, ref, watch, onUnmounted } from 'vue'
+import { modalPanelKey, registerModal } from './modalFocus'
 
 const props = withDefaults(defineProps<{
   modelValue: boolean
@@ -58,6 +44,8 @@ function close() {
 
 const mouseDownTarget = ref<EventTarget | null>(null)
 const panelRef = ref<HTMLElement | null>(null)
+const rootRef = ref<HTMLElement | null>(null)
+provide(modalPanelKey, panelRef)
 
 function isOutsidePanel(target: EventTarget | null): boolean {
   const panel = panelRef.value
@@ -80,23 +68,23 @@ function onMouseUp(e: MouseEvent) {
   mouseDownTarget.value = null
 }
 
-const stackEntry = { close }
-
-function removeFromStack() {
-  const idx = _stack.indexOf(stackEntry)
-  if (idx !== -1) _stack.splice(idx, 1)
-}
+let unregister: (() => void) | undefined
 
 watch(() => props.modelValue, (open) => {
-  if (open) {
-    _stack.push(stackEntry)
-    _ensureGlobalListener()
-  } else {
-    removeFromStack()
+  unregister?.()
+  unregister = undefined
+  if (open && rootRef.value && panelRef.value) {
+    unregister = registerModal(rootRef.value, panelRef.value, close)
   }
-})
+}, { immediate: true, flush: 'post' })
 
-onUnmounted(removeFromStack)
+watch(rootRef, root => {
+  if (root && props.modelValue && panelRef.value && !unregister) {
+    unregister = registerModal(root, panelRef.value, close)
+  }
+}, { flush: 'post' })
+
+onUnmounted(() => unregister?.())
 </script>
 
 <style scoped>
