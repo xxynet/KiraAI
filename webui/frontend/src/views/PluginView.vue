@@ -976,7 +976,7 @@
               </button>
             </div>
             <div v-show="pluginDetailsTab === 'readme'" id="plugin-details-panel-readme" role="tabpanel" aria-labelledby="plugin-details-tab-readme" tabindex="0" class="pt-4">
-              <PluginReadme v-if="pluginReadmeLoading || pluginReadme" :readme="pluginReadme" :loading="pluginReadmeLoading" :repo-url="pluginDetailsRepo" :repo-ref="pluginReadmeRef" />
+              <MarkdownPreview v-if="pluginReadmeLoading || pluginReadme" :readme="pluginReadme" :loading="pluginReadmeLoading" :repo-url="pluginDetailsRepo" :repo-ref="pluginReadmeRef" />
               <p v-else class="text-sm text-theme-subtle">{{ $t(selectedPluginInstalled ? 'plugin.no_readme' : 'plugin.store_readme_unavailable') }}</p>
             </div>
             <div v-show="pluginDetailsTab === 'components'" id="plugin-details-panel-components" role="tabpanel" aria-labelledby="plugin-details-tab-components" tabindex="0" class="pt-4">
@@ -1177,7 +1177,7 @@ import Modal from '@/components/common/Modal.vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import FileDropzone from '@/components/common/FileDropzone.vue'
 import AlertHint from '@/components/common/AlertHint.vue'
-import PluginReadme from '@/components/common/PluginReadme.vue'
+import MarkdownPreview from '@/components/common/MarkdownPreview.vue'
 import SkillDetails from '@/components/common/SkillDetails.vue'
 import { fetchStoreReadme, getStoreReadmeRef } from '@/utils/pluginReadme'
 import PluginComponents from '@/components/common/PluginComponents.vue'

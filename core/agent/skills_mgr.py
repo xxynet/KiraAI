@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -116,13 +117,16 @@ class SkillsManager:
     @staticmethod
     def parse_skill_content(text: str, skill_path: Path) -> SkillInfo:
         """Parse and validate skill metadata before loading or saving it."""
-        parts = text.split('---', 2)
-        if len(parts) < 3:
+        frontmatter = re.match(
+            r'\A\ufeff?---[ \t]*\r?\n(.*?)^---[ \t]*(?:\r?\n|\Z)',
+            text, re.MULTILINE | re.DOTALL,
+        )
+        if frontmatter is None:
             raise SkillValidationError(
                 "missing_frontmatter", "SKILL.md must contain YAML frontmatter between --- delimiters",
             )
         try:
-            data = yaml.safe_load(parts[1])
+            data = yaml.safe_load(frontmatter.group(1))
         except yaml.YAMLError as e:
             raise SkillValidationError("invalid_yaml", f"Invalid SKILL.md frontmatter: {e}") from e
         if not isinstance(data, dict) or any(

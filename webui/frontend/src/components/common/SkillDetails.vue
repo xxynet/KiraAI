@@ -53,12 +53,12 @@
             </div>
             <p v-if="error" role="alert" class="mb-4 text-sm text-red-600 dark:text-red-400 whitespace-pre-wrap">{{ error }}</p>
             <div v-if="loading" class="min-h-[50vh]">
-              <PluginReadme :readme="null" :loading="true" :repo-url="null" repo-ref="HEAD" />
+              <MarkdownPreview :readme="null" :loading="true" :repo-url="null" repo-ref="HEAD" />
             </div>
             <template v-else-if="file">
               <template v-if="file.kind === 'text'">
                 <p v-if="editing && activePath === 'SKILL.md'" class="mb-3 text-sm text-theme-subtle">{{ $t('plugin.skills_edit_hint') }}</p>
-                <PluginReadme v-if="!editing && language === 'markdown'" :readme="previewContent" :loading="false" :repo-url="null" repo-ref="HEAD" />
+                <MarkdownPreview v-if="!editing && language === 'markdown'" ref="markdownRef" :readme="previewContent" :loading="false" :repo-url="null" repo-ref="HEAD" :resolve-image="resolveMarkdownImage" @link-click="openMarkdownLink" />
                 <MonacoEditor v-else :key="activePath" v-model="content" :language="language" height="50vh" horizontal-scrollbar="hidden" :read-only="!editing || saving" />
               </template>
               <img v-else-if="file.kind === 'image' && imageUrl" :src="imageUrl" :alt="activePath" class="max-w-full h-auto rounded-md" />
@@ -91,7 +91,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { downloadSkillFile, getSkillFile, getSkillFiles, updateSkillFile, type SkillFileContent, type SkillFileItem, type SkillItem } from '@/api/skills'
 import { notify } from '@/composables/useNotification'
@@ -99,7 +99,8 @@ import { IconChevronDown, IconClose, IconFileText, IconRefresh, IconSpinner } fr
 import Modal from './Modal.vue'
 import ConfirmModal from './ConfirmModal.vue'
 import MonacoEditor from './MonacoEditor.vue'
-import PluginReadme from './PluginReadme.vue'
+import MarkdownPreview from './MarkdownPreview.vue'
+import { resolveSkillFileReference, skillImageType, stripSkillFrontmatter } from './skillFiles'
 
 const props = defineProps<{ modelValue: boolean; skill: SkillItem | null }>()
 const emit = defineEmits<{ 'update:modelValue': [value: boolean]; saved: [] }>()
@@ -114,6 +115,9 @@ const filesError = ref<string | null>(null)
 const activePath = ref('')
 const file = ref<SkillFileContent | null>(null)
 const imageUrl = ref<string | null>(null)
+const markdownRef = ref<InstanceType<typeof MarkdownPreview> | null>(null)
+const markdownImages = new Map<string, Promise<string | null>>()
+const markdownImageUrls = new Set<string>()
 const loading = ref(false)
 const editing = ref(false)
 const saving = ref(false)
@@ -160,7 +164,7 @@ const visibleFileNodes = computed(() => {
   return visible
 })
 const previewContent = computed(() => activePath.value === 'SKILL.md'
-  ? content.value.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, '')
+  ? stripSkillFrontmatter(content.value)
   : content.value)
 const fileLanguages: Record<string, string> = {
   md: 'markdown', markdown: 'markdown', py: 'python', js: 'javascript', mjs: 'javascript', cjs: 'javascript',
@@ -192,6 +196,9 @@ watch(() => props.modelValue, visible => {
 function releaseImage() {
   if (imageUrl.value) URL.revokeObjectURL(imageUrl.value)
   imageUrl.value = null
+  for (const url of markdownImageUrls) URL.revokeObjectURL(url)
+  markdownImageUrls.clear()
+  markdownImages.clear()
 }
 
 onBeforeUnmount(() => {
@@ -227,7 +234,7 @@ async function loadFiles() {
   }
 }
 
-async function loadContent(path: string) {
+async function loadContent(path: string, fragment = '') {
   if (!props.skill) return
   const parts = path.split('/')
   for (let index = 1; index < parts.length; index++) {
@@ -248,7 +255,7 @@ async function loadContent(path: string) {
     if (response.data.kind === 'image') {
       const image = await downloadSkillFile(skillName, path)
       if (current !== request) return
-      imageUrl.value = URL.createObjectURL(image.data)
+      imageUrl.value = URL.createObjectURL(new Blob([image.data], { type: skillImageType(path) }))
     }
     content.value = originalContent.value = response.data.content ?? ''
     file.value = response.data
@@ -257,19 +264,73 @@ async function loadContent(path: string) {
   } finally {
     if (current === request) loading.value = false
   }
+  if (current === request && fragment) {
+    await nextTick()
+    markdownRef.value?.scrollToFragment(fragment)
+  }
 }
 
-function errorMessage(key: string, e: any): string {
+async function resolveMarkdownImage(src: string): Promise<string | null> {
+  if (!props.modelValue) return null
+  const reference = resolveSkillFileReference(src, activePath.value)
+  if (reference.kind === 'external') return src
+  if (reference.kind === 'invalid') {
+    notify(`${t('plugin.skills_resource_load_failed', { path: src })}: ${t('plugin.skills_errors.invalid_path')}`, 'error')
+    return null
+  }
+  const cached = markdownImages.get(reference.path)
+  if (cached) return cached
+  const current = request
+  const skillName = props.skill?.id
+  if (!skillName) return null
+  const pending = (async () => {
+    try {
+      const response = await getSkillFile(skillName, reference.path)
+      if (current !== request) return null
+      if (response.data.kind !== 'image') {
+        throw new Error(t(response.data.reason === 'too_large'
+          ? 'plugin.skills_file_too_large' : 'plugin.skills_image_unsupported'))
+      }
+      const image = await downloadSkillFile(skillName, reference.path)
+      if (current !== request) return null
+      const url = URL.createObjectURL(new Blob([image.data], { type: skillImageType(reference.path) }))
+      markdownImageUrls.add(url)
+      return url
+    } catch (e: any) {
+      if (current === request) notify(errorMessage('plugin.skills_resource_load_failed', e, { path: src }), 'error')
+      return null
+    }
+  })()
+  markdownImages.set(reference.path, pending)
+  return pending
+}
+
+function openMarkdownLink(href: string, event: MouseEvent) {
+  const reference = resolveSkillFileReference(href, activePath.value)
+  if (reference.kind === 'external') return
+  event.preventDefault()
+  if (reference.kind === 'invalid') {
+    notify(t('plugin.skills_errors.invalid_path'), 'error')
+    return
+  }
+  if (reference.path === activePath.value) {
+    markdownRef.value?.scrollToFragment(reference.fragment)
+  } else {
+    requestAction(() => { void loadContent(reference.path, reference.fragment) })
+  }
+}
+
+function errorMessage(key: string, e: any, values: Record<string, string> = {}): string {
   const detail = e?.response?.data?.detail || e?.message
   if (detail && typeof detail === 'object' && typeof detail.code === 'string') {
     const reasonKey = `plugin.skills_errors.${detail.code}`
     if (te(reasonKey)) {
       const reason = t(reasonKey)
       const diagnostic = typeof detail.diagnostic === 'string' ? `: ${detail.diagnostic}` : ''
-      return `${t(key)}: ${reason}${diagnostic}`
+      return `${t(key, values)}: ${reason}${diagnostic}`
     }
   }
-  return detail ? `${t(key)}: ${typeof detail === 'string' ? detail : JSON.stringify(detail)}` : t(key)
+  return detail ? `${t(key, values)}: ${typeof detail === 'string' ? detail : JSON.stringify(detail)}` : t(key, values)
 }
 
 function selectFile(path: string) {
@@ -353,16 +414,16 @@ async function downloadFile() {
   overflow-wrap: anywhere;
 }
 
-.skill-details-content :deep(.plugin-readme pre) {
+.skill-details-content :deep(.markdown-preview pre) {
   white-space: pre-wrap;
   overflow-x: hidden;
 }
 
-.skill-details-content :deep(.plugin-readme pre code) {
+.skill-details-content :deep(.markdown-preview pre code) {
   white-space: inherit;
 }
 
-.skill-details-content :deep(.plugin-readme table) {
+.skill-details-content :deep(.markdown-preview table) {
   display: table;
   width: 100%;
   table-layout: fixed;

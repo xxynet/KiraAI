@@ -61,7 +61,7 @@ onMounted(() => {
 
   editor.onDidChangeModelContent(() => {
     if (editor) {
-      emit('update:modelValue', editor.getValue())
+      emit('update:modelValue', editor.getModel()!.getValue(monaco.editor.EndOfLinePreference.TextDefined, true))
     }
   })
 })
@@ -69,7 +69,7 @@ onMounted(() => {
 watch(
   () => props.modelValue,
   (newVal) => {
-    if (editor && editor.getValue() !== newVal) {
+    if (editor && editor.getModel()!.getValue(monaco.editor.EndOfLinePreference.TextDefined, true) !== newVal) {
       editor.setValue(newVal)
     }
   },

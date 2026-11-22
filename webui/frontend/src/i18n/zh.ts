@@ -591,6 +591,8 @@ export default {
     skills_retry: '重试',
     skills_save_success: '文件保存成功',
     skills_save_failed: '保存文件失败',
+    skills_resource_load_failed: '加载资源失败: {path}',
+    skills_image_unsupported: '此文件不支持作为图片预览。',
     skills_errors: {
       name_immutable: '技能名称不能修改。',
       missing_frontmatter: 'SKILL.md 必须包含以 --- 分隔的 YAML 元数据。',

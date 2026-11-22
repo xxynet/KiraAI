@@ -591,6 +591,8 @@ export default {
     skills_retry: 'Retry',
     skills_save_success: 'File saved successfully',
     skills_save_failed: 'Failed to save file',
+    skills_resource_load_failed: 'Failed to load resource: {path}',
+    skills_image_unsupported: 'This file cannot be previewed as an image.',
     skills_errors: {
       name_immutable: 'The skill name cannot be changed.',
       missing_frontmatter: 'SKILL.md must contain YAML metadata between --- delimiters.',

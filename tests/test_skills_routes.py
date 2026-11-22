@@ -56,6 +56,34 @@ def test_preview_returns_full_markdown_and_frontmatter(skill_setup):
     }
 
 
+@pytest.mark.parametrize('prefix,newline', [('', '\n'), ('\ufeff', '\r\n')])
+@pytest.mark.parametrize('metadata', [
+    'description: "Use --- separators"',
+    'description: |\n  First line\n  --- remains part of the description',
+])
+def test_frontmatter_delimiters_inside_yaml_values_are_preserved(skill_setup, prefix, newline, metadata):
+    content = prefix + ('---\nname: demo\n' + metadata + '\n---\n# Body\n---\n').replace('\n', newline)
+    response = save(skill_setup.client, content)
+    assert response.status_code == 200
+    assert '---' in response.json()['description']
+    assert skill_setup.content_path.read_bytes() == content.encode('utf-8')
+    skill_setup.manager.skills_info = skill_setup.manager.scan_skill_dir()
+    assert skill_setup.manager.skills_info[0].name == 'demo'
+    assert '---' in skill_setup.manager.skills_info[0].description
+
+
+@pytest.mark.parametrize('content', [
+    'prefix ---\nname: demo\ndescription: test\n---\n',
+    '---\nname: demo\ndescription: test\n--- trailing text\n',
+    '---\nname: demo\ndescription: test ---\n',
+])
+def test_frontmatter_requires_delimiter_lines(skill_setup, content):
+    response = save(skill_setup.client, content)
+    assert response.status_code == 400
+    assert response.json()['detail']['code'] == 'missing_frontmatter'
+    assert skill_setup.content_path.read_bytes() == ORIGINAL.encode('utf-8')
+
+
 def test_save_updates_file_catalog_and_prompt_preserving_configuration(skill_setup):
     setup = skill_setup
     response = save(setup.client)
