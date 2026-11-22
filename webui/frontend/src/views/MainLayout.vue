@@ -10,8 +10,8 @@
       class="route-loading-bar"
       :class="routePhase"
     ></div>
-    <AppSidebar :open="sidebarOpen" />
-    <div class="flex-1 flex flex-col overflow-hidden">
+    <AppSidebar :open="sidebarOpen" :mobile="isMobile" />
+    <div class="flex-1 min-w-0 flex flex-col overflow-hidden">
       <main class="flex-1 flex flex-col" :class="route.meta.pluginPage || route.name === 'WebChat' ? 'min-h-0 overflow-hidden' : 'overflow-auto'">
         <AppHeader :class="{ 'shrink-0': route.name === 'WebChat' }"
           :title="pageTitle"
@@ -49,7 +49,8 @@ const pluginMenuStore = usePluginMenuStore()
 
 const { phase: routePhase } = useRouteLoading()
 
-const sidebarOpen = ref(window.innerWidth > 1024)
+const isMobile = ref(window.innerWidth <= 1024)
+const sidebarOpen = ref(!isMobile.value)
 
 function toggleSidebar() {
   sidebarOpen.value = !sidebarOpen.value
@@ -60,7 +61,8 @@ function closeSidebar() {
 }
 
 function handleResize() {
-  if (window.innerWidth <= 1024) closeSidebar()
+  isMobile.value = window.innerWidth <= 1024
+  if (isMobile.value) closeSidebar()
 }
 
 onMounted(() => window.addEventListener('resize', handleResize))
@@ -68,7 +70,7 @@ onUnmounted(() => window.removeEventListener('resize', handleResize))
 
 // Auto-close sidebar on navigation for mobile
 watch(() => route.path, () => {
-  if (window.innerWidth <= 1024) {
+  if (isMobile.value) {
     sidebarOpen.value = false
   }
 })

@@ -41,6 +41,7 @@ export const useAppStore = defineStore('app', () => {
   const theme = ref<Theme>(getInitialTheme())
   const language = ref<Language>(sanitizeLanguage(localStorage.getItem('language')))
   const sidebarGroupStyle = ref<SidebarGroupStyle>(sanitizeSidebarGroupStyle(localStorage.getItem('sidebar_group_style')))
+  const sidebarCollapsedIcons = ref(localStorage.getItem('sidebar_collapsed_icons') !== 'false')
 
   const isDark = ref(theme.value === 'dark')
   const isThemeTransitioning = ref(false)
@@ -109,6 +110,11 @@ export const useAppStore = defineStore('app', () => {
     sidebarGroupStyle.value = validated
   }
 
+  function setSidebarCollapsedIcons(show: boolean) {
+    localStorage.setItem('sidebar_collapsed_icons', String(show))
+    sidebarCollapsedIcons.value = show
+  }
+
   // Theme side effects are applied by App.vue on mount via
   // appStore.setTheme(appStore.theme); the store only holds validated state
   // so we don't double-write to the DOM and localStorage on creation.
@@ -117,10 +123,12 @@ export const useAppStore = defineStore('app', () => {
     theme,
     language,
     sidebarGroupStyle,
+    sidebarCollapsedIcons,
     isDark,
     setTheme,
     toggleTheme,
     setLanguage,
     setSidebarGroupStyle,
+    setSidebarCollapsedIcons,
   }
 })

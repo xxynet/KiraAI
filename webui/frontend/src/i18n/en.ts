@@ -12,6 +12,8 @@ export default {
     select_language: 'Select Language',
   },
   header: {
+    collapse_menu: 'Collapse sidebar',
+    expand_menu: 'Expand sidebar',
     logout: 'Logout',
     more_actions: 'More actions',
     theme_toggle: 'Toggle theme',
@@ -1160,6 +1162,8 @@ export default {
     theme: 'Theme',
     theme_light: 'Light',
     theme_dark: 'Dark',
+    sidebar_collapsed_icons: 'Show icons when sidebar is collapsed',
+    sidebar_collapsed_icons_desc: 'Keep icon navigation when collapsed on desktop. Turn off to hide the sidebar completely. Click Save Settings below to apply.',
     sidebar_group_style: 'Sidebar group style',
     sidebar_group_style_section: 'Section heading',
     sidebar_group_style_section_desc: 'Small headings with group items aligned with other menu items.',
