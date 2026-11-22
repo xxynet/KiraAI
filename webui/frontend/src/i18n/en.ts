@@ -12,6 +12,8 @@ export default {
     select_language: 'Select Language',
   },
   header: {
+    collapse_menu: 'Collapse sidebar',
+    expand_menu: 'Expand sidebar',
     logout: 'Logout',
     more_actions: 'More actions',
     theme_toggle: 'Toggle theme',

@@ -1,21 +1,21 @@
 <template>
   <aside
-    class="sidebar-gradient min-h-screen flex flex-col text-theme-strong"
+    class="sidebar-gradient h-[100dvh] shrink-0 flex flex-col text-theme-strong"
     :class="{ 'sidebar-open': open, 'sidebar-collapsed': !open }"
-    :inert="!open"
-    :aria-hidden="!open"
+    :inert="mobile && !open"
+    :aria-hidden="mobile && !open"
   >
     <!-- Logo -->
-    <div class="p-6 border-b border-blue-200/30">
+    <div v-if="!collapsed" class="p-6 shrink-0 border-b border-blue-200/30">
       <h1 class="text-2xl font-bold text-theme-strong">{{ $t('app.title') }}</h1>
       <p id="app-version" class="text-sm text-theme-supporting mt-1">{{ appVersion }}</p>
     </div>
 
     <!-- Navigation -->
-    <nav class="flex-1 p-4 space-y-2 overflow-y-auto">
-      <div v-for="group in navGroups" :key="group.id" class="space-y-2" :class="{ 'pt-4': group.label && isSectionGroupStyle }">
+    <nav class="flex-1 min-h-0 space-y-2 overflow-y-auto" :class="collapsed ? 'sidebar-nav--collapsed p-2' : 'p-4'">
+      <div v-for="group in navGroups" :key="group.id" class="space-y-2" :class="{ 'pt-4': !collapsed && group.label && isSectionGroupStyle, 'border-t border-blue-200/30 pt-2': collapsed && group.label }">
         <button
-          v-if="group.label"
+          v-if="group.label && !collapsed"
           :id="`sidebar-group-${group.id}`"
           type="button"
           class="flex items-center justify-between gap-2 w-full px-4 rounded-lg text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
@@ -42,19 +42,22 @@
           />
         </button>
         <div
-          v-show="!group.label || expandedGroups.has(group.id)"
+          v-show="collapsed || !group.label || expandedGroups.has(group.id)"
           :id="`sidebar-group-items-${group.id}`"
           class="space-y-2"
-          :class="{ 'ml-4 pl-4 border-l border-blue-200/30': group.label && !isSectionGroupStyle }"
+          :class="{ 'ml-4 pl-4 border-l border-blue-200/30': !collapsed && group.label && !isSectionGroupStyle }"
           :role="group.label ? 'group' : undefined"
-          :aria-labelledby="group.label ? `sidebar-group-${group.id}` : undefined"
+          :aria-labelledby="group.label && !collapsed ? `sidebar-group-${group.id}` : undefined"
+          :aria-label="collapsed ? group.label : undefined"
         >
           <router-link
             v-for="item in group.items"
             :key="item.route"
             :to="item.route"
-            class="nav-item flex items-center justify-between gap-2 px-4 py-3 rounded-lg transition-colors"
-            :class="{ active: isActive(item.route) }"
+            class="nav-item flex items-center py-3 rounded-lg transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 focus-visible:outline-offset-2"
+            :class="[collapsed ? 'justify-center px-2' : 'justify-between gap-2 px-4', { active: isActive(item.route) }]"
+            :aria-label="item.isPlugin ? item.label : $t(item.label)"
+            :title="collapsed ? (item.isPlugin ? item.label : $t(item.label)) : undefined"
           >
             <div class="flex items-center gap-3 min-w-0">
               <!--
@@ -67,16 +70,16 @@
                 </template>
               </InlineSvgIcon>
               <component :is="item.icon" v-else class="w-5 h-5 shrink-0" />
-              <span class="break-words min-w-0">{{ item.isPlugin ? item.label : $t(item.label) }}</span>
+              <span v-if="!collapsed" class="break-words min-w-0">{{ item.isPlugin ? item.label : $t(item.label) }}</span>
             </div>
-            <span class="nav-dot shrink-0"></span>
+            <span v-if="!collapsed" class="nav-dot shrink-0"></span>
           </router-link>
         </div>
       </div>
     </nav>
 
     <!-- Language Selector -->
-    <div class="p-4 border-t border-blue-200/30">
+    <div v-if="!collapsed" class="p-4 shrink-0 border-t border-blue-200/30">
       <CustomSelect
         v-model="currentLanguage"
         :options="languageOptions"
@@ -100,7 +103,8 @@ import InlineSvgIcon from '@/components/common/InlineSvgIcon.vue'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { useSidebarNavigation } from '@/composables/useSidebarNavigation'
 
-defineProps<{ open: boolean }>()
+const props = defineProps<{ open: boolean; mobile: boolean }>()
+const collapsed = computed(() => !props.open && !props.mobile)
 
 const appVersion = ref('-')
 const route = useRoute()
@@ -175,6 +179,14 @@ function isActive(path: string): boolean {
   transition: width 0.25s ease;
 }
 
+.sidebar-nav--collapsed {
+  scrollbar-width: none;
+}
+
+.sidebar-nav--collapsed::-webkit-scrollbar {
+  display: none;
+}
+
 .dark .sidebar-group-toggle--section {
   color: var(--color-text-subtle-hover);
 }
@@ -185,8 +197,7 @@ function isActive(path: string): boolean {
 
 @media (min-width: 1025px) {
   .sidebar-gradient.sidebar-collapsed {
-    width: 0;
-    border-right-width: 0;
+    width: 4.5rem;
   }
 }
 

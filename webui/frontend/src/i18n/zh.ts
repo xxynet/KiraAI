@@ -12,6 +12,8 @@ export default {
     select_language: '选择语言',
   },
   header: {
+    collapse_menu: '收起侧边栏',
+    expand_menu: '展开侧边栏',
     logout: '退出登录',
     more_actions: '更多操作',
     theme_toggle: '切换主题',

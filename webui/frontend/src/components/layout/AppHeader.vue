@@ -3,7 +3,8 @@
     <div class="flex items-center">
       <button
         class="sidebar-menu-btn p-1.5 mr-3 rounded-lg bg-[#f5f5f5] hover:bg-[#e7e7e8] dark:bg-[#121215] dark:hover:bg-[#2b2b2e] text-theme-subtle transition-colors"
-        aria-label="Toggle menu"
+        :aria-label="t(sidebarOpen ? 'header.collapse_menu' : 'header.expand_menu')"
+        :title="t(sidebarOpen ? 'header.collapse_menu' : 'header.expand_menu')"
         :aria-expanded="sidebarOpen"
         @click="$emit('toggle-sidebar')"
       >
