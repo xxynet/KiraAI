@@ -134,6 +134,7 @@ import { useI18n } from 'vue-i18n'
 import { Setting, Plus, Picture, Document, Close } from '@element-plus/icons-vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import ToggleSwitch from '@/components/common/ToggleSwitch.vue'
+import { notify } from '@/composables/useNotification'
 import MessageChain from '@/components/sessions/MessageChain.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
@@ -296,8 +297,13 @@ watch([messageList, messageContent], ([container, content]) => {
 }, { flush: 'post' })
 
 function setChatMarkdownEnabled(enabled: boolean) {
-  localStorage.setItem('chat_markdown_render', enabled ? '1' : '0')
   chatMarkdownEnabled.value = enabled
+  try {
+    localStorage.setItem('chat_markdown_render', enabled ? '1' : '0')
+  } catch (cause) {
+    console.error('Failed to save WebChat Markdown preference:', cause)
+    notify(t('webchat.markdown_save_failed'), 'warning')
+  }
 }
 function editProfile() {
   historyDeleted.value = false

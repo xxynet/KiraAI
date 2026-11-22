@@ -985,6 +985,7 @@ export default {
   webchat: {
     markdown_render: 'Markdown 与公式渲染',
     markdown_render_desc: '将网页聊天消息渲染为 Markdown 和 KaTeX 数学公式，默认关闭。修改后自动保存在当前浏览器并立即生效。',
+    markdown_save_failed: '渲染设置已在当前页面生效，但未能保存，刷新后可能恢复原设置。',
     tool_permissions: '工具权限',
     allow_file_tools: '允许文件工具',
     allow_exec: '允许命令执行',

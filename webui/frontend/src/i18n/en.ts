@@ -985,6 +985,7 @@ export default {
   webchat: {
     markdown_render: 'Render Markdown and math',
     markdown_render_desc: 'Render WebChat messages as Markdown and KaTeX math. Off by default. Changes are saved automatically in this browser and take effect immediately.',
+    markdown_save_failed: 'The rendering setting is active for this page, but could not be saved. It may reset after a refresh.',
     tool_permissions: 'Tool permissions',
     allow_file_tools: 'Allow file tools',
     allow_exec: 'Allow command execution',
