@@ -19,7 +19,10 @@ function setup() {
     require(id) {
       if (id === 'marked') return { Marked }
       if (id === 'katex') return { default: katex }
-      if (id === 'dompurify') return { default: { sanitize(html) { sanitized.push(html); return html } } }
+      if (id === 'dompurify') return { default: { sanitize(html) {
+        sanitized.push(html)
+        return { innerHTML: html, querySelectorAll: () => [] }
+      } } }
       throw new Error(`Unexpected dependency: ${id}`)
     },
   })

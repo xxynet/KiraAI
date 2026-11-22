@@ -3,6 +3,7 @@
 @import './components/form-controls.css';
 @import './components/theme-text.css';
 @import './components/chat-bubble.css';
+@import './components/markdown.css';
 
 @tailwind base;
 @tailwind components;

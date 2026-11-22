@@ -61,5 +61,10 @@ export function renderMessageMarkdown(text?: string | null): string {
     console.error('Failed to render chat Markdown:', cause)
     html = escapeHtml(normalizedText).replace(/\r?\n/g, '<br>')
   }
-  return DOMPurify.sanitize(html, { ADD_ATTR: ['class'] })
+  const sanitized = DOMPurify.sanitize(html, { ADD_ATTR: ['class'], RETURN_DOM: true }) as HTMLElement
+  sanitized.querySelectorAll('a[href]').forEach(link => {
+    link.setAttribute('target', '_blank')
+    link.setAttribute('rel', 'noopener noreferrer')
+  })
+  return sanitized.innerHTML
 }

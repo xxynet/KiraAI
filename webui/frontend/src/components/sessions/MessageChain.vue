@@ -2,7 +2,7 @@
   <div class="text-sm break-words md-message">
     <template v-for="(element, index) in chain" :key="index">
       <template v-if="element.type === 'text' || element.type === 'notice'">
-        <span v-if="markdownEnabled" v-html="renderMessageMarkdown(element.text)"></span>
+        <div v-if="markdownEnabled" class="markdown-body leading-6" v-html="renderMessageMarkdown(element.text)"></div>
         <span v-else class="whitespace-pre-wrap">{{ element.text }}</span>
       </template>
       <span v-else-if="element.type === 'at'" class="chat-bubble-mention">@{{ element.nickname || element.pid }}</span>
@@ -42,6 +42,14 @@ function elementPath(index: number) {
 </script>
 
 <style scoped>
+.md-message :deep(.markdown-body > :first-child) {
+  margin-top: 0;
+}
+
+.md-message :deep(.markdown-body > :last-child) {
+  margin-bottom: 0;
+}
+
 .md-message :deep(.md-math-block) {
   display: block;
   max-width: 100%;
