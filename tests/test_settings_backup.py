@@ -1,8 +1,10 @@
 import asyncio
 import os
+import sqlite3
 import stat
 import threading
 import zipfile
+from contextlib import closing
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -110,6 +112,99 @@ def test_empty_backup_is_valid(backup_routes):
         assert archive.namelist() == []
 
 
+@pytest.mark.parametrize("relative", ["data.db", "plugin_data/sample/store"])
+def test_backup_captures_committed_wal_data_without_sidecars(backup_routes, relative, monkeypatch):
+    routes, data_path = backup_routes
+    monkeypatch.delattr(sqlite3, "SQLITE_BUSY", raising=False)
+    monkeypatch.delattr(sqlite3, "SQLITE_LOCKED", raising=False)
+    database = data_path / relative
+    database.parent.mkdir(parents=True, exist_ok=True)
+    unrelated = data_path / "archive-wal"
+    unrelated.write_bytes(b"ordinary file with a WAL-like name")
+    with closing(sqlite3.connect(database)) as writer:
+        assert writer.execute("PRAGMA journal_mode=WAL").fetchone() == ("wal",)
+        writer.execute("PRAGMA wal_autocheckpoint=0")
+        writer.execute("CREATE TABLE messages (text TEXT)")
+        writer.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        writer.execute("INSERT INTO messages VALUES ('committed')")
+        writer.commit()
+        writer.execute("INSERT INTO messages VALUES ('uncommitted')")
+        assert database.with_name(database.name + "-wal").stat().st_size > 0
+
+        result = routes._create_backup_sync()
+        with zipfile.ZipFile(data_path / "backups" / result.filename) as archive:
+            extracted = archive.extract(relative, data_path / "extracted")
+            with closing(sqlite3.connect(extracted)) as snapshot:
+                assert snapshot.execute("PRAGMA quick_check").fetchone() == ("ok",)
+                assert snapshot.execute("SELECT text FROM messages").fetchall() == [("committed",)]
+            assert set(archive.namelist()) == {relative, unrelated.name}
+            assert archive.read(unrelated.name) == unrelated.read_bytes()
+        assert writer.execute("SELECT text FROM messages").fetchall() == [
+            ("committed",),
+            ("uncommitted",),
+        ]
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows extended paths require Windows")
+@pytest.mark.parametrize("long_path", [False, True])
+def test_backup_captures_wal_data_with_windows_extended_paths(backup_routes, monkeypatch, long_path):
+    routes, tmp_path = backup_routes
+    data_path = Path("\\\\?\\" + str(tmp_path / "data #100%"))
+    if long_path:
+        data_path = data_path.joinpath(*(["long-path-" * 5] * 4))
+        assert len(str(data_path)) > 260
+    data_path.mkdir(parents=True)
+    monkeypatch.setattr(settings, "get_data_path", lambda: data_path)
+    database = data_path / "data #100%.db"
+    with closing(sqlite3.connect(database)) as writer:
+        assert writer.execute("PRAGMA journal_mode=WAL").fetchone() == ("wal",)
+        writer.execute("PRAGMA wal_autocheckpoint=0")
+        writer.execute("CREATE TABLE messages (text TEXT)")
+        writer.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        writer.execute("INSERT INTO messages VALUES ('committed')")
+        writer.commit()
+        writer.execute("INSERT INTO messages VALUES ('uncommitted')")
+        assert database.with_name(database.name + "-wal").stat().st_size > 0
+
+        result = routes._create_backup_sync()
+
+        with zipfile.ZipFile(data_path / "backups" / result.filename) as archive:
+            assert archive.namelist() == [database.name]
+            extracted = archive.extract(database.name, tmp_path / "extracted")
+            with closing(sqlite3.connect(extracted)) as snapshot:
+                assert snapshot.execute("PRAGMA quick_check").fetchone() == ("ok",)
+                assert snapshot.execute("SELECT text FROM messages").fetchall() == [("committed",)]
+        assert writer.execute("SELECT text FROM messages").fetchall() == [
+            ("committed",),
+            ("uncommitted",),
+        ]
+    assert not list((data_path / "backups").glob("*.part"))
+    assert [path.name for path in (data_path / "backups").iterdir()] == [result.filename]
+
+
+def test_backup_failure_for_unreadable_sqlite_does_not_publish_an_archive(backup_routes):
+    routes, data_path = backup_routes
+    (data_path / "data.db").write_bytes(b"SQLite format 3\0" + bytes(400))
+
+    with pytest.raises(sqlite3.DatabaseError):
+        routes._create_backup_sync()
+
+    assert not list((data_path / "backups").iterdir())
+
+
+def test_backup_aborts_when_a_sqlite_lock_does_not_clear(backup_routes, monkeypatch):
+    routes, data_path = backup_routes
+    times = iter([0, 16])
+    monkeypatch.setattr(settings, "monotonic", lambda: next(times))
+    with closing(sqlite3.connect(data_path / "data.db")) as writer:
+        writer.execute("CREATE TABLE messages (text TEXT)")
+        writer.execute("BEGIN EXCLUSIVE")
+        with pytest.raises(sqlite3.OperationalError, match="Timed out reading SQLite database"):
+            routes._create_backup_sync()
+
+    assert not list((data_path / "backups").iterdir())
+
+
 def test_backup_and_restore_preserve_in_tree_symlinks(backup_routes, monkeypatch):
     routes, tmp_path = backup_routes
     data_path = tmp_path / "data"
@@ -120,12 +215,16 @@ def test_backup_and_restore_preserve_in_tree_symlinks(backup_routes, monkeypatch
     runtime.mkdir(parents=True)
     library = runtime / "libsample.so.1"
     library.write_bytes(b"x" * 4096)
+    with closing(sqlite3.connect(runtime / "local.db")) as database:
+        assert database.execute("PRAGMA journal_mode=DELETE").fetchone() == ("delete",)
+        database.execute("CREATE TABLE content (value TEXT)")
     (runtime / "empty").mkdir()
     (runtime / "nested").mkdir()
     outside = tmp_path / "outside.txt"
     outside.write_bytes(b"outside the data directory")
     links = {
         "libsample.so": (library.name, False),
+        "local.db-shm": (library.name, False),
         "libabsolute.so": (str(library), False),
         "libabsolute-chain.so": (str(runtime / "libsample.so"), False),
         "libmissing.so": ("libmissing.so.1", False),
@@ -146,6 +245,7 @@ def test_backup_and_restore_preserve_in_tree_symlinks(backup_routes, monkeypatch
         assert archive.read("git-runtime/libsample.so.1") == library.read_bytes()
         for name, target in {
             "libsample.so": library.name,
+            "local.db-shm": library.name,
             "libabsolute.so": library.name,
             "libabsolute-chain.so": "libsample.so",
             "libmissing.so": "libmissing.so.1",
@@ -162,6 +262,8 @@ def test_backup_and_restore_preserve_in_tree_symlinks(backup_routes, monkeypatch
     runtime = restored_path / runtime.name
     assert (runtime / "libsample.so").is_symlink()
     assert (runtime / "libsample.so").read_bytes() == library.read_bytes()
+    assert (runtime / "local.db-shm").is_symlink()
+    assert (runtime / "local.db-shm").read_bytes() == library.read_bytes()
     assert (runtime / "libabsolute.so").resolve() == runtime / library.name
     assert (runtime / "nested" / "libsample.so").read_bytes() == library.read_bytes()
     assert (runtime / "libmissing.so").is_symlink()
