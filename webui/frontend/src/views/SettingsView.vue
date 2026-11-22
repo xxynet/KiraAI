@@ -243,7 +243,7 @@
           :aria-checked="sidebarCollapsedIcons"
           :aria-label="$t('settings.sidebar_collapsed_icons')"
           aria-describedby="sidebar-collapsed-icons-description"
-          class="shrink-0 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+          class="sidebar-icons-toggle shrink-0"
         />
       </div>
 
@@ -847,3 +847,14 @@ async function handleSave() {
   }
 }
 </script>
+
+<style scoped>
+.sidebar-icons-toggle:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+:global(.dark) .sidebar-icons-toggle:focus-visible {
+  outline-color: var(--color-accent-strong);
+}
+</style>
