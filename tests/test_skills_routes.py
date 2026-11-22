@@ -133,8 +133,10 @@ def test_save_errors_expose_localizable_codes_and_original_diagnostics(skill_set
     if code == 'name_immutable':
         assert detail['message'] == 'Skill name cannot be changed'
     if code == 'invalid_yaml':
-        assert 'Invalid SKILL.md frontmatter:' in detail['message']
-        assert 'line' in detail['message']
+        assert detail['message'] == f"Invalid SKILL.md frontmatter: {detail['diagnostic']}"
+        assert 'line' in detail['diagnostic']
+        assert 'column' in detail['diagnostic']
+    assert skill_setup.content_path.read_bytes() == ORIGINAL.encode('utf-8')
 
 
 @pytest.mark.parametrize('payload', [{}, {'content': UPDATED}, {'content': 123, 'original_content': ORIGINAL}])

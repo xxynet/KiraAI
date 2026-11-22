@@ -23,7 +23,10 @@ for (const prefix of ['', '\uFEFF']) {
     let resets = 0
     const props = { modelValue: value, height: 500, language: 'text' }
     const model = {
-      getValue(_eol, preserveBOM = false) { return preserveBOM ? value : value.replace(/^\uFEFF/, '') },
+      getValue(eol, preserveBOM = false) {
+        assert.equal(eol, 0) // monaco.editor.EndOfLinePreference.TextDefined
+        return preserveBOM ? value : value.replace(/^\uFEFF/, '')
+      },
       dispose() {},
     }
     const editor = {

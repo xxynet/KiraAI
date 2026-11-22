@@ -256,7 +256,10 @@ class SkillsRoutes(Routes):
                         try:
                             info = SkillsManager.parse_skill_content(payload.content, skill.path)
                         except SkillValidationError as e:
-                            raise HTTPException(status_code=400, detail={"code": e.code, "message": str(e)}) from e
+                            detail = {"code": e.code, "message": str(e)}
+                            if e.code == "invalid_yaml" and e.__cause__ is not None:
+                                detail["diagnostic"] = str(e.__cause__)
+                            raise HTTPException(status_code=400, detail=detail) from e
                         if info.name != skill.name:
                             raise HTTPException(status_code=400, detail={
                                 "code": "name_immutable", "message": "Skill name cannot be changed",

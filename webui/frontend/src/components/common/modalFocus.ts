@@ -21,7 +21,8 @@ function focusable(panel: HTMLElement): HTMLElement[] {
   return Array.from(panel.querySelectorAll<HTMLElement>(
     'a[href], button, input, select, textarea, [tabindex], [contenteditable="true"]',
   )).filter(element => element.tabIndex >= 0 && !element.matches(':disabled')
-    && !element.closest('[inert]') && element.getClientRects().length > 0)
+    && !element.closest('[inert]') && element.getClientRects().length > 0
+    && getComputedStyle(element).visibility === 'visible')
 }
 
 function focusPanel(layer: ModalLayer) {
@@ -105,6 +106,7 @@ export function registerModal(root: HTMLElement, panel: HTMLElement, close: () =
     const top = topLayer()
     const previous = layer.returnFocus
     if (previous?.isConnected && previous.getClientRects().length > 0
+      && getComputedStyle(previous).visibility === 'visible'
       && !previous.matches(':disabled') && !previous.closest('[inert]') && (!top || top.panel.contains(previous))) {
       previous.focus({ preventScroll: true })
     } else if (top) {

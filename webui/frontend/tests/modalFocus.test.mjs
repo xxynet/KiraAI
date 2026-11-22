@@ -14,6 +14,7 @@ class Element {
   inert = false
   disabled = false
   visible = true
+  visibility = null
   constructor(tabIndex = -1) { this.tabIndex = tabIndex }
   append(child) { this.children.push(child); child.parent = this; return child }
   contains(target) { return this === target || this.children.some(child => child.contains(target)) }
@@ -25,12 +26,19 @@ class Element {
     return this.children.flatMap(child => [child, ...child.querySelectorAll()])
       .filter(child => child.tabIndex >= 0)
   }
-  focus() { document.activeElement = this; document.dispatch('focusin', { target: this }) }
+  focus() {
+    if (getComputedStyle(this).visibility !== 'visible') return
+    document.activeElement = this
+    document.dispatch('focusin', { target: this })
+  }
 }
 
 function setup() {
   const listeners = new Map()
   globalThis.HTMLElement = globalThis.Node = Element
+  globalThis.getComputedStyle = element => ({
+    visibility: element.visibility ?? (element.parent ? getComputedStyle(element.parent).visibility : 'visible'),
+  })
   globalThis.MutationObserver = class {
     observe() {}
     disconnect() {}
@@ -105,6 +113,25 @@ test('nested modals receive Escape exclusively and restore parent focus', () => 
   closeParent()
   assert.equal(document.activeElement, opener)
 })
+
+for (const visibility of ['hidden', 'collapse']) {
+  test(`Shift+Tab skips a closed custom dropdown input with visibility:${visibility}`, () => {
+    const { modal, key } = setup()
+    const dialog = modal()
+    const dropdown = dialog.panel.append(new Element())
+    dropdown.visibility = visibility
+    const customInput = dropdown.append(new Element(0))
+    assert.equal(customInput.getClientRects().length, 1)
+    const cleanup = registerModal(dialog.root, dialog.panel, () => {})
+    try {
+      assert.equal(document.activeElement, dialog.first)
+      assert.equal(key('Tab', true).defaultPrevented, true)
+      assert.equal(document.activeElement, dialog.last)
+      key('Tab')
+      assert.equal(document.activeElement, dialog.first)
+    } finally { cleanup() }
+  })
+}
 
 test('closing a parent beneath confirmation returns focus to the original card', () => {
   const { opener, modal } = setup()
