@@ -1126,6 +1126,8 @@ export default {
     theme: 'Theme',
     theme_light: 'Light',
     theme_dark: 'Dark',
+    chat_markdown_render: 'Render chat messages as Markdown with math',
+    chat_markdown_render_desc: 'Render chat messages as Markdown and KaTeX math. Off by default; code blocks are never affected.',
     sidebar_group_style: 'Sidebar group style',
     sidebar_group_style_section: 'Section heading',
     sidebar_group_style_section_desc: 'Small headings with group items aligned with other menu items.',
