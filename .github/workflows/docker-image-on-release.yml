@@ -48,7 +48,19 @@ jobs:
           RELEASE_ID: ${{ github.event.release.id }}
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
-          latest_release_id=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .id)
+          for attempt in 1 2 3; do
+            if latest_release_id=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .id) &&
+              [[ "$latest_release_id" =~ ^[1-9][0-9]*$ ]]; then
+              break
+            fi
+            if [[ "$attempt" == 3 ]]; then
+              echo "::error::Unable to obtain a valid latest release ID after 3 attempts; latest will not be updated."
+              exit 1
+            fi
+            delay=$((2 ** attempt))
+            echo "::warning::Latest release lookup failed or returned an invalid ID (attempt ${attempt}/3); retrying in ${delay}s."
+            sleep "$delay"
+          done
           if [[ "$RELEASE_ID" == "$latest_release_id" ]]; then
             image="${DOCKERHUB_USERNAME}/${IMAGE_NAME}"
             docker buildx imagetools create --tag "${image}:latest" "${image}@${IMAGE_DIGEST}"
