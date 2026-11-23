@@ -142,14 +142,14 @@ class LogQueueHandler(logging.Handler):
         self.log_cache_mgr = log_cache_mgr
 
     def emit(self, record) -> None:
-        self.format(record)
+        message = self.format(record)
         if not hasattr(record, "asctime"):
             record.asctime = self.formatter.formatTime(record, self.formatter.datefmt)
         self.log_cache_mgr.emit(
             record.asctime,
             record.levelname,
             record.name,
-            record.getMessage(),
+            message,
             logger_color_mapping.get(record.name, "blue")
         )
 
