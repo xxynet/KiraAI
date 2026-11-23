@@ -99,6 +99,8 @@ class DeepSeekLLMClient(LLMModelClient):
 
         start_time = time.perf_counter()
         response = await client.chat.completions.create(**request_kwargs)
+        if not isinstance(getattr(response, "choices", None), list):
+            raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
         end_time = time.perf_counter()
 
         llm_resp = LLMResponse("")
@@ -144,7 +146,11 @@ class DeepSeekLLMClient(LLMModelClient):
         request_kwargs["stream_options"] = {"include_usage": True}
 
         stream = await client.chat.completions.create(**request_kwargs)
+        if not hasattr(stream, "__aiter__"):
+            raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(stream).__name__}): {stream!r}")
         async for event in stream:
+            if not isinstance(getattr(event, "choices", None), list):
+                raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(event).__name__}): {event!r}")
             # Usage-only event (sent by OpenAI API after the final choice chunk)
             if not event.choices:
                 if event.usage:

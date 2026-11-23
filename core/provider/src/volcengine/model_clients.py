@@ -10,6 +10,7 @@ from core.provider import (
     EmbeddingModelClient,
     ImageModelClient,
     ModelInfo,
+    ProviderAPIError,
     VideoModelClient,
 )
 from core.provider.openai_compatible import OpenAICompatibleLLMClient
@@ -41,6 +42,8 @@ class VolcengineImageClient(ImageModelClient):
             },
         )
 
+        if not isinstance(getattr(images_response, "data", None), list):
+            raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(images_response).__name__}): {images_response!r}")
         return Image(image=images_response.data[0].url)
 
     async def image_to_image(self, prompt: str, image: Image | list[Image]) -> Image:
@@ -63,6 +66,8 @@ class VolcengineImageClient(ImageModelClient):
                 "watermark": False
             }
         )
+        if not isinstance(getattr(images_response, "data", None), list):
+            raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(images_response).__name__}): {images_response!r}")
         return Image(image=images_response.data[0].url)
 
 
@@ -189,6 +194,8 @@ class VolcengineEmbeddingClient(EmbeddingModelClient):
             elapsed = round(time.perf_counter() - start_time, 2)
             if slow_threshold is not None and elapsed > slow_threshold:
                 logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_name})")
+            if not isinstance(getattr(response, "data", None), list):
+                raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
             return [item.embedding for item in response.data]
         except (APIStatusError, APITimeoutError, APIConnectionError) as e:
             logger.error(f"Embedding API error: {e}")

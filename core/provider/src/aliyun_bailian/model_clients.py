@@ -19,6 +19,7 @@ from core.provider import (
     EmbeddingModelClient,
     ImageModelClient,
     ModelInfo,
+    ProviderAPIError,
     RerankModelClient,
     STTModelClient,
     TTSModelClient,
@@ -254,6 +255,8 @@ class BailianEmbeddingClient(EmbeddingModelClient):
                     f"Slow embedding request: {elapsed}s "
                     f"(threshold: {slow_threshold}s, model: {self.model.model_name})"
                 )
+            if not isinstance(getattr(response, "data", None), list):
+                raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
             return [item.embedding for item in response.data]
         except (APIStatusError, APITimeoutError, APIConnectionError) as e:
             logger.error(f"Bailian Embedding API error: {e}")
