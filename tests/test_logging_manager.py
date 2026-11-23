@@ -2,6 +2,7 @@ import io
 import logging
 import os
 import re
+import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -119,6 +120,34 @@ class TestGetLoggerFilter:
 
 
 class TestLogQueueHandler:
+    def test_emit_preserves_chained_traceback_in_cache_and_stream(self):
+        mgr = LogCacheManager()
+        queue = mgr.add_queue()
+        handler = LogQueueHandler(mgr)
+        handler.setFormatter(lm._SafeFormatter(datefmt="%Y-%m-%d %H:%M:%S"))
+
+        try:
+            try:
+                raise ValueError("invalid response")
+            except ValueError as cause:
+                raise RuntimeError("request failed") from cause
+        except RuntimeError:
+            record = logging.LogRecord(
+                "event_bus", logging.ERROR, __file__, 0,
+                "Event handler %s failed", ("MessageRouter.handle_event",), sys.exc_info(),
+            )
+
+        handler.emit(record)
+
+        entry = mgr.get_cache()[-1]
+        message = entry["message"]
+        assert message.startswith("Event handler MessageRouter.handle_event failed\n")
+        assert "test_emit_preserves_chained_traceback_in_cache_and_stream" in message
+        assert "ValueError: invalid response" in message
+        assert "RuntimeError: request failed" in message
+        assert message.count("Traceback (most recent call last):") == 2
+        assert queue.get_nowait() == entry
+
     def test_emit_uses_formatter_datefmt(self):
         """emit() must set record.asctime via the formatter, not rely on
         other handlers running first."""
@@ -494,13 +523,17 @@ class TestControlCharacterLogging:
             assert "ValueError: bad\\x07\r\\x1b[2J" in output
             assert "Stack: untrusted\\x1b]0;title\\x07" in output
             assert "\x07" not in output
-        assert cache.get_cache()[-1]["message"] == r"failure: \x07"
+        message = cache.get_cache()[-1]["message"]
+        assert message.startswith("failure: \\x07\n")
+        assert "ValueError: bad\\x07\r\\x1b[2J" in message
+        assert r"Stack: untrusted\x1b]0;title\x07" in message
+        assert "\x07" not in message
         assert record.msg == "failure: %s"
         assert record.args == ("\x07",)
         assert record.stack_info == "Stack: untrusted\x1b]0;title\x07"
 
     def test_preformatted_exception_is_escaped(self, control_character_logger):
-        logger, console, log_path, _ = control_character_logger
+        logger, console, log_path, cache = control_character_logger
         record = logging.LogRecord(logger.name, logging.ERROR, __file__, 0, "failure", (), None)
         record.exc_text = "cached exception\x07\x1b[2J"
         logger.handle(record)
@@ -508,6 +541,7 @@ class TestControlCharacterLogging:
             assert r"cached exception\x07\x1b[2J" in output
             assert "\x07" not in output
         assert record.exc_text == "cached exception\x07\x1b[2J"
+        assert cache.get_cache()[-1]["message"] == "failure\ncached exception\\x07\\x1b[2J"
 
     def test_controls_escaped_after_logging_reconfiguration(self, control_character_logger, tmp_path):
         logger, console, _, cache = control_character_logger
