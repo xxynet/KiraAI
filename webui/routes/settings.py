@@ -331,7 +331,14 @@ class SettingsRoutes(Routes):
         try:
             return await asyncio.shield(task)
         except asyncio.CancelledError:
-            await task
+            # Repeated cancellation must not release maintenance gates before the thread exits.
+            while not task.done():
+                try:
+                    await asyncio.wait({task})
+                except asyncio.CancelledError:
+                    continue
+            # Preserve worker exceptions on cancellation, matching the normal path.
+            task.result()
             raise
 
     async def _inspect_storage_files(self, category: str, cutoff: float, *, delete: bool = False):

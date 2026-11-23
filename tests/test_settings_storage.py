@@ -544,3 +544,76 @@ def test_nested_archive_root_cannot_escape_through_parent_junction(tmp_path):
         assert target.read_bytes() == b"keep"
     finally:
         junction.rmdir()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("category", ["temp", "message_archives", "update_packages"])
+@pytest.mark.parametrize("worker_fails", [False, True])
+async def test_repeated_cancellation_keeps_maintenance_locks_until_worker_finishes(
+    tmp_path, monkeypatch, session_db, category, worker_fails
+):
+    import asyncio
+    import threading
+
+    from core.chat.message_history import MessageHistoryService
+    from webui.routes import releases
+
+    monkeypatch.setattr(settings, "get_data_path", lambda: tmp_path)
+    monkeypatch.setattr(settings.SettingsRoutes, "_maintenance_lock", asyncio.Lock())
+    monkeypatch.setattr(releases, "_install_lock", asyncio.Lock())
+    started = asyncio.Event()
+    finished = threading.Event()
+    release = threading.Event()
+    loop = asyncio.get_running_loop()
+
+    def worker(*args, **kwargs):
+        loop.call_soon_threadsafe(started.set)
+        try:
+            if not release.wait(timeout=5):
+                raise TimeoutError("Test cleanup worker was not released")
+            if worker_fails:
+                raise RuntimeError("Cleanup worker failed")
+            return {"deleted_count": 0, "deleted_bytes": 0, "failed_count": 0}
+        finally:
+            finished.set()
+
+    monkeypatch.setattr(settings, "inspect_files", worker)
+    history = MessageHistoryService(session_db, None)
+    routes = settings.SettingsRoutes(
+        FastAPI(), SimpleNamespace(db_service=session_db, message_history=history)
+    )
+    locks = [routes._maintenance_lock]
+    if category == "message_archives":
+        locks.append(history._archive_gate)
+    elif category == "update_packages":
+        locks.append(releases._install_lock)
+
+    async def acquire_lock(lock):
+        async with lock:
+            assert finished.is_set()
+
+    cleanup = asyncio.create_task(routes.cleanup_storage(category, 30))
+    contenders = []
+    try:
+        await asyncio.wait_for(started.wait(), timeout=5)
+        contenders = [asyncio.create_task(acquire_lock(lock)) for lock in locks]
+        for _ in range(3):
+            cleanup.cancel()
+            for _ in range(4):
+                await asyncio.sleep(0)
+            assert not cleanup.done()
+            assert all(lock.locked() for lock in locks)
+            assert not any(contender.done() for contender in contenders)
+            assert not finished.is_set()
+        release.set()
+        expected_error = RuntimeError if worker_fails else asyncio.CancelledError
+        with pytest.raises(expected_error) as error:
+            await asyncio.wait_for(asyncio.shield(cleanup), timeout=5)
+        if worker_fails:
+            assert str(error.value) == "Cleanup worker failed"
+        await asyncio.wait_for(asyncio.gather(*contenders), timeout=5)
+        assert all(not lock.locked() for lock in locks)
+    finally:
+        release.set()
+        await asyncio.gather(cleanup, *contenders, return_exceptions=True)
+        assert await asyncio.to_thread(finished.wait, 5)
