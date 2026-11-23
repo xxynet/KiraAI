@@ -124,8 +124,268 @@ async def test_storage_endpoint_deduplicates_directory_and_data_totals(tmp_path,
     info = response.json()
     size = len(source.read_bytes())
     assert info["total_size_bytes"] == size + 2
+    assert sum(entry["size_bytes"] for entry in info["usage_breakdown"]) == size + 2
+    assert sum(entry["size_bytes"] > 0 for entry in info["usage_breakdown"]) == 2
     directories = {
         entry["name"]: (entry["size_bytes"], entry["file_count"])
         for entry in info["directories"]
     }
     assert directories == {"plugins": (size, 1), "tools": (size, 1)}
+
+
+@pytest.fixture
+def storage_app(tmp_path, monkeypatch):
+    from core.utils import media_refs
+
+    monkeypatch.setattr(settings, "get_data_path", lambda: tmp_path)
+    monkeypatch.setattr(media_refs, "get_data_path", lambda: tmp_path)
+    app = FastAPI()
+    app.dependency_overrides[require_auth] = lambda: True
+    return app
+
+
+@pytest.mark.anyio
+async def test_classified_cleanup_keeps_recent_files_and_other_categories(storage_app, tmp_path, monkeypatch):
+    import time
+
+    now = time.time() + 3 * 86400
+    monkeypatch.setattr(settings, "time", lambda: now)
+    for directory in ("temp", "session_media", "config", "plugin_data"):
+        (tmp_path / directory).mkdir()
+        (tmp_path / directory / "old").write_bytes(b"old")
+    recent = tmp_path / "temp" / "recent"
+    recent.write_bytes(b"recent")
+    os.utime(recent, (now, now))
+    settings.SettingsRoutes(storage_app).register()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=storage_app), base_url="http://test"
+    ) as client:
+        info = (await client.get("/api/settings/storage")).json()
+        categories = {item["id"]: item for item in info["categories"]}
+        assert categories["temp"]["item_count"] == 2
+        assert categories["temp"]["cleanable_count"] == 1
+        assert categories["temp"]["cleanable_bytes"] == 3
+        response = await client.post("/api/settings/storage/temp/cleanup")
+        assert response.json() == {"deleted_count": 1, "deleted_bytes": 3, "failed_count": 0}
+        assert (await client.post("/api/settings/storage/temp/cleanup")).json()["deleted_count"] == 0
+        assert (await client.post("/api/settings/storage/config/cleanup")).status_code == 422
+    assert recent.exists()
+    assert not (tmp_path / "temp" / "old").exists()
+    for directory in ("session_media", "config", "plugin_data"):
+        assert (tmp_path / directory / "old").exists()
+
+
+@pytest.mark.anyio
+async def test_media_cleanup_preserves_active_turn_files(storage_app, tmp_path, monkeypatch):
+    import time
+
+    from core.utils import media_refs
+
+    monkeypatch.setattr(settings, "time", lambda: time.time() + 3 * 86400)
+    root = tmp_path / "session_media"
+    archive = root / "archive"
+    archive.mkdir(parents=True)
+    pinned = root / "pinned.png"
+    pinned.write_bytes(b"pinned")
+    expired = archive / "old.png"
+    expired.write_bytes(b"archive")
+    monkeypatch.setattr(media_refs, "_protected_media_paths", {pinned.resolve(): 1})
+    settings.SettingsRoutes(storage_app).register()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=storage_app), base_url="http://test"
+    ) as client:
+        response = await client.post("/api/settings/storage/session_media/cleanup")
+    assert response.json()["deleted_count"] == 1
+    assert pinned.exists()
+    assert not expired.exists()
+
+
+@pytest.mark.anyio
+async def test_image_description_cleanup_is_scoped_to_cache(storage_app, session_db):
+    await session_db.add_image_desc_cache("a" * 32, "图片 description", 1, 1)
+    await session_db.add_image_desc_cache("b" * 32, "", 1, 1)
+    settings.SettingsRoutes(storage_app, SimpleNamespace(db_service=session_db)).register()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=storage_app), base_url="http://test"
+    ) as client:
+        info = (await client.get("/api/settings/storage")).json()
+        category = next(item for item in info["categories"] if item["id"] == "image_descriptions")
+        assert category["size_bytes"] == len("图片 description".encode())
+        assert category["cleanable_count"] == 2
+        response = await client.post("/api/settings/storage/image_descriptions/cleanup")
+        assert response.json()["deleted_count"] == 2
+        assert await session_db.get_image_desc_cache_usage() == {"size_bytes": 0, "item_count": 0}
+
+
+@pytest.mark.anyio
+async def test_cleanup_requires_authentication(tmp_path):
+    app = FastAPI()
+    settings.SettingsRoutes(app).register()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post("/api/settings/storage/temp/cleanup")
+    assert response.status_code in (401, 403)
+
+
+def test_cleanup_does_not_follow_links_or_delete_link_targets(tmp_path):
+    from core.utils.storage import inspect_files
+
+    root = tmp_path / "temp"
+    root.mkdir()
+    outside = tmp_path / "config"
+    outside.mkdir()
+    target = outside / "keep"
+    target.write_bytes(b"keep")
+    try:
+        (root / "directory-link").symlink_to(outside, target_is_directory=True)
+        (root / "file-link").symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"Symbolic links unavailable: {exc}")
+    result = inspect_files(root, float("inf"), delete=True)
+    assert result["deleted_count"] == 0
+    assert target.read_bytes() == b"keep"
+    assert inspect_files(root / "directory-link", float("inf"), delete=True)["deleted_count"] == 0
+
+
+def test_cleanup_reports_locked_files_and_continues(tmp_path, monkeypatch):
+    from core.utils.storage import inspect_files
+
+    locked = tmp_path / "locked"
+    locked.write_bytes(b"locked")
+    (tmp_path / "available").write_bytes(b"available")
+    original_unlink = Path.unlink
+
+    def unlink(path, *args, **kwargs):
+        if path == locked:
+            raise PermissionError("File locked by another process")
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", unlink)
+    result = inspect_files(tmp_path, float("inf"), delete=True)
+    assert result["deleted_count"] == 1
+    assert result["failed_count"] == 1
+    assert locked.exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows junction behavior")
+def test_cleanup_does_not_traverse_windows_junctions(tmp_path):
+    import _winapi
+
+    from core.utils.storage import inspect_files
+
+    root = tmp_path / "temp"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    target = outside / "keep"
+    target.write_bytes(b"keep")
+    junction = root / "junction"
+    _winapi.CreateJunction(str(outside), str(junction))
+    try:
+        assert inspect_files(root, float("inf"), delete=True)["deleted_count"] == 0
+        assert inspect_files(junction, float("inf"), delete=True)["deleted_count"] == 0
+        assert target.read_bytes() == b"keep"
+    finally:
+        junction.rmdir()
+
+
+def test_cleanup_preserves_file_modified_after_scan(tmp_path, monkeypatch):
+    from core.utils.storage import inspect_files
+
+    target = tmp_path / "changed"
+    target.write_bytes(b"old")
+    original_lstat = Path.lstat
+    calls = 0
+
+    def lstat(path, *args, **kwargs):
+        nonlocal calls
+        if path == target:
+            calls += 1
+            if calls == 2:
+                target.write_bytes(b"new content")
+        return original_lstat(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "lstat", lstat)
+    result = inspect_files(tmp_path, float("inf"), delete=True)
+    assert result["deleted_count"] == 0
+    assert target.read_bytes() == b"new content"
+
+
+@pytest.mark.anyio
+async def test_cache_cleanup_reports_unavailable_service(storage_app):
+    settings.SettingsRoutes(storage_app).register()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=storage_app), base_url="http://test"
+    ) as client:
+        response = await client.post("/api/settings/storage/image_descriptions/cleanup")
+    assert response.status_code == 503
+
+
+@pytest.mark.parametrize(("filename", "category"), [
+    ("memory/memories.db", "sessions"),
+    ("webchat/history.json", "sessions"),
+    ("session_media/archive/image.png", "media"),
+    ("files/upload.txt", "media"),
+    ("sticker/smile.png", "media"),
+    ("data.db", "database"),
+    ("data.db-wal", "database"),
+    ("data.db-shm", "database"),
+    ("state.sqlite3-journal", "database"),
+    ("plugin_data/memory/plugin.db", "plugins"),
+    ("plugins/example/main.py", "plugins"),
+    ("plugin_src/example.zip", "plugins"),
+    ("tools/git/bin/git.exe", "runtime"),
+    ("dist/index.html", "runtime"),
+    ("updates/release.zip", "runtime"),
+    ("backups/backup.zip", "backups"),
+    ("temp/download.tmp", "temp"),
+    ("logs/server.log", "logs"),
+    ("log.log", "logs"),
+    ("log.log.1", "logs"),
+    ("server.log", "logs"),
+    ("config/main.json", "other"),
+    ("skills/tool/SKILL.md", "other"),
+    ("unknown.bin", "other"),
+])
+def test_storage_usage_groups(filename, category):
+    assert settings._storage_usage_group(Path(filename)) == category
+
+
+@pytest.mark.anyio
+async def test_instance_breakdown_accounts_for_all_data(storage_app, tmp_path):
+    files = {
+        "memory/session.json": b"session",
+        "session_media/image.png": b"image",
+        "data.db": b"database",
+        "data.db-wal": b"wal",
+        "plugin_data/tool/state.db": b"plugin",
+        "tools/git.exe": b"runtime",
+        "backups/backup.zip": b"backup",
+        "temp/file.tmp": b"temp",
+        "log.log.1": b"log",
+        "config/main.json": b"config",
+        "unknown.bin": b"other",
+    }
+    expected = dict.fromkeys(settings.STORAGE_USAGE_DIRECTORIES, 0)
+    for name, content in files.items():
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+        expected[settings._storage_usage_group(Path(name))] += len(content)
+    settings.SettingsRoutes(storage_app).register()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=storage_app), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/settings/storage")
+    info = response.json()
+    assert {item["id"]: item["size_bytes"] for item in info["usage_breakdown"]} == expected
+    assert sum(expected.values()) == info["total_size_bytes"] == sum(map(len, files.values()))
+
+
+def test_empty_instance_has_zero_usage_in_every_group(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "get_data_path", lambda: tmp_path)
+    info = settings.SettingsRoutes(FastAPI())._collect_storage_info()
+    assert info.total_size_bytes == 0
+    assert len(info.usage_breakdown) == len(settings.STORAGE_USAGE_DIRECTORIES)
+    assert all(item.size_bytes == 0 for item in info.usage_breakdown)

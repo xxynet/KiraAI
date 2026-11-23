@@ -489,6 +489,29 @@ class DirectoryEntry(BaseModel):
     file_count: int = 0
 
 
+StorageCategoryId = Literal["image_descriptions", "session_media", "temp"]
+
+
+class StorageCategory(BaseModel):
+    id: StorageCategoryId
+    size_bytes: int = 0
+    item_count: int = 0
+    cleanable_bytes: int = 0
+    cleanable_count: int = 0
+    available: bool = True
+
+
+class StorageCleanupResponse(BaseModel):
+    deleted_count: int = 0
+    deleted_bytes: int = 0
+    failed_count: int = 0
+
+
+class StorageUsageEntry(BaseModel):
+    id: Literal["sessions", "media", "database", "plugins", "runtime", "backups", "temp", "logs", "other"]
+    size_bytes: int = 0
+
+
 class StorageInfoResponse(BaseModel):
     data_path: str
     total_size_bytes: int = 0
@@ -496,6 +519,8 @@ class StorageInfoResponse(BaseModel):
     disk_used_bytes: int = 0
     disk_free_bytes: int = 0
     directories: list[DirectoryEntry] = Field(default_factory=list)
+    categories: list[StorageCategory] = Field(default_factory=list)
+    usage_breakdown: list[StorageUsageEntry] = Field(default_factory=list)
 
 
 class ReleaseItem(BaseModel):

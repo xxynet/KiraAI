@@ -9,6 +9,32 @@ export interface DirectoryEntry {
   file_count: number
 }
 
+export type StorageCategoryId = 'image_descriptions' | 'session_media' | 'temp'
+
+export interface StorageCategory {
+  id: StorageCategoryId
+  size_bytes: number
+  item_count: number
+  cleanable_bytes: number
+  cleanable_count: number
+  available: boolean
+}
+
+export interface StorageCleanupResponse {
+  deleted_count: number
+  deleted_bytes: number
+  failed_count: number
+}
+
+export function cleanupStorage(category: StorageCategoryId) {
+  return apiClient.post<StorageCleanupResponse>(`/settings/storage/${category}/cleanup`)
+}
+
+export interface StorageUsageEntry {
+  id: 'sessions' | 'media' | 'database' | 'plugins' | 'runtime' | 'backups' | 'temp' | 'logs' | 'other'
+  size_bytes: number
+}
+
 export interface StorageInfoResponse {
   data_path: string
   total_size_bytes: number
@@ -16,6 +42,8 @@ export interface StorageInfoResponse {
   disk_used_bytes: number
   disk_free_bytes: number
   directories: DirectoryEntry[]
+  categories: StorageCategory[]
+  usage_breakdown: StorageUsageEntry[]
 }
 
 export interface BackupItem {
