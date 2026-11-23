@@ -28,8 +28,8 @@
           <button
             type="button"
             class="px-3 py-1.5 text-xs font-medium text-theme-supporting bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-            :disabled="storageLoading"
-            @click="fetchStorageInfo"
+            :disabled="storageLoading || cleaningCategory !== null"
+            @click="fetchStorageInfo()"
           >
             {{ $t('settings.storage_refresh') }}
           </button>
@@ -40,71 +40,126 @@
         </div>
 
         <template v-else-if="storageInfo">
-          <!-- Data Path -->
-          <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 mb-4">
-            <div class="flex justify-between items-center">
-              <span class="text-sm text-theme-subtle">{{ $t('settings.storage_data_path') }}</span>
-              <span class="text-sm font-mono font-medium text-theme-strong break-all text-right max-w-[70%]">{{ storageInfo.data_path }}</span>
+          <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-5 mb-5">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h5 class="text-base font-semibold text-theme-strong">{{ $t('settings.storage_instance_usage') }}</h5>
+                <p v-if="storageCheckedAt" class="text-sm text-theme-subtle mt-1">
+                  {{ $t('settings.storage_checked_at', { time: storageCheckedAt.toLocaleTimeString(locale) }) }}
+                </p>
+              </div>
+              <span class="text-2xl font-semibold tabular-nums text-theme-strong">{{ formatBytes(storageInfo.total_size_bytes) }}</span>
             </div>
-            <div class="flex justify-between items-center mt-2">
-              <span class="text-sm text-theme-subtle">{{ $t('settings.storage_total_size') }}</span>
-              <span class="text-sm font-medium text-theme-strong">{{ formatBytes(storageInfo.total_size_bytes) }}</span>
+            <div class="flex gap-px h-3 mt-5 rounded-full overflow-hidden bg-gray-100 dark:bg-gray-700"
+              role="img" :aria-label="$t('settings.storage_instance_usage') + ': ' + formatBytes(storageInfo.total_size_bytes)">
+              <div v-for="segment in storageSegments" :key="segment.id"
+                :class="segment.color" class="min-w-0 transition-all duration-300"
+                :style="{ flexGrow: segment.size_bytes, flexBasis: '0px' }"
+                :title="$t('settings.storage_usage_' + segment.id) + ': ' + formatBytes(segment.size_bytes)">
+              </div>
+            </div>
+            <ul v-if="storageSegments.length" class="flex flex-wrap gap-x-6 gap-y-3 mt-4 text-sm">
+              <li v-for="segment in storageSegments" :key="segment.id" class="flex items-center gap-2 min-w-0">
+                <span class="w-3 h-3 shrink-0 rounded-sm" :class="segment.color" aria-hidden="true"></span>
+                <span class="text-theme-body">{{ $t('settings.storage_usage_' + segment.id) }}</span>
+                <span class="tabular-nums text-theme-subtle">{{ formatBytes(segment.size_bytes) }}</span>
+              </li>
+            </ul>
+            <p v-else class="text-sm text-theme-subtle mt-3">{{ $t('settings.storage_no_data') }}</p>
+          </div>
+          <p class="text-sm text-theme-subtle mb-4">{{ $t('settings.storage_cleanup_hint') }}</p>
+          <div class="space-y-3 mb-5">
+            <div v-for="category in storageInfo.categories" :key="category.id"
+              class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 sm:p-5 flex flex-col sm:flex-row gap-4 sm:items-center">
+              <div class="flex-1 min-w-0">
+                <h5 class="font-semibold text-theme-strong">{{ $t('settings.storage_category_' + category.id) }}</h5>
+                <p class="text-sm text-theme-subtle mt-1">{{ $t('settings.storage_description_' + category.id) }}</p>
+                <p v-if="category.available" class="text-xs text-theme-supporting mt-2">
+                  {{ formatBytes(category.size_bytes) }} · {{ $t('settings.storage_items', { count: category.item_count }) }}
+                  <template v-if="category.id !== 'message_archives'">
+                    · {{ $t('settings.storage_cleanable', { size: formatBytes(category.cleanable_bytes), count: category.cleanable_count }) }}
+                  </template>
+                </p>
+                <p v-else class="text-xs text-theme-subtle mt-2">{{ $t('settings.storage_unavailable') }}</p>
+              </div>
+              <button type="button"
+                class="shrink-0 px-4 py-2 text-sm font-medium border border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                :disabled="!category.available || (category.id === 'message_archives' ? category.item_count === 0 : category.cleanable_count === 0) || cleaningCategory !== null"
+                @click="requestStorageCleanup(category)">
+                {{ $t(cleaningCategory === category.id ? 'settings.storage_cleaning' : 'settings.storage_clean') }}
+              </button>
             </div>
           </div>
+          <details class="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+            <summary class="cursor-pointer text-sm font-semibold text-theme-body">{{ $t('settings.storage_details') }}</summary>
+            <div class="mt-4 space-y-4">
+              <!-- Data Path -->
+              <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 mb-4">
+                <div class="flex justify-between items-center">
+                  <span class="text-sm text-theme-subtle">{{ $t('settings.storage_data_path') }}</span>
+                  <span class="text-sm font-mono font-medium text-theme-strong break-all text-right max-w-[70%]">{{ storageInfo.data_path }}</span>
+                </div>
+                <div class="flex justify-between items-center mt-2">
+                  <span class="text-sm text-theme-subtle">{{ $t('settings.storage_total_size') }}</span>
+                  <span class="text-sm font-medium text-theme-strong">{{ formatBytes(storageInfo.total_size_bytes) }}</span>
+                </div>
+              </div>
 
-          <!-- Disk Usage -->
-          <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 mb-4">
-            <h5 class="text-sm font-semibold text-theme-body mb-3">{{ $t('settings.storage_disk_usage') }}</h5>
-            <div class="space-y-2">
-              <div class="flex justify-between text-sm">
-                <span class="text-theme-subtle">{{ $t('settings.storage_disk_total') }}</span>
-                <span class="font-medium text-theme-strong">{{ formatBytes(storageInfo.disk_total_bytes) }}</span>
+              <!-- Disk Usage -->
+              <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 mb-4">
+                <h5 class="text-sm font-semibold text-theme-body mb-3">{{ $t('settings.storage_disk_usage') }}</h5>
+                <div class="space-y-2">
+                  <div class="flex justify-between text-sm">
+                    <span class="text-theme-subtle">{{ $t('settings.storage_disk_total') }}</span>
+                    <span class="font-medium text-theme-strong">{{ formatBytes(storageInfo.disk_total_bytes) }}</span>
+                  </div>
+                  <div class="flex justify-between text-sm">
+                    <span class="text-theme-subtle">{{ $t('settings.storage_disk_used') }}</span>
+                    <span class="font-medium text-theme-strong">{{ formatBytes(storageInfo.disk_used_bytes) }}</span>
+                  </div>
+                  <div class="flex justify-between text-sm">
+                    <span class="text-theme-subtle">{{ $t('settings.storage_disk_free') }}</span>
+                    <span class="font-medium text-theme-strong">{{ formatBytes(diskFreeBytes) }}</span>
+                  </div>
+                  <!-- Progress bar -->
+                  <div class="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-3 mt-2">
+                    <div
+                      class="h-3 rounded-full transition-all duration-500"
+                      :class="diskUsagePercent > 90 ? 'bg-red-500' : diskUsagePercent > 70 ? 'bg-yellow-500' : 'bg-blue-500'"
+                      :style="{ width: diskUsagePercent + '%' }"
+                    ></div>
+                  </div>
+                  <div class="text-right text-xs text-theme-subtle">
+                    {{ diskUsagePercent.toFixed(1) }}%
+                  </div>
+                </div>
               </div>
-              <div class="flex justify-between text-sm">
-                <span class="text-theme-subtle">{{ $t('settings.storage_disk_used') }}</span>
-                <span class="font-medium text-theme-strong">{{ formatBytes(storageInfo.disk_used_bytes) }}</span>
-              </div>
-              <div class="flex justify-between text-sm">
-                <span class="text-theme-subtle">{{ $t('settings.storage_disk_free') }}</span>
-                <span class="font-medium text-theme-strong">{{ formatBytes(diskFreeBytes) }}</span>
-              </div>
-              <!-- Progress bar -->
-              <div class="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-3 mt-2">
-                <div
-                  class="h-3 rounded-full transition-all duration-500"
-                  :class="diskUsagePercent > 90 ? 'bg-red-500' : diskUsagePercent > 70 ? 'bg-yellow-500' : 'bg-blue-500'"
-                  :style="{ width: diskUsagePercent + '%' }"
-                ></div>
-              </div>
-              <div class="text-right text-xs text-theme-subtle">
-                {{ diskUsagePercent.toFixed(1) }}%
-              </div>
-            </div>
-          </div>
 
-          <!-- Directory Breakdown -->
-          <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
-            <h5 class="text-sm font-semibold text-theme-body mb-3">{{ $t('settings.storage_directories') }}</h5>
-            <div v-if="storageInfo.directories.length === 0" class="text-sm text-theme-faint text-center py-4">
-              {{ $t('settings.storage_no_data') }}
+              <!-- Directory Breakdown -->
+              <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                <h5 class="text-sm font-semibold text-theme-body mb-3">{{ $t('settings.storage_directories') }}</h5>
+                <div v-if="storageInfo.directories.length === 0" class="text-sm text-theme-faint text-center py-4">
+                  {{ $t('settings.storage_no_data') }}
+                </div>
+                <table v-else class="w-full text-sm">
+                  <thead>
+                    <tr class="border-b border-gray-200 dark:border-gray-600">
+                      <th class="text-left py-2 text-theme-subtle font-medium">{{ $t('settings.storage_dir_name') }}</th>
+                      <th class="text-right py-2 text-theme-subtle font-medium">{{ $t('settings.storage_dir_size') }}</th>
+                      <th class="text-right py-2 text-theme-subtle font-medium">{{ $t('settings.storage_dir_files') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="dir in storageInfo.directories" :key="dir.name" class="border-b border-gray-100 dark:border-gray-700 last:border-0">
+                      <td class="py-2 font-mono text-theme-strong">{{ dir.name }}</td>
+                      <td class="py-2 text-right text-theme-supporting">{{ formatBytes(dir.size_bytes) }}</td>
+                      <td class="py-2 text-right text-theme-supporting">{{ dir.file_count }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
-            <table v-else class="w-full text-sm">
-              <thead>
-                <tr class="border-b border-gray-200 dark:border-gray-600">
-                  <th class="text-left py-2 text-theme-subtle font-medium">{{ $t('settings.storage_dir_name') }}</th>
-                  <th class="text-right py-2 text-theme-subtle font-medium">{{ $t('settings.storage_dir_size') }}</th>
-                  <th class="text-right py-2 text-theme-subtle font-medium">{{ $t('settings.storage_dir_files') }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="dir in storageInfo.directories" :key="dir.name" class="border-b border-gray-100 dark:border-gray-700 last:border-0">
-                  <td class="py-2 font-mono text-theme-strong">{{ dir.name }}</td>
-                  <td class="py-2 text-right text-theme-supporting">{{ formatBytes(dir.size_bytes) }}</td>
-                  <td class="py-2 text-right text-theme-supporting">{{ dir.file_count }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          </details>
         </template>
       </div>
 
@@ -397,6 +452,43 @@
       </div>
     </div>
 
+    <!-- Storage Cleanup Confirm Modal -->
+    <ConfirmModal
+      ref="storageConfirmRef"
+      :title="$t('settings.storage_confirm_title', { name: selectedStorageCategory ? $t('settings.storage_category_' + selectedStorageCategory.id) : '' })"
+      :message="storageCleanupMessage"
+      :confirm-text="$t('settings.storage_clean')"
+      :cancel-text="$t('settings.backup_confirm_cancel')"
+      :confirm-disabled="archivePreviewLoading || archivePreviewFailed || !selectedStorageCategory?.cleanable_count"
+      @confirm="handleStorageCleanup"
+      @cancel="cancelStorageCleanup"
+    >
+      <div v-if="selectedStorageCategory?.id === 'message_archives'" class="mt-4 space-y-3">
+        <fieldset>
+          <legend class="text-sm font-medium text-theme-body mb-2">{{ $t('settings.storage_archive_range') }}</legend>
+          <div class="inline-grid grid-cols-3 rounded-xl bg-gray-100 dark:bg-gray-900/60 p-1">
+            <label v-for="days in archiveRetentionOptions" :key="days" class="relative cursor-pointer">
+              <input v-model="archiveRetentionDays" type="radio" name="storage-archive-retention"
+                :value="days" :disabled="archivePreviewLoading" class="peer sr-only" @change="refreshArchivePreview" />
+              <span class="block rounded-lg px-4 py-2 text-center text-base ring-1 ring-inset ring-transparent transition-colors peer-checked:bg-white peer-checked:shadow-sm peer-checked:ring-gray-300 dark:peer-checked:bg-gray-700 dark:peer-checked:ring-gray-500 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-blue-500 peer-disabled:cursor-wait peer-disabled:opacity-50"
+                :class="archiveRetentionDays === days ? 'text-theme-strong' : 'text-theme-subtle'">
+                {{ $t('settings.storage_archive_days', { days }) }}
+              </span>
+            </label>
+          </div>
+        </fieldset>
+        <p v-if="archivePreviewLoading" class="text-sm text-theme-subtle" aria-live="polite">
+          {{ $t('settings.storage_preview_loading') }}
+        </p>
+        <div v-else-if="archivePreviewFailed" class="flex items-center gap-3 text-sm">
+          <span class="text-red-600 dark:text-red-400">{{ $t('settings.storage_load_failed') }}</span>
+          <button type="button" class="text-blue-600 dark:text-blue-400" @click="refreshArchivePreview">{{ $t('settings.storage_refresh') }}</button>
+        </div>
+        <p v-else class="text-sm text-theme-supporting" aria-live="polite">
+          {{ $t('settings.storage_cleanable', { size: formatBytes(selectedStorageCategory.cleanable_bytes), count: selectedStorageCategory.cleanable_count }) }}
+        </p>
+      </div>
+    </ConfirmModal>
     <!-- Restart Confirm Modal -->
     <ConfirmModal
       ref="restartConfirmRef"
@@ -493,6 +585,11 @@ import UiInput from '@/components/ui/UiInput.vue'
 import { applyWebUITitle, CUSTOM_WEBUI_TITLE_KEY } from '@/utils/customWebUI'
 import {
   getStorageInfo,
+  cleanupStorage,
+  type StorageCategory,
+  type StorageCategoryId,
+  type ArchiveRetentionDays,
+  type StorageUsageEntry,
   createBackup,
   getActiveBackup,
   getBackupProgress,
@@ -506,7 +603,7 @@ import {
 } from '@/api/settings'
 import { restartAndWait } from '@/composables/useRestart'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const router = useRouter()
 const appStore = useAppStore()
 const sidebarStore = useSidebarStore()
@@ -538,8 +635,89 @@ const sidebarGroupStyleOptions = computed(() => [
 
 // ── Storage ─────────────────────────────────────────────────────────────
 
+const archiveRetentionOptions: ArchiveRetentionDays[] = [7, 30, 90]
+const archiveRetentionDays = ref<ArchiveRetentionDays>(30)
 const storageLoading = ref(false)
 const storageInfo = ref<StorageInfoResponse | null>(null)
+const storageCheckedAt = ref<Date | null>(null)
+const storageUsageColors: Record<StorageUsageEntry['id'], string> = {
+  sessions: 'bg-blue-500',
+  media: 'bg-violet-500',
+  database: 'bg-cyan-500',
+  plugins: 'bg-orange-500',
+  runtime: 'bg-emerald-500',
+  backups: 'bg-amber-500',
+  temp: 'bg-rose-500',
+  logs: 'bg-slate-500',
+  other: 'bg-gray-400',
+}
+const storageSegments = computed(() => (storageInfo.value?.usage_breakdown ?? [])
+  .filter(entry => entry.size_bytes > 0)
+  .map(entry => ({ ...entry, color: storageUsageColors[entry.id] })))
+const cleaningCategory = ref<StorageCategoryId | null>(null)
+const selectedStorageCategory = ref<StorageCategory | null>(null)
+const storageConfirmRef = ref<InstanceType<typeof ConfirmModal>>()
+const archivePreviewLoading = ref(false)
+const archivePreviewFailed = ref(false)
+let archivePreviewRequestId = 0
+const storageCleanupMessage = computed(() => {
+  const category = selectedStorageCategory.value
+  if (!category) return ''
+  const range = category.id === 'message_archives'
+    ? t('settings.storage_archive_older_than', { days: archiveRetentionDays.value }) + '. '
+    : ''
+  return range + t('settings.storage_description_' + category.id) + ' ' + t('settings.storage_confirm_message')
+})
+
+function requestStorageCleanup(category: StorageCategory) {
+  archivePreviewRequestId++
+  archivePreviewLoading.value = false
+  archivePreviewFailed.value = false
+  archiveRetentionDays.value = category.retention_days ?? 30
+  selectedStorageCategory.value = category
+  storageConfirmRef.value?.open()
+}
+
+function cancelStorageCleanup() {
+  archivePreviewRequestId++
+}
+
+async function refreshArchivePreview() {
+  const requestId = ++archivePreviewRequestId
+  archivePreviewLoading.value = true
+  archivePreviewFailed.value = false
+  try {
+    const { data } = await getStorageInfo(archiveRetentionDays.value)
+    if (requestId !== archivePreviewRequestId || disposed) return
+    const category = data.categories.find(item => item.id === 'message_archives')
+    if (!category) throw new Error(t('settings.storage_load_failed'))
+    selectedStorageCategory.value = category
+  } catch (error) {
+    if (requestId !== archivePreviewRequestId || disposed) return
+    archivePreviewFailed.value = true
+    const detail = axios.isAxiosError(error) ? error.response?.data?.detail || error.message : String(error)
+    notify(t('settings.storage_load_failed') + ': ' + detail, 'error')
+  } finally {
+    if (requestId === archivePreviewRequestId) archivePreviewLoading.value = false
+  }
+}
+
+async function handleStorageCleanup() {
+  const category = selectedStorageCategory.value
+  if (!category || cleaningCategory.value !== null || archivePreviewLoading.value || archivePreviewFailed.value || category.cleanable_count === 0) return
+  cleaningCategory.value = category.id
+  try {
+    const { data } = await cleanupStorage(category.id, category.retention_days ?? 30)
+    notify(t('settings.storage_cleaned', { count: data.deleted_count }), 'success')
+    if (data.failed_count) notify(t('settings.storage_partial_failure', { count: data.failed_count }), 'warning')
+  } catch (error) {
+    const detail = axios.isAxiosError(error) ? error.response?.data?.detail || error.message : String(error)
+    notify(t('settings.storage_cleanup_failed') + ': ' + detail, 'error')
+  } finally {
+    await fetchStorageInfo()
+    cleaningCategory.value = null
+  }
+}
 
 const diskUsagePercent = computed(() => {
   if (!storageInfo.value || storageInfo.value.disk_total_bytes === 0) return 0
@@ -576,8 +754,10 @@ async function fetchStorageInfo() {
   try {
     const { data } = await getStorageInfo()
     storageInfo.value = data
-  } catch {
-    // silent
+    storageCheckedAt.value = new Date()
+  } catch (error) {
+    const detail = axios.isAxiosError(error) ? error.response?.data?.detail || error.message : String(error)
+    notify(t('settings.storage_load_failed') + ': ' + detail, 'error')
   } finally {
     storageLoading.value = false
   }

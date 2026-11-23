@@ -6,6 +6,7 @@ import tempfile
 import time
 import uuid
 import zipfile
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, HTTPException, status
@@ -44,6 +45,16 @@ def _get_protected_source_update_items(root: Path) -> frozenset[str]:
 
 
 _install_lock = asyncio.Lock()
+
+
+@asynccontextmanager
+async def update_package_maintenance():
+    """Exclude package cleanup while an update is downloading or applying."""
+    if _install_lock.locked():
+        raise HTTPException(status_code=409, detail="An update is running; retry cleanup after it finishes")
+    async with _install_lock:
+        yield
+
 
 _RELEASES_CACHE_TTL = 300  # 5 minutes
 _releases_cache: list[dict] | None = None

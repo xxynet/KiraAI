@@ -2,7 +2,7 @@
 
 import time
 
-from sqlalchemy import and_, delete, or_, select
+from sqlalchemy import LargeBinary, and_, cast, delete, func, or_, select
 
 from ..db_mgr import DatabaseManager
 from ..models import ImageDescCache
@@ -89,4 +89,19 @@ class ImageCacheMixin:
             )
             result = await session.execute(stmt)
             await session.commit()
+            return result.rowcount
+
+    async def get_image_desc_cache_usage(self) -> dict[str, int]:
+        """Report description payload bytes, excluding database page overhead."""
+        async with self.db.get_session() as session:
+            row = (await session.execute(select(
+                func.count(),
+                func.coalesce(func.sum(func.length(cast(ImageDescCache.description, LargeBinary))), 0),
+            ).select_from(ImageDescCache))).one()
+            return {"item_count": row[0], "size_bytes": row[1]}
+
+    async def clear_image_desc_cache(self) -> int:
+        """Clear cached descriptions without touching stickers or other tables."""
+        async with self.db.transaction() as session:
+            result = await session.execute(delete(ImageDescCache))
             return result.rowcount
