@@ -9,6 +9,9 @@ env:
   DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
   IMAGE_NAME: kira-ai
 
+permissions:
+  contents: read
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
@@ -27,6 +30,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push Docker image
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -35,6 +39,29 @@ jobs:
           platforms: |
             linux/amd64
             linux/arm64
-          tags: |
-            ${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.event.release.tag_name }}
-            ${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+          tags: ${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.event.release.tag_name }}
+
+      - name: Update latest for the current stable release
+        if: ${{ !github.event.release.prerelease }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ github.event.release.id }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          for attempt in 1 2 3; do
+            if latest_release_id=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .id) &&
+              [[ "$latest_release_id" =~ ^[1-9][0-9]*$ ]]; then
+              break
+            fi
+            if [[ "$attempt" == 3 ]]; then
+              echo "::error::Unable to obtain a valid latest release ID after 3 attempts; latest will not be updated."
+              exit 1
+            fi
+            delay=$((2 ** attempt))
+            echo "::warning::Latest release lookup failed or returned an invalid ID (attempt ${attempt}/3); retrying in ${delay}s."
+            sleep "$delay"
+          done
+          if [[ "$RELEASE_ID" == "$latest_release_id" ]]; then
+            image="${DOCKERHUB_USERNAME}/${IMAGE_NAME}"
+            docker buildx imagetools create --tag "${image}:latest" "${image}@${IMAGE_DIGEST}"
+          fi
