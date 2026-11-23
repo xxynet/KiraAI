@@ -218,9 +218,9 @@ export function useSidebarDrag(
   function startDrag(event: PointerEvent, source: SidebarDragSource) {
     if (event.button !== 0 || event.isPrimary === false || session) return
     const target = event.target as Element
-    if (target.closest('input, textarea, select, a, button:not([data-sidebar-drag-handle])')) return
-    const row = event.currentTarget as HTMLElement
-    const element = source.type === 'group' ? row.closest<HTMLElement>('[data-sidebar-group]') : row
+    const handle = target.closest<HTMLElement>('[data-sidebar-drag-handle]')
+    if (!handle || handle !== event.currentTarget) return
+    const element = handle.closest<HTMLElement>(source.type === 'group' ? '[data-sidebar-group]' : '[data-sidebar-item-id]')
     if (!element) return
     session = {
       source, pointerId: event.pointerId, element,

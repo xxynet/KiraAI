@@ -1,13 +1,13 @@
 <template>
   <div
     :data-sidebar-item-id="item.id"
-    class="flex flex-wrap items-center gap-2 p-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 cursor-grab active:cursor-grabbing touch-none select-none"
+    class="flex flex-wrap items-center gap-2 p-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
     :class="{ 'opacity-60': hidden }"
-    @pointerdown="$emit('drag', $event)"
   >
     <button
-      type="button" data-sidebar-drag-handle class="layout-action cursor-grab active:cursor-grabbing"
+      type="button" data-sidebar-drag-handle class="layout-action cursor-grab active:cursor-grabbing touch-none select-none"
       :aria-label="$t('settings.sidebar_layout_drag', { name: label })"
+      @pointerdown="$emit('drag', $event)"
     ><Rank class="w-4 h-4" /></button>
     <InlineSvgIcon v-if="item.iconUrl" :src="item.iconUrl" class="w-5 h-5 shrink-0 text-theme-body">
       <template #fallback><component :is="item.icon" class="w-5 h-5" /></template>

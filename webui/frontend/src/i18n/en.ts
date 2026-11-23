@@ -1173,7 +1173,7 @@ export default {
     sidebar_group_style_nested: 'Nested menu',
     sidebar_group_style_nested_desc: 'Icon headings with indented group items and a vertical guide.',
     sidebar_layout_title: 'Sidebar layout',
-    sidebar_layout_hint: 'Ungrouped items always appear above all groups. Drag items to reorder or move them between groups, or use the arrows to reorder. Hidden entries can be restored here. Removing a group moves its items to the top level. Unavailable plugin pages retain their saved positions. Click Save Settings below to apply.',
+    sidebar_layout_hint: 'Ungrouped items always appear above all groups. Use only the drag handles to drag items or groups to reorder or move items between groups, or use the arrows to reorder. Hidden entries can be restored here. Removing a group moves its items to the top level. Unavailable plugin pages retain their saved positions. Click Save Settings below to apply.',
     sidebar_layout_group_name: 'Group name',
     sidebar_layout_add_group: 'New group',
     sidebar_layout_remove_group: 'Remove group {name}',
