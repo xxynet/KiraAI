@@ -14,6 +14,7 @@ from core.config.default import VERSION
 from core.provider import (
     LLMModelClient,
     ModelInfo,
+    ProviderAPIError,
     STTModelClient,
     TTSModelClient,
 )
@@ -92,6 +93,8 @@ class OpenAICompatibleLLMClient(LLMModelClient):
         # APITimeoutError: the request timed out.
         # APIConnectionError: connection failure, e.g. an unreachable base_url.
         response = await client.chat.completions.create(**request_kwargs)
+        if not isinstance(getattr(response, "choices", None), list):
+            raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
         end_time = time.perf_counter()
         llm_resp = LLMResponse("")
         llm_resp.time_consumed = round(end_time - start_time, 2)
@@ -139,7 +142,11 @@ class OpenAICompatibleLLMClient(LLMModelClient):
         # APITimeoutError: the request timed out.
         # APIConnectionError: connection failure, e.g. an unreachable base_url.
         stream = await client.chat.completions.create(**request_kwargs)
+        if not hasattr(stream, "__aiter__"):
+            raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(stream).__name__}): {stream!r}")
         async for event in stream:
+            if not isinstance(getattr(event, "choices", None), list):
+                raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(event).__name__}): {event!r}")
             # Usage-only event (sent by OpenAI API after the final choice chunk)
             if not event.choices:
                 if event.usage:
@@ -281,4 +288,6 @@ class OpenAICompatibleSTTClient(STTModelClient):
         response = await client.audio.transcriptions.create(
             **self._build_request_kwargs(record_path, **kwargs)
         )
+        if not hasattr(response, "text"):
+            raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
         return response.text or ""

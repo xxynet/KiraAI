@@ -13,6 +13,7 @@ from core.provider import (
     EmbeddingModelClient,
     ImageModelClient,
     ModelInfo,
+    ProviderAPIError,
     RerankModelClient,
     STTModelClient,
 )
@@ -121,6 +122,8 @@ class SiliconflowEmbeddingClient(EmbeddingModelClient):
             elapsed = round(time.perf_counter() - start_time, 2)
             if elapsed > slow_threshold:
                 logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_name})")
+            if not isinstance(getattr(response, "data", None), list):
+                raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
             return [item.embedding for item in response.data]
         except (APIStatusError, APITimeoutError, APIConnectionError) as e:
             logger.error(f"Embedding API error: {e}")

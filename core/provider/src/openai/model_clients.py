@@ -11,6 +11,7 @@ from core.provider import (
     EmbeddingModelClient,
     ImageModelClient,
     ModelInfo,
+    ProviderAPIError,
 )
 
 logger = get_logger("provider", "purple")
@@ -72,6 +73,8 @@ class OpenAIImageClient(ImageModelClient):
     @staticmethod
     def _image_from_response(images_response, operation: str) -> Image:
         """Return the first image from either URL or Base64 API output."""
+        if not isinstance(getattr(images_response, "data", None), list):
+            raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(images_response).__name__}): {images_response!r}")
         if not images_response.data:
             raise ValueError(f"{operation} API returned empty data")
 
@@ -158,6 +161,8 @@ class OpenAIImageClient(ImageModelClient):
             logger.error(f"Image generation (chat) error: {e}")
             raise
 
+        if not isinstance(getattr(response, "choices", None), list):
+            raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
         if not response.choices:
             raise ValueError("Chat completions returned empty choices")
 
@@ -343,6 +348,8 @@ class OpenAIImageClient(ImageModelClient):
         except Exception as e:
             logger.error(f"Image-to-image (chat) error: {e}")
             raise
+        if not isinstance(getattr(response, "choices", None), list):
+            raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
         if not response.choices:
             raise ValueError("Chat completions returned empty choices")
         message = response.choices[0].message
@@ -386,6 +393,8 @@ class OpenAIEmbeddingClient(EmbeddingModelClient):
             elapsed = round(time.perf_counter() - start_time, 2)
             if elapsed > slow_threshold:
                 logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_name})")
+            if not isinstance(getattr(response, "data", None), list):
+                raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
             return [item.embedding for item in response.data]
         except (APIStatusError, APITimeoutError, APIConnectionError) as e:
             logger.error(f"Embedding API error: {e}")
