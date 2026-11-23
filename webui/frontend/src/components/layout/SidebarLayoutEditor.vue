@@ -36,12 +36,12 @@
         />
         <div v-else-if="entry.type === 'group'" :data-sidebar-group="entry.id" class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden bg-white dark:bg-gray-900" :class="{ 'opacity-60': hiddenItems.includes(entry.id) }">
           <div
-            class="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-800 cursor-grab active:cursor-grabbing touch-none select-none"
-            @pointerdown="startDrag($event, { type: 'group', id: entry.id })"
+            class="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-800"
           >
             <button
-              type="button" data-sidebar-drag-handle class="layout-action cursor-grab active:cursor-grabbing"
+              type="button" data-sidebar-drag-handle class="layout-action cursor-grab active:cursor-grabbing touch-none select-none"
               :aria-label="$t('settings.sidebar_layout_drag', { name: groupLabel(entry) })"
+              @pointerdown="startDrag($event, { type: 'group', id: entry.id })"
             ><Rank class="w-4 h-4" /></button>
             <Folder class="w-5 h-5 shrink-0 text-theme-subtle" />
             <input

@@ -97,7 +97,11 @@ function setup() {
   const drag = module.exports.useSidebarDrag(shallowRef(editor), (source, target) => drops.push({ source, target }))
   const event = (extra = {}) => ({ pointerId: 1, button: 0, clientX: 40, clientY: 40, preventDefault() {}, ...extra })
   const send = (name, extra = {}) => { for (const callback of [...listeners.get(name) ?? []]) callback(event(extra)) }
-  const begin = (element = first, source = { type: 'item', id: '/overview' }, target = element) => drag.startDrag(event({ currentTarget: element, target }), source)
+  for (const row of [first, second, header, grouped]) row.appendChild(new Node('button', { sidebarDragHandle: '' }))
+  const begin = (element = first, source = { type: 'item', id: '/overview' }, target) => {
+    const handle = element.querySelector('[data-sidebar-drag-handle]')
+    drag.startDrag(event({ currentTarget: handle, target: target ?? handle }), source)
+  }
   const assertClean = () => {
     assert.equal(drag.dragged.value, null)
     assert.equal(frames.size, 0)
@@ -211,5 +215,32 @@ test('a removed plugin row is not resurrected when its drag is cancelled', () =>
   env.drag.cancel()
   assert.equal(env.first.isConnected, false)
   assert.equal(env.entries.contains(env.first), false)
+  env.assertClean()
+})
+
+
+test('touching item content or group headers leaves scrolling available', () => {
+  const env = setup()
+  for (const [row, source] of [
+    [env.first, { type: 'item', id: '/overview' }],
+    [env.header, { type: 'group', id: 'work' }],
+  ]) {
+    const label = row.appendChild(new env.Node('span'))
+    env.begin(row, source, label)
+    env.send('pointermove', { clientX: 80, clientY: 105 })
+    assert.equal(env.first.parentNode, env.entries)
+    assert.equal(env.group.parentNode, env.entries)
+    env.assertClean()
+  }
+})
+
+test('the icon inside a drag handle starts dragging the entire item', () => {
+  const env = setup()
+  const handle = env.first.querySelector('[data-sidebar-drag-handle]')
+  const icon = handle.appendChild(new env.Node('svg'))
+  env.begin(env.first, { type: 'item', id: '/overview' }, icon)
+  env.send('pointermove', { clientX: 80, clientY: 105 })
+  assert.equal(env.first.parentNode, env.body)
+  env.drag.cancel()
   env.assertClean()
 })

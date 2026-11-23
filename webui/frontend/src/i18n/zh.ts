@@ -1173,7 +1173,7 @@ export default {
     sidebar_group_style_nested: '嵌套菜单',
     sidebar_group_style_nested_desc: '图标标题，组内菜单缩进并显示竖线。',
     sidebar_layout_title: '侧边栏布局',
-    sidebar_layout_hint: '未分组菜单固定在所有分组上方。拖动菜单调整顺序或跨组移动，也可使用箭头排序。隐藏项可在此处恢复。移除分组后，其菜单回到顶层；暂不可用的插件页面会保留已保存的位置。点击下方“保存设置”生效。',
+    sidebar_layout_hint: '未分组菜单固定在所有分组上方。仅可通过拖拽按钮拖动菜单或分组，调整顺序或跨组移动，也可使用箭头排序。隐藏项可在此处恢复。移除分组后，其菜单回到顶层；暂不可用的插件页面会保留已保存的位置。点击下方“保存设置”生效。',
     sidebar_layout_group_name: '分组名称',
     sidebar_layout_add_group: '新建分组',
     sidebar_layout_remove_group: '移除分组 {name}',
