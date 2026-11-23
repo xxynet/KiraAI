@@ -489,11 +489,12 @@ class DirectoryEntry(BaseModel):
     file_count: int = 0
 
 
-StorageCategoryId = Literal["image_descriptions", "session_media", "temp"]
+StorageCategoryId = Literal["image_descriptions", "message_archives", "temp", "logs", "update_packages"]
 
 
 class StorageCategory(BaseModel):
     id: StorageCategoryId
+    retention_days: int | None = None
     size_bytes: int = 0
     item_count: int = 0
     cleanable_bytes: int = 0

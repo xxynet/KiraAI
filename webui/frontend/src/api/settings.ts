@@ -9,10 +9,12 @@ export interface DirectoryEntry {
   file_count: number
 }
 
-export type StorageCategoryId = 'image_descriptions' | 'session_media' | 'temp'
+export type StorageCategoryId = 'image_descriptions' | 'message_archives' | 'temp' | 'logs' | 'update_packages'
+export type ArchiveRetentionDays = 7 | 30 | 90
 
 export interface StorageCategory {
   id: StorageCategoryId
+  retention_days: ArchiveRetentionDays | null
   size_bytes: number
   item_count: number
   cleanable_bytes: number
@@ -26,8 +28,10 @@ export interface StorageCleanupResponse {
   failed_count: number
 }
 
-export function cleanupStorage(category: StorageCategoryId) {
-  return apiClient.post<StorageCleanupResponse>(`/settings/storage/${category}/cleanup`)
+export function cleanupStorage(category: StorageCategoryId, retentionDays: ArchiveRetentionDays = 30) {
+  return apiClient.post<StorageCleanupResponse>(`/settings/storage/${category}/cleanup`, null, {
+    params: { retention_days: retentionDays },
+  })
 }
 
 export interface StorageUsageEntry {
@@ -52,8 +56,8 @@ export interface BackupItem {
   created_at: string
 }
 
-export function getStorageInfo() {
-  return apiClient.get<StorageInfoResponse>('/settings/storage')
+export function getStorageInfo(retentionDays: ArchiveRetentionDays = 30) {
+  return apiClient.get<StorageInfoResponse>('/settings/storage', { params: { retention_days: retentionDays } })
 }
 
 export interface BackupProgress {

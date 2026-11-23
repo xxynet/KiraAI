@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 import shutil
 import sqlite3
 import stat
@@ -11,11 +12,11 @@ from contextlib import ExitStack, closing
 from datetime import datetime
 from pathlib import Path, PureWindowsPath
 from time import monotonic, time
+from typing import Annotated
 
-from fastapi import Depends, File, HTTPException, Request, UploadFile
+from fastapi import Depends, File, HTTPException, Query, Request, UploadFile
 
-from core.logging_manager import get_logger
-from core.utils.media_refs import inspect_session_media
+from core.logging_manager import get_logger, inspect_rotated_logs
 from core.utils.path_utils import get_data_path
 from core.utils.storage import inspect_files
 from webui.models import (
@@ -32,6 +33,7 @@ from webui.models import (
 )
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
+from webui.routes.releases import update_package_maintenance
 from webui.utils import _update_access_token
 
 # Backup directory lives inside the data directory
@@ -298,14 +300,22 @@ class SettingsRoutes(Routes):
 
     # ── Storage ──────────────────────────────────────────────────────────────
 
-    async def get_storage_info(self):
+    @staticmethod
+    def _validate_retention_days(retention_days: int) -> None:
+        if retention_days not in (7, 30, 90):
+            raise HTTPException(status_code=422, detail="Retention must be 7, 30, or 90 days")
+
+    async def get_storage_info(self, retention_days: Annotated[int, Query()] = 30):
+        self._validate_retention_days(retention_days)
         info = await asyncio.to_thread(self._collect_storage_info)
-        cutoff = time() - 24 * 60 * 60
-        for category in ("session_media", "temp"):
-            usage = await asyncio.to_thread(self._inspect_storage_files, category, cutoff)
-            info.categories.append(StorageCategory(id=category, **{
-                key: usage[key] for key in ("size_bytes", "item_count", "cleanable_bytes", "cleanable_count")
-            }))
+        for category in ("message_archives", "temp", "logs", "update_packages"):
+            days = retention_days if category == "message_archives" else 1
+            usage = await self._inspect_storage_files(category, time() - days * 86400)
+            info.categories.append(StorageCategory(
+                id=category,
+                retention_days=retention_days if category == "message_archives" else None,
+                **{key: usage[key] for key in ("size_bytes", "item_count", "cleanable_bytes", "cleanable_count")},
+            ))
         db = self.lifecycle.db_service if self.lifecycle else None
         cache = StorageCategory(id="image_descriptions", available=db is not None)
         if db is not None:
@@ -315,26 +325,58 @@ class SettingsRoutes(Routes):
         info.categories.insert(0, cache)
         return info
 
-    def _inspect_storage_files(self, category: str, cutoff: float, *, delete: bool = False):
-        if category == "session_media":
-            return inspect_session_media(cutoff, delete=delete)
-        return inspect_files(get_data_path() / "temp", cutoff, delete=delete)
+    @staticmethod
+    async def _run_storage_worker(action, *args, **kwargs):
+        task = asyncio.create_task(asyncio.to_thread(action, *args, **kwargs))
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            await task
+            raise
 
-    async def cleanup_storage(self, category: StorageCategoryId):
+    async def _inspect_storage_files(self, category: str, cutoff: float, *, delete: bool = False):
+        if category == "message_archives":
+            root = get_data_path() / "session_media" / "archive"
+            options = {
+                "delete": delete, "recursive": False, "use_mtime": True,
+                "boundary": get_data_path(),
+                "include": lambda path: re.fullmatch(r"[0-9a-f]{64}", path.name) is not None,
+            }
+            if not delete:
+                return await self._run_storage_worker(inspect_files, root, cutoff, **options)
+            history = getattr(self.lifecycle, "message_history", None)
+            if history is None:
+                raise HTTPException(status_code=503, detail="Message history service unavailable")
+            async with history.maintenance() as protected:
+                if protected is None:
+                    raise HTTPException(status_code=409, detail="Messages are being archived; retry cleanup later")
+                return await self._run_storage_worker(inspect_files, root, cutoff, **options)
+        if category == "logs":
+            return await self._run_storage_worker(inspect_rotated_logs, delete=delete)
+        if category == "update_packages":
+            root = get_data_path() / "updates"
+            options = {
+                "delete": delete, "recursive": False,
+                "include": lambda path: path.suffix == ".zip",
+            }
+            if delete:
+                async with update_package_maintenance():
+                    return await self._run_storage_worker(inspect_files, root, cutoff, **options)
+            return await self._run_storage_worker(inspect_files, root, cutoff, **options)
+        if category == "temp":
+            return await self._run_storage_worker(inspect_files, get_data_path() / "temp", cutoff, delete=delete)
+        raise HTTPException(status_code=422, detail="Unsupported storage cleanup category")
+
+    async def cleanup_storage(self, category: StorageCategoryId, retention_days: Annotated[int, Query()] = 30):
+        self._validate_retention_days(retention_days)
         async with self._maintenance_lock:
             if category == "image_descriptions":
                 db = self.lifecycle.db_service if self.lifecycle else None
                 if db is None:
                     raise HTTPException(status_code=503, detail="Database service unavailable")
                 return StorageCleanupResponse(deleted_count=await db.clear_image_desc_cache())
-            task = asyncio.create_task(asyncio.to_thread(
-                self._inspect_storage_files, category, time() - 24 * 60 * 60, delete=True
-            ))
-            try:
-                usage = await asyncio.shield(task)
-            except asyncio.CancelledError:
-                await task
-                raise
+            days = retention_days if category == "message_archives" else 1
+            usage = await self._inspect_storage_files(category, time() - days * 86400, delete=True)
             return StorageCleanupResponse(**{
                 key: usage[key] for key in ("deleted_count", "deleted_bytes", "failed_count")
             })

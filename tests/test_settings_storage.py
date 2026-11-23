@@ -176,28 +176,62 @@ async def test_classified_cleanup_keeps_recent_files_and_other_categories(storag
 
 
 @pytest.mark.anyio
-async def test_media_cleanup_preserves_active_turn_files(storage_app, tmp_path, monkeypatch):
+@pytest.mark.parametrize("retention_days", [7, 30, 90])
+async def test_archive_cleanup_never_removes_context_images(
+    storage_app, tmp_path, monkeypatch, session_db, retention_days
+):
     import time
 
-    from core.utils import media_refs
+    from core.chat.message_history import MessageHistoryService
 
-    monkeypatch.setattr(settings, "time", lambda: time.time() + 3 * 86400)
+    now = time.time()
+    monkeypatch.setattr(settings, "time", lambda: now)
     root = tmp_path / "session_media"
     archive = root / "archive"
     archive.mkdir(parents=True)
-    pinned = root / "pinned.png"
-    pinned.write_bytes(b"pinned")
-    expired = archive / "old.png"
-    expired.write_bytes(b"archive")
-    monkeypatch.setattr(media_refs, "_protected_media_paths", {pinned.resolve(): 1})
-    settings.SettingsRoutes(storage_app).register()
+    context_image = root / ("c" * 64) / "context.png"
+    context_image.parent.mkdir()
+    context_image.write_bytes(b"context")
+    os.utime(context_image, (now - 200 * 86400, now - 200 * 86400))
+    for index, age in enumerate((2, 10, 40, 95)):
+        path = archive / (str(index) * 64)
+        path.write_bytes(b"archive")
+        os.utime(path, (now - age * 86400, now - age * 86400))
+    boundary = archive / ("b" * 64)
+    boundary.write_bytes(b"boundary")
+    os.utime(boundary, (now - retention_days * 86400, now - retention_days * 86400))
+    temporary = archive / "download.tmp"
+    temporary.write_bytes(b"temporary")
+    nested = archive / "unmanaged" / ("f" * 64)
+    nested.parent.mkdir()
+    nested.write_bytes(b"nested")
+    history = MessageHistoryService(session_db, None)
+    record_id = await session_db.add_message_record(
+        session_id="test:dm:user", platform="test", direction="incoming", timestamp=int(now),
+        chain=[{"type": "text", "text": "keep history"}], status="received",
+    )
+    lifecycle = SimpleNamespace(db_service=session_db, message_history=history)
+    settings.SettingsRoutes(storage_app, lifecycle).register()
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=storage_app), base_url="http://test"
     ) as client:
-        response = await client.post("/api/settings/storage/session_media/cleanup")
-    assert response.json()["deleted_count"] == 1
-    assert pinned.exists()
-    assert not expired.exists()
+        info = (await client.get("/api/settings/storage", params={"retention_days": retention_days})).json()
+        category = next(item for item in info["categories"] if item["id"] == "message_archives")
+        expected = sum(age > retention_days for age in (2, 10, 40, 95))
+        assert category["retention_days"] == retention_days
+        assert category["item_count"] == 5
+        assert category["cleanable_count"] == expected
+        response = await client.post("/api/settings/storage/message_archives/cleanup",
+                                     params={"retention_days": retention_days})
+        assert response.status_code == 200
+        assert response.json()["deleted_count"] == expected
+        assert (await client.post("/api/settings/storage/session_media/cleanup")).status_code == 422
+    assert context_image.read_bytes() == b"context"
+    assert boundary.exists() and temporary.exists() and nested.exists()
+    for index, age in enumerate((2, 10, 40, 95)):
+        assert (archive / (str(index) * 64)).exists() == (age <= retention_days)
+    record = await session_db.get_message_record(record_id)
+    assert record["chain"] == [{"type": "text", "text": "keep history"}]
 
 
 @pytest.mark.anyio
@@ -389,3 +423,124 @@ def test_empty_instance_has_zero_usage_in_every_group(tmp_path, monkeypatch):
     assert info.total_size_bytes == 0
     assert len(info.usage_breakdown) == len(settings.STORAGE_USAGE_DIRECTORIES)
     assert all(item.size_bytes == 0 for item in info.usage_breakdown)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("retention_days", [0, 1, -1, 8, 365])
+async def test_archive_cleanup_rejects_unsupported_retention(storage_app, retention_days):
+    settings.SettingsRoutes(storage_app).register()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=storage_app), base_url="http://test"
+    ) as client:
+        assert (await client.get("/api/settings/storage", params={"retention_days": retention_days})).status_code == 422
+        response = await client.post("/api/settings/storage/message_archives/cleanup",
+                                     params={"retention_days": retention_days})
+        assert response.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_logs_cleanup_keeps_active_log_and_unrelated_files(storage_app, tmp_path, monkeypatch):
+    from logging.handlers import RotatingFileHandler
+
+    from core import logging_manager
+
+    active = tmp_path / "custom.log"
+    handler = RotatingFileHandler(active, maxBytes=1024, backupCount=5)
+    monkeypatch.setattr(logging_manager, "_get_shared_file_handler", lambda: handler)
+    for name in ("custom.log.1", "custom.log.5", "another.log.1", "custom.log.zip", "custom.log.0"):
+        (tmp_path / name).write_bytes(b"log")
+    settings.SettingsRoutes(storage_app).register()
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=storage_app), base_url="http://test"
+        ) as client:
+            response = await client.post("/api/settings/storage/logs/cleanup")
+        assert response.status_code == 200
+        assert response.json()["deleted_count"] == 2
+        assert active.exists()
+        assert (tmp_path / "another.log.1").exists()
+        assert (tmp_path / "custom.log.zip").exists()
+        assert (tmp_path / "custom.log.0").exists()
+        handler.doRollover()
+        assert active.exists() and (tmp_path / "custom.log.1").exists()
+    finally:
+        handler.close()
+
+
+@pytest.mark.anyio
+async def test_update_cleanup_excludes_running_updates_and_recovery_files(storage_app, tmp_path, monkeypatch):
+    import asyncio
+    import time
+
+    from webui.routes import releases
+
+    monkeypatch.setattr(settings, "time", lambda: time.time() + 3 * 86400)
+    monkeypatch.setattr(releases, "_install_lock", asyncio.Lock())
+    root = tmp_path / "updates"
+    root.mkdir()
+    for name in ("v1.zip", "v2.zip.part", "recovery.json"):
+        (root / name).write_bytes(b"keep")
+    rollback = root / ".kira-update-backup-test" / "backup.zip"
+    rollback.parent.mkdir()
+    rollback.write_bytes(b"rollback")
+    settings.SettingsRoutes(storage_app).register()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=storage_app), base_url="http://test"
+    ) as client:
+        async with releases._install_lock:
+            response = await client.post("/api/settings/storage/update_packages/cleanup")
+            assert response.status_code == 409
+            assert (root / "v1.zip").exists()
+        response = await client.post("/api/settings/storage/update_packages/cleanup")
+    assert response.status_code == 200
+    assert response.json()["deleted_count"] == 1
+    assert not (root / "v1.zip").exists()
+    assert (root / "v2.zip.part").exists() and (root / "recovery.json").exists()
+    assert rollback.read_bytes() == b"rollback"
+
+
+@pytest.mark.anyio
+async def test_archive_cleanup_refuses_to_overlap_archive_publication(storage_app, tmp_path, session_db):
+    import time
+
+    from core.chat.message_history import MessageHistoryService
+
+    root = tmp_path / "session_media" / "archive"
+    root.mkdir(parents=True)
+    path = root / ("a" * 64)
+    path.write_bytes(b"archive")
+    past = time.time() - 100 * 86400
+    os.utime(path, (past, past))
+    history = MessageHistoryService(session_db, None)
+    marker = object()
+    history._archive_tasks.add(marker)
+    settings.SettingsRoutes(storage_app, SimpleNamespace(db_service=session_db, message_history=history)).register()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=storage_app), base_url="http://test"
+    ) as client:
+        response = await client.post("/api/settings/storage/message_archives/cleanup")
+    assert response.status_code == 409
+    assert path.exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows junction behavior")
+def test_nested_archive_root_cannot_escape_through_parent_junction(tmp_path):
+    import _winapi
+
+    from core.utils.storage import inspect_files
+
+    data = tmp_path / "data"
+    data.mkdir()
+    outside = tmp_path / "outside"
+    archive = outside / "archive"
+    archive.mkdir(parents=True)
+    target = archive / ("a" * 64)
+    target.write_bytes(b"keep")
+    junction = data / "session_media"
+    _winapi.CreateJunction(str(outside), str(junction))
+    try:
+        result = inspect_files(junction / "archive", float("inf"), delete=True, boundary=data)
+        assert result["deleted_count"] == 0
+        assert target.read_bytes() == b"keep"
+    finally:
+        junction.rmdir()

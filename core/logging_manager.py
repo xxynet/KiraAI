@@ -286,3 +286,20 @@ def get_logger(name: str, color: str):
     logger.addHandler(fh)
     logger.addHandler(qh)
     return logger
+
+
+def inspect_rotated_logs(*, delete: bool = False) -> dict[str, int]:
+    """Inspect rotated files while excluding the active log and serializing rollover."""
+    from core.utils.storage import inspect_files
+
+    handler = _get_shared_file_handler()
+    handler.acquire()
+    try:
+        active = Path(handler.baseFilename)
+        pattern = re.compile(re.escape(active.name) + r"\.[1-9][0-9]*")
+        return inspect_files(
+            active.parent, float("inf"), delete=delete, recursive=False,
+            include=lambda path: pattern.fullmatch(path.name) is not None,
+        )
+    finally:
+        handler.release()

@@ -275,12 +275,3 @@ def cleanup_session_media(session_id: str, memory: Iterable[object]) -> None:
                 directory_path.rmdir()
         if not any(session_dir.iterdir()):
             session_dir.rmdir()
-
-
-def inspect_session_media(cutoff: float, *, delete: bool = False) -> dict[str, int]:
-    """Inspect or clear aged media while retaining files pinned by active turns."""
-    from core.utils.storage import inspect_files
-
-    with _media_lock:
-        return inspect_files(_media_root(), cutoff, delete=delete,
-                             protected=set(_protected_media_paths))

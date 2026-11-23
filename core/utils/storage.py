@@ -2,6 +2,7 @@
 
 import os
 import stat
+from collections.abc import Callable
 from pathlib import Path
 
 from core.logging_manager import get_logger
@@ -14,7 +15,10 @@ def inspect_files(
     cutoff: float,
     *,
     delete: bool = False,
-    protected: set[Path] | None = None,
+    include: Callable[[Path], bool] | None = None,
+    recursive: bool = True,
+    use_mtime: bool = False,
+    boundary: Path | None = None,
 ) -> dict[str, int]:
     result = {
         "size_bytes": 0,
@@ -25,7 +29,6 @@ def inspect_files(
         "deleted_count": 0,
         "failed_count": 0,
     }
-    protected = protected or set()
 
     def safe_directory(path: Path) -> bool:
         metadata = path.lstat()
@@ -35,17 +38,27 @@ def inspect_files(
             & stat.FILE_ATTRIBUTE_REPARSE_POINT
         )
 
+    boundary = root if boundary is None else boundary
+
+    def safe_directory_tree(path: Path) -> bool:
+        if not path.is_relative_to(boundary):
+            return False
+        parents = [path, *path.parents]
+        return all(
+            safe_directory(item) for item in parents[: parents.index(boundary) + 1]
+        )
+
     def report_error(error: OSError) -> None:
         result["failed_count"] += 1
         logger.warning("Storage operation failed: %s", error)
 
     try:
-        if not safe_directory(root):
+        if not safe_directory_tree(root):
             return result
         for directory, dirs, files in os.walk(root, onerror=report_error):
             parent = Path(directory)
             safe_dirs = []
-            for name in dirs:
+            for name in dirs if recursive else []:
                 try:
                     if safe_directory(parent / name):
                         safe_dirs.append(name)
@@ -53,10 +66,12 @@ def inspect_files(
                     continue
                 except OSError as exc:
                     report_error(exc)
-            dirs[:] = safe_dirs
+            dirs[:] = safe_dirs if recursive else []
             for name in files:
                 path = parent / name
                 try:
+                    if include is not None and not include(path):
+                        continue
                     metadata = path.lstat()
                     if not stat.S_ISREG(metadata.st_mode) or (
                         getattr(metadata, "st_file_attributes", 0)
@@ -65,18 +80,18 @@ def inspect_files(
                         continue
                     result["size_bytes"] += metadata.st_size
                     result["item_count"] += 1
-                    if (
-                        max(metadata.st_mtime, metadata.st_ctime) >= cutoff
-                        or path.resolve() in protected
-                    ):
+                    age_timestamp = (
+                        metadata.st_mtime
+                        if use_mtime
+                        else max(metadata.st_mtime, metadata.st_ctime)
+                    )
+                    if age_timestamp >= cutoff:
                         continue
                     result["cleanable_bytes"] += metadata.st_size
                     result["cleanable_count"] += 1
                     if delete:
                         # Recheck every parent before deleting; never traverse a junction or symlink.
-                        parents = [path.parent, *path.parent.parents]
-                        parents = parents[: parents.index(root) + 1]
-                        if not all(safe_directory(item) for item in parents):
+                        if not safe_directory_tree(path.parent):
                             continue
                         current = path.lstat()
                         if (
