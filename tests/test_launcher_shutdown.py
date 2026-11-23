@@ -29,7 +29,7 @@ async def test_launcher_finishes_shutdown_after_history_cleanup_was_cancelled(mo
     monkeypatch.setattr("core.launcher.KiraLifecycle", lambda **kwargs: lifecycle)
     monkeypatch.setattr("core.launcher.Statistics", Mock())
     monkeypatch.setattr("core.launcher.KiraWebUI", lambda **kwargs: SimpleNamespace(
-        run=AsyncMock(), access_token="",
+        run=AsyncMock(), access_token="test-token", access_token_generated=False,
     ))
     monkeypatch.setattr("core.utils.dist_checker.ensure_dist", AsyncMock())
     monkeypatch.setattr("core.lifecycle.event_handler_reg.get_handlers", lambda event: [])

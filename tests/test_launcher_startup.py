@@ -18,10 +18,10 @@ from core.launcher import KiraLauncher
         ("0.0.0.0", True, False),
     ],
 )
-async def test_webui_info_is_logged_after_initialization(monkeypatch, host, disable_auth, ip_error):
+async def test_webui_info_is_logged_after_initialization(monkeypatch, capsys, host, disable_auth, ip_error):
     launcher = KiraLauncher(disable_webui_auth=disable_auth)
     launcher.logger = Mock()
-    webui = SimpleNamespace(run=AsyncMock(), access_token="test-token")
+    webui = SimpleNamespace(run=AsyncMock(), access_token="test-token", access_token_generated=False)
     addresses = Mock(return_value=[("Ethernet", "192.0.2.1"), ("Local", "127.0.0.1")])
     if ip_error:
         addresses.side_effect = OSError("interfaces unavailable")
@@ -50,9 +50,8 @@ async def test_webui_info_is_logged_after_initialization(monkeypatch, host, disa
     webui.run.assert_awaited_once_with(effective_host, 5267)
     messages = [call.args[0] for call in launcher.logger.info.call_args_list]
     assert messages[0] == f"WebUI server started at http://{effective_host}:5267"
-    assert messages.count("Access Token: test-token") == (0 if disable_auth else 1)
-    if not disable_auth:
-        assert messages[-1] == "Access Token: test-token"
+    assert all("Access Token:" not in message for message in messages)
+    assert capsys.readouterr().out == ""
     if effective_host in ("localhost", "127.0.0.1"):
         addresses.assert_not_called()
     elif ip_error:
@@ -64,16 +63,21 @@ async def test_webui_info_is_logged_after_initialization(monkeypatch, host, disa
 
 
 @pytest.mark.anyio
-async def test_failed_initialization_does_not_log_webui_info(monkeypatch):
+async def test_generated_token_is_printed_before_startup_tasks(monkeypatch, capsys):
     launcher = KiraLauncher()
     launcher.logger = Mock()
+    async def initialize(**kwargs):
+        raise RuntimeError("initialization failed")
+
+    async def run(*args):
+        assert capsys.readouterr().out == "Access Token: test-token\n"
+
+    webui = SimpleNamespace(run=AsyncMock(side_effect=run), access_token="test-token", access_token_generated=True)
     monkeypatch.setattr("core.launcher.KiraLifecycle", lambda **kwargs: SimpleNamespace(
-        init_and_run_system=AsyncMock(side_effect=RuntimeError("initialization failed")),
+        init_and_run_system=initialize,
     ))
     monkeypatch.setattr("core.launcher.Statistics", Mock())
-    monkeypatch.setattr("core.launcher.KiraWebUI", lambda **kwargs: SimpleNamespace(
-        run=AsyncMock(), access_token="test-token",
-    ))
+    monkeypatch.setattr("core.launcher.KiraWebUI", lambda **kwargs: webui)
     monkeypatch.setattr("core.utils.dist_checker.ensure_dist", AsyncMock())
     monkeypatch.setattr(launcher, "_load_webui_config", lambda: {"host": "127.0.0.1", "port": 5267})
     loop = asyncio.get_running_loop()
@@ -85,3 +89,5 @@ async def test_failed_initialization_does_not_log_webui_info(monkeypatch):
         loop.set_exception_handler(handler)
 
     launcher.logger.info.assert_not_called()
+    webui.run.assert_awaited_once()
+    assert capsys.readouterr().out == ""

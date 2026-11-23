@@ -56,10 +56,11 @@ class KiraWebUI:
 
         self.lifecycle = lifecycle
         self.disable_auth = disable_auth
+        self.access_token_generated = False
         if disable_auth:
             self.access_token = "disabled"
         else:
-            self.access_token = _get_or_generate_access_token()
+            self.access_token, self.access_token_generated = _get_or_generate_access_token()
         self.is_prod = os.environ.get("KIRA_ENV", "prod").lower() == "prod"
         fastapi_kwargs: dict = {
             "title": "KiraAI Admin Panel",

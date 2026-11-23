@@ -64,8 +64,10 @@ def _get_port(data_path: Path) -> int:
     if config_path.exists():
         try:
             with open(config_path, "r", encoding="utf-8") as f:
-                return json.load(f).get("port", DEFAULT_PORT)
-        except (json.JSONDecodeError, OSError):
+                config = json.load(f)
+                if isinstance(config, dict):
+                    return config.get("port", DEFAULT_PORT)
+        except (ValueError, OSError, RecursionError):
             pass
     return DEFAULT_PORT
 

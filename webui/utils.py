@@ -79,40 +79,75 @@ _JWT_SECRET = _load_persisted_jwt_secret()
 def _generate_strong_password(length: int = 16) -> str:
     """Generate a strong password with upper/lower alphabets, digits, and special characters."""
     alphabet = string.ascii_letters + string.digits + "!@#$%^&*()_+-=[]{}|;:,.<>?"
-    token = ''.join(secrets.choice(alphabet) for _ in range(length))
-    logger.info("Generated new access_token")
-    return token
+    return ''.join(secrets.choice(alphabet) for _ in range(length))
+
+
+def _is_usable_access_token(token: object) -> bool:
+    """Check that the login form can submit this token unchanged."""
+    # Match the login form's JavaScript trim(), including the BOM.
+    trim_chars = (
+        "\t\n\v\f\r \xa0\u1680\u2000\u2001\u2002\u2003\u2004\u2005"
+        "\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff"
+    )
+    if not isinstance(token, str) or not token or token == "disabled":
+        return False
+    if token != token.strip(trim_chars):
+        return False
+    try:
+        token.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
 
 
 def _load_webui_config() -> dict:
-    """Load webui.json"""
+    """Load webui.json, treating only an absent file as a fresh config."""
     config_path = get_data_path() / "webui.json"
-    if config_path.exists():
-        with open(config_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return {"host": "0.0.0.0", "port": 5267}
+    try:
+        with config_path.open(encoding="utf-8") as f:
+            config = json.load(f)
+    except FileNotFoundError:
+        if config_path.is_symlink():
+            raise
+        return {"host": "0.0.0.0", "port": 5267}
+    if not isinstance(config, dict):
+        raise ValueError("WebUI config must be a JSON object")
+    return config
 
 
 def _save_webui_config(config: dict):
-    """Save webui.json file"""
-    config_path = get_data_path() / "webui.json"
+    """Replace webui.json only after the new JSON has been fully written."""
+    config_path = (get_data_path() / "webui.json").resolve()
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(config_path, 'w', encoding='utf-8') as f:
-        json.dump(config, f, indent=2, ensure_ascii=False)
+    fd, tmp_name = tempfile.mkstemp(prefix=".webui.", dir=config_path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+        os.replace(tmp_name, config_path)
+    finally:
+        try:
+            os.unlink(tmp_name)
+        except FileNotFoundError:
+            pass
 
 
-def _get_or_generate_access_token() -> str:
-    """Get or generate access_token.
+def _get_or_generate_access_token() -> tuple[str | None, bool]:
+    """Return the active token and whether this startup generated it."""
+    try:
+        config = _load_webui_config()
+        token = config.get("access_token")
+        if _is_usable_access_token(token):
+            return token, False
 
-    The reserved sentinel "disabled" is never returned — if it appears in the
-    config file (e.g. manually edited), the token is silently regenerated.
-    """
-    config = _load_webui_config()
-    if "access_token" not in config or not config["access_token"] or config["access_token"] == "disabled":
-        logger.warning("access_token was missing or reserved, generating a new one")
-        config["access_token"] = _generate_strong_password()
+        token = _generate_strong_password()
+        config["access_token"] = token
         _save_webui_config(config)
-    return config["access_token"]
+        persisted_token = _load_webui_config().get("access_token")
+        if _is_usable_access_token(persisted_token) and persisted_token == token:
+            return token, True
+    except (OSError, ValueError, RecursionError, RuntimeError):
+        pass
+    return None, False
 
 
 def _update_access_token(new_token: str) -> None:
@@ -191,7 +226,8 @@ def verify_session_token(token: str, app_state) -> dict:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token issued under a different auth mode, please re-login",
         )
-    if payload.get("tv") != _access_token_fingerprint(getattr(app_state, "access_token", "")):
+    current_token = getattr(app_state, "access_token", "")
+    if current_token is None or payload.get("tv") != _access_token_fingerprint(current_token):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Session invalidated by an access-token change, please re-login",

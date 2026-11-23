@@ -103,7 +103,7 @@ async def require_ws_auth(
 
 
 class AuthRoutes(Routes):
-    def __init__(self, app, lifecycle, access_token: str, dist_dir: Path, disable_auth: bool = False):
+    def __init__(self, app, lifecycle, access_token: str | None, dist_dir: Path, disable_auth: bool = False):
         super().__init__(app, lifecycle)
         self.access_token = access_token
         self.dist_dir = dist_dir
@@ -393,7 +393,7 @@ class AuthRoutes(Routes):
 
     async def token_login(self, payload: TokenLoginRequest, request: Request):
         current_token = request.app.state.access_token
-        if payload.access_token != current_token:
+        if current_token is None or payload.access_token != current_token:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid access token",
