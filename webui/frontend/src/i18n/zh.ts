@@ -1351,7 +1351,7 @@ export default {
     subtitle: '管理面板',
     access_token: '访问令牌',
     placeholder: '请输入访问令牌',
-    token_hint: '在终端输出中查看您的令牌',
+    token_hint: '仅新生成的令牌会在启动完成后显示于终端。也可查看当前数据目录下 webui.json 中的 access_token 字段（默认为 data/webui.json；使用 --data-dir 时请查看指定目录）。',
     submit: '登录',
     error: '登录失败，请检查您的访问令牌。',
     token_required: '请输入访问令牌。',
