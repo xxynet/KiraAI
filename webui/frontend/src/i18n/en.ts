@@ -1351,7 +1351,7 @@ export default {
     subtitle: 'Admin Panel',
     access_token: 'Access Token',
     placeholder: 'Enter access token',
-    token_hint: 'Only newly generated tokens appear in the terminal after startup completes. You can also find access_token in webui.json in the active data directory (data/webui.json by default, or the directory specified by --data-dir).',
+    token_hint: 'New tokens are shown once. You can also find access_token in webui.json.',
     submit: 'Login',
     error: 'Login failed. Please check your access token.',
     token_required: 'Please enter an access token.',
