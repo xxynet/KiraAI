@@ -1351,7 +1351,7 @@ export default {
     subtitle: '管理面板',
     access_token: '访问令牌',
     placeholder: '请输入访问令牌',
-    token_hint: '新令牌仅显示一次，也可在 webui.json 的 access_token 字段中查看。',
+    token_hint: '新令牌仅在终端显示一次，也可在 webui.json 的 access_token 字段中查看。',
     submit: '登录',
     error: '登录失败，请检查您的访问令牌。',
     token_required: '请输入访问令牌。',

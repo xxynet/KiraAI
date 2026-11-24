@@ -1351,7 +1351,7 @@ export default {
     subtitle: 'Admin Panel',
     access_token: 'Access Token',
     placeholder: 'Enter access token',
-    token_hint: 'New tokens are shown once. You can also find access_token in webui.json.',
+    token_hint: 'New tokens are shown once in the terminal. You can also find access_token in webui.json.',
     submit: 'Login',
     error: 'Login failed. Please check your access token.',
     token_required: 'Please enter an access token.',
