@@ -34,7 +34,7 @@ from webui.models import (
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
 from webui.routes.releases import update_package_maintenance
-from webui.utils import _update_access_token
+from webui.utils import _update_webui_config
 
 # Backup directory lives inside the data directory
 BACKUP_DIR_NAME = "backups"
@@ -799,6 +799,6 @@ class SettingsRoutes(Routes):
             raise HTTPException(status_code=400, detail="New token must be at least 6 characters")
         if new_token == "disabled":
             raise HTTPException(status_code=400, detail="The token 'disabled' is reserved and cannot be used")
-        _update_access_token(new_token)
+        _update_webui_config(access_token=new_token)
         request.app.state.access_token = new_token
         return {"success": True}

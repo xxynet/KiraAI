@@ -35,7 +35,7 @@ async def test_launcher_finishes_shutdown_after_history_cleanup_was_cancelled(mo
     monkeypatch.setattr("core.lifecycle.event_handler_reg.get_handlers", lambda event: [])
     launcher = KiraLauncher()
     launcher.logger = Mock()
-    monkeypatch.setattr(launcher, "_load_webui_config", lambda: {"host": "127.0.0.1", "port": 5267})
+    monkeypatch.setattr("core.launcher._load_webui_config", lambda: {"host": "127.0.0.1", "port": 5267})
     loop = asyncio.get_running_loop()
     handler = loop.get_exception_handler()
     try:

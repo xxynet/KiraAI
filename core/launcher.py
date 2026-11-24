@@ -62,7 +62,10 @@ class KiraLauncher:
         if self.webui.access_token is None:
             self.logger.warning("WebUI access token unavailable. Reset it in data/webui.json and restart KiraAI.")
 
-        webui_config = self._load_webui_config()
+        try:
+            webui_config = _load_webui_config()
+        except (OSError, ValueError, RecursionError):
+            webui_config = {}
 
         try:
             host = webui_config.get("host", "0.0.0.0")
@@ -111,11 +114,3 @@ class KiraLauncher:
                     continue
                 ip_addresses.append((interface, address.address))
         return ip_addresses
-
-    @staticmethod
-    def _load_webui_config() -> dict:
-        """Load listener settings, falling back to defaults if config is damaged."""
-        try:
-            return _load_webui_config()
-        except (OSError, ValueError, RecursionError):
-            return {}

@@ -11,9 +11,8 @@ from webui.models import OnboardingCompleteRequest, OnboardingTokenSetupRequest
 from webui.routes.auth import AuthRoutes
 from webui.utils import (
     _access_token_fingerprint,
-    _is_token_setup_done,
-    _mark_token_setup_done,
-    _update_access_token,
+    _load_webui_config,
+    _update_webui_config,
     _verify_jwt_token,
 )
 
@@ -39,13 +38,17 @@ def make_request():
 @pytest.fixture
 def patch_token_setup(monkeypatch):
     """Stub the webui.json-backed token-setup flag with an in-memory value."""
-    state = {'done': False, 'updated_tokens': []}
-    monkeypatch.setattr('webui.routes.auth._is_token_setup_done', lambda: state['done'])
-    monkeypatch.setattr('webui.routes.auth._mark_token_setup_done', lambda: state.update(done=True))
-    monkeypatch.setattr(
-        'webui.routes.auth._update_access_token',
-        lambda token: state['updated_tokens'].append(token),
-    )
+    state = {'done': False, 'updated_tokens': [], 'updates': []}
+
+    def update_config(**changes):
+        state['updates'].append(changes)
+        if 'access_token' in changes:
+            state['updated_tokens'].append(changes['access_token'])
+        if 'token_setup_done' in changes:
+            state['done'] = changes['token_setup_done']
+
+    monkeypatch.setattr('webui.routes.auth._load_webui_config', lambda: {'token_setup_done': state['done']})
+    monkeypatch.setattr('webui.routes.auth._update_webui_config', update_config)
     return state
 
 
@@ -132,6 +135,7 @@ async def test_setup_token_skip_only_marks_done(patch_token_setup):
     assert response.access_token is None
     assert patch_token_setup['done'] is True
     assert patch_token_setup['updated_tokens'] == []
+    assert patch_token_setup['updates'] == [{'token_setup_done': True}]
 
 
 @pytest.mark.anyio
@@ -147,6 +151,8 @@ async def test_setup_token_rotates_token_and_remints_session(patch_token_setup):
     assert patch_token_setup['updated_tokens'] == ['my-secret-token']
     assert request.app.state.access_token == 'my-secret-token'
     assert patch_token_setup['done'] is True
+
+    assert patch_token_setup['updates'] == [{'access_token': 'my-secret-token', 'token_setup_done': True}]
 
     payload = _verify_jwt_token(body['access_token'])
     assert payload['auth_mode'] == 'enabled'
@@ -198,12 +204,11 @@ async def test_setup_token_rejected_after_setup_already_done(patch_token_setup):
 def test_token_setup_persistence_round_trip(monkeypatch, tmp_path):
     monkeypatch.setattr('webui.utils.get_data_path', lambda: tmp_path)
 
-    assert _is_token_setup_done() is False
-    _mark_token_setup_done()
-    _mark_token_setup_done()  # re-marking must not corrupt the file
-    assert _is_token_setup_done() is True
+    assert not _load_webui_config().get('token_setup_done', False)
+    _update_webui_config(access_token='initial-token', token_setup_done=True)
+    assert _load_webui_config()['token_setup_done'] is True
 
-    _update_access_token('brand-new-token')
+    _update_webui_config(access_token='brand-new-token')
     saved = json.loads((tmp_path / 'webui.json').read_text(encoding='utf-8'))
     assert saved['access_token'] == 'brand-new-token'
     assert saved['token_setup_done'] is True

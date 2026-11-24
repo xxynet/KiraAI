@@ -76,12 +76,6 @@ def _load_persisted_jwt_secret() -> str:
 _JWT_SECRET = _load_persisted_jwt_secret()
 
 
-def _generate_strong_password(length: int = 16) -> str:
-    """Generate a strong password with upper/lower alphabets, digits, and special characters."""
-    alphabet = string.ascii_letters + string.digits + "!@#$%^&*()_+-=[]{}|;:,.<>?"
-    return ''.join(secrets.choice(alphabet) for _ in range(length))
-
-
 def _is_usable_access_token(token: object) -> bool:
     """Check that the login form can submit this token unchanged."""
     # Match the login form's JavaScript trim(), including the BOM.
@@ -89,9 +83,7 @@ def _is_usable_access_token(token: object) -> bool:
         "\t\n\v\f\r \xa0\u1680\u2000\u2001\u2002\u2003\u2004\u2005"
         "\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff"
     )
-    if not isinstance(token, str) or not token or token == "disabled":
-        return False
-    if token != token.strip(trim_chars):
+    if not isinstance(token, str) or not token or token == "disabled" or token != token.strip(trim_chars):
         return False
     try:
         token.encode("utf-8")
@@ -139,35 +131,21 @@ def _get_or_generate_access_token() -> tuple[str | None, bool]:
         if _is_usable_access_token(token):
             return token, False
 
-        token = _generate_strong_password()
+        alphabet = string.ascii_letters + string.digits + "!@#$%^&*()_+-=[]{}|;:,.<>?"
+        token = ''.join(secrets.choice(alphabet) for _ in range(16))
         config["access_token"] = token
         _save_webui_config(config)
-        persisted_token = _load_webui_config().get("access_token")
-        if _is_usable_access_token(persisted_token) and persisted_token == token:
+        if _load_webui_config().get("access_token") == token:
             return token, True
-    except (OSError, ValueError, RecursionError, RuntimeError):
+    except (OSError, ValueError, RuntimeError):
         pass
     return None, False
 
 
-def _update_access_token(new_token: str) -> None:
-    """Persist a new access token into webui.json."""
+def _update_webui_config(**changes) -> None:
+    """Persist changed fields while preserving the rest of webui.json."""
     config = _load_webui_config()
-    config["access_token"] = new_token
-    _save_webui_config(config)
-
-
-def _is_token_setup_done() -> bool:
-    """Whether the first-run access-token setup step was completed or skipped."""
-    return bool(_load_webui_config().get("token_setup_done", False))
-
-
-def _mark_token_setup_done() -> None:
-    """Record in webui.json that the first-run token setup page was visited."""
-    config = _load_webui_config()
-    if config.get("token_setup_done"):
-        return
-    config["token_setup_done"] = True
+    config.update(changes)
     _save_webui_config(config)
 
 

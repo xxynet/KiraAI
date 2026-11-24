@@ -39,7 +39,7 @@ async def test_webui_info_is_logged_after_initialization(monkeypatch, capsys, ho
     monkeypatch.setattr("core.launcher.Statistics", Mock())
     monkeypatch.setattr("core.launcher.KiraWebUI", lambda **kwargs: webui)
     monkeypatch.setattr("core.utils.dist_checker.ensure_dist", AsyncMock())
-    monkeypatch.setattr(launcher, "_load_webui_config", lambda: {"host": host, "port": 5267})
+    monkeypatch.setattr("core.launcher._load_webui_config", lambda: {"host": host, "port": 5267})
     monkeypatch.setattr(launcher, "_get_ip_addresses", addresses)
     loop = asyncio.get_running_loop()
     handler = loop.get_exception_handler()
@@ -85,7 +85,7 @@ async def test_failed_initialization_does_not_log_generated_token(monkeypatch, c
     monkeypatch.setattr("core.launcher.Statistics", Mock())
     monkeypatch.setattr("core.launcher.KiraWebUI", lambda **kwargs: webui)
     monkeypatch.setattr("core.utils.dist_checker.ensure_dist", AsyncMock())
-    monkeypatch.setattr(launcher, "_load_webui_config", lambda: {"host": "127.0.0.1", "port": 5267})
+    monkeypatch.setattr("core.launcher._load_webui_config", lambda: {"host": "127.0.0.1", "port": 5267})
     loop = asyncio.get_running_loop()
     handler = loop.get_exception_handler()
     try:
