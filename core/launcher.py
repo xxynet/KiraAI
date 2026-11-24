@@ -59,9 +59,7 @@ class KiraLauncher:
         await ensure_dist(ignore_webui_version_check=self.ignore_webui_version_check)
 
         self.webui = KiraWebUI(lifecycle=self.lifecycle, disable_auth=self.disable_webui_auth)
-        if self.webui.access_token_generated:
-            print(f"Access Token: {self.webui.access_token}", flush=True)
-        elif self.webui.access_token is None:
+        if self.webui.access_token is None:
             self.logger.warning("WebUI access token unavailable. Reset it in data/webui.json and restart KiraAI.")
 
         webui_config = self._load_webui_config()
@@ -96,6 +94,10 @@ class KiraLauncher:
                     self.logger.info(f"{interface}: http://{address}:{port}")
             except Exception as e:
                 self.logger.warning(f"Failed to get ip addresses: {e}")
+
+        if self.webui.access_token_generated:
+            self.logger.info(f"Access Token: {self.webui.access_token}")
+            self.webui.access_token_generated = False
 
     @staticmethod
     def _get_ip_addresses():

@@ -8,6 +8,7 @@ from core.launcher import KiraLauncher
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("generated", [False, True])
 @pytest.mark.parametrize(
     "host, disable_auth, ip_error",
     [
@@ -18,10 +19,10 @@ from core.launcher import KiraLauncher
         ("0.0.0.0", True, False),
     ],
 )
-async def test_webui_info_is_logged_after_initialization(monkeypatch, capsys, host, disable_auth, ip_error):
+async def test_webui_info_is_logged_after_initialization(monkeypatch, capsys, host, disable_auth, ip_error, generated):
     launcher = KiraLauncher(disable_webui_auth=disable_auth)
     launcher.logger = Mock()
-    webui = SimpleNamespace(run=AsyncMock(), access_token="test-token", access_token_generated=False)
+    webui = SimpleNamespace(run=AsyncMock(), access_token="test-token", access_token_generated=generated and not disable_auth)
     addresses = Mock(return_value=[("Ethernet", "192.0.2.1"), ("Local", "127.0.0.1")])
     if ip_error:
         addresses.side_effect = OSError("interfaces unavailable")
@@ -29,6 +30,7 @@ async def test_webui_info_is_logged_after_initialization(monkeypatch, capsys, ho
     async def initialize(on_initialized):
         await asyncio.sleep(0)
         launcher.logger.info.assert_not_called()
+        assert capsys.readouterr().out == ""
         on_initialized()
 
     monkeypatch.setattr("core.launcher.KiraLifecycle", lambda **kwargs: SimpleNamespace(
@@ -50,8 +52,11 @@ async def test_webui_info_is_logged_after_initialization(monkeypatch, capsys, ho
     webui.run.assert_awaited_once_with(effective_host, 5267)
     messages = [call.args[0] for call in launcher.logger.info.call_args_list]
     assert messages[0] == f"WebUI server started at http://{effective_host}:5267"
-    assert all("Access Token:" not in message for message in messages)
+    assert messages.count("Access Token: test-token") == int(generated and not disable_auth)
+    if generated and not disable_auth:
+        assert messages[-1] == "Access Token: test-token"
     assert capsys.readouterr().out == ""
+    assert not webui.access_token_generated
     if effective_host in ("localhost", "127.0.0.1"):
         addresses.assert_not_called()
     elif ip_error:
@@ -61,18 +66,19 @@ async def test_webui_info_is_logged_after_initialization(monkeypatch, capsys, ho
     else:
         assert messages.index("Local: http://127.0.0.1:5267") < messages.index("Ethernet: http://192.0.2.1:5267")
 
+    launcher._log_webui_info(effective_host, 5267)
+    messages = [call.args[0] for call in launcher.logger.info.call_args_list]
+    assert messages.count("Access Token: test-token") == int(generated and not disable_auth)
+
 
 @pytest.mark.anyio
-async def test_generated_token_is_printed_before_startup_tasks(monkeypatch, capsys):
+async def test_failed_initialization_does_not_log_generated_token(monkeypatch, capsys):
     launcher = KiraLauncher()
     launcher.logger = Mock()
     async def initialize(**kwargs):
         raise RuntimeError("initialization failed")
 
-    async def run(*args):
-        assert capsys.readouterr().out == "Access Token: test-token\n"
-
-    webui = SimpleNamespace(run=AsyncMock(side_effect=run), access_token="test-token", access_token_generated=True)
+    webui = SimpleNamespace(run=AsyncMock(), access_token="test-token", access_token_generated=True)
     monkeypatch.setattr("core.launcher.KiraLifecycle", lambda **kwargs: SimpleNamespace(
         init_and_run_system=initialize,
     ))
