@@ -29,9 +29,8 @@ from webui.routes.base import RouteDefinition, Routes
 from webui.utils import (
     _access_token_fingerprint,
     _create_jwt_token,
-    _is_token_setup_done,
-    _mark_token_setup_done,
-    _update_access_token,
+    _load_webui_config,
+    _update_webui_config,
     verify_session_token,
 )
 
@@ -103,7 +102,7 @@ async def require_ws_auth(
 
 
 class AuthRoutes(Routes):
-    def __init__(self, app, lifecycle, access_token: str, dist_dir: Path, disable_auth: bool = False):
+    def __init__(self, app, lifecycle, access_token: str | None, dist_dir: Path, disable_auth: bool = False):
         super().__init__(app, lifecycle)
         self.access_token = access_token
         self.dist_dir = dist_dir
@@ -315,7 +314,7 @@ class AuthRoutes(Routes):
             token_setup_required=(
                 not self.disable_auth
                 and not completed
-                and not _is_token_setup_done()
+                and not _load_webui_config().get("token_setup_done", False)
             ),
         )
 
@@ -332,11 +331,11 @@ class AuthRoutes(Routes):
             raise HTTPException(status_code=400, detail="Cannot change token when auth is disabled")
         if self._get_onboarding_config().get("completed", False):
             raise HTTPException(status_code=400, detail="Onboarding already completed")
-        if _is_token_setup_done():
+        if _load_webui_config().get("token_setup_done", False):
             raise HTTPException(status_code=400, detail="Token setup already completed")
 
         if not payload.token or not payload.token.strip():
-            _mark_token_setup_done()
+            _update_webui_config(token_setup_done=True)
             return OnboardingTokenSetupResponse(skipped=True)
 
         new_token = payload.token.strip()
@@ -345,9 +344,8 @@ class AuthRoutes(Routes):
         if new_token == "disabled":
             raise HTTPException(status_code=400, detail="The token 'disabled' is reserved and cannot be used")
 
-        _update_access_token(new_token)
+        _update_webui_config(access_token=new_token, token_setup_done=True)
         request.app.state.access_token = new_token
-        _mark_token_setup_done()
         access_token = _create_jwt_token(
             data={
                 "sub": "admin",
@@ -393,7 +391,7 @@ class AuthRoutes(Routes):
 
     async def token_login(self, payload: TokenLoginRequest, request: Request):
         current_token = request.app.state.access_token
-        if payload.access_token != current_token:
+        if current_token is None or payload.access_token != current_token:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid access token",

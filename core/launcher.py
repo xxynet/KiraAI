@@ -1,13 +1,12 @@
 import asyncio
-import json
 import socket
 import sys
 
 import psutil
 
 from core.logging_manager import get_logger
-from core.utils.path_utils import get_data_path
 from webui.app import KiraWebUI
+from webui.utils import _load_webui_config
 
 from .lifecycle import KiraLifecycle
 from .statistics import Statistics
@@ -55,14 +54,18 @@ class KiraLauncher:
 
         self.lifecycle = KiraLifecycle(stats=self.stats)
 
-        # ====== init WebUI ======
-        webui_config = self._load_webui_config()
-
         # ====== ensure frontend dist ======
         from core.utils.dist_checker import ensure_dist
         await ensure_dist(ignore_webui_version_check=self.ignore_webui_version_check)
 
         self.webui = KiraWebUI(lifecycle=self.lifecycle, disable_auth=self.disable_webui_auth)
+        if self.webui.access_token is None:
+            self.logger.warning("WebUI access token unavailable. Reset it in data/webui.json and restart KiraAI.")
+
+        try:
+            webui_config = _load_webui_config()
+        except (OSError, ValueError, RecursionError):
+            webui_config = {}
 
         try:
             host = webui_config.get("host", "0.0.0.0")
@@ -95,8 +98,9 @@ class KiraLauncher:
             except Exception as e:
                 self.logger.warning(f"Failed to get ip addresses: {e}")
 
-        if not self.disable_webui_auth:
+        if self.webui.access_token_generated:
             self.logger.info(f"Access Token: {self.webui.access_token}")
+            self.webui.access_token_generated = False
 
     @staticmethod
     def _get_ip_addresses():
@@ -110,18 +114,3 @@ class KiraLauncher:
                     continue
                 ip_addresses.append((interface, address.address))
         return ip_addresses
-
-    @staticmethod
-    def _load_webui_config() -> dict:
-        """Load WebUI configuration from data/webui.json"""
-        config_path = get_data_path() / "webui.json"
-        if config_path.exists():
-            with open(config_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        else:
-            with open(config_path, 'w', encoding='utf-8') as f:
-                f.write(json.dumps({
-                    "host": "0.0.0.0",
-                    "port": 5267
-                }))
-            return {"host": "0.0.0.0", "port": 5267}
