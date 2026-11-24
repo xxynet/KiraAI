@@ -423,6 +423,30 @@ class MessageHistoryService:
         )
         return await self._restore_page(page)
 
+    async def search_messages(
+        self, session_id: str, *, query: str, author: str | None = None,
+        sent_after: int | None = None, sent_before: int | None = None,
+        direction: str | None = None, limit: int = 20, cursor: str | None = None,
+    ) -> MessageHistoryPage:
+        """Match every whitespace-separated term across retained visible message text."""
+        if not isinstance(query, str) or not query.strip() or len(query) > 200:
+            raise ValueError("query must contain 1 to 200 characters, including a non-whitespace term")
+        page = await self.db.list_message_records(
+            session_id, keyword=query, match_all=True, author=author,
+            sent_after=sent_after, sent_before=sent_before,
+            direction=direction, limit=limit, cursor=cursor,
+        )
+        return await self._restore_page(page)
+
+    async def read_messages(
+        self, session_id: str, *, message_id: str | None = None,
+        before: int = 10, after: int = 10,
+    ) -> dict:
+        """Return chronological archive snapshots around an internal message ID."""
+        return await self.db.read_message_records(
+            session_id, message_id=message_id, before=before, after=after,
+        )
+
     async def _restore_page(self, page: dict) -> MessageHistoryPage:
         if page["messages"]:
             records = await asyncio.to_thread(
