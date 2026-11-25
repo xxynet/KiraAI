@@ -21,12 +21,14 @@ export function useQuickNav() {
   return { quickNavOpen, openQuickNav, closeQuickNav }
 }
 
-/** Editing surfaces keep their own Ctrl+K behaviour (text editing, Monaco chords). */
+/**
+ * Monaco keeps Ctrl+K for its own chord commands, and rich-text surfaces may
+ * bind it too, so the palette stays out of those. Plain inputs and textareas
+ * have no Ctrl+K behaviour worth protecting.
+ */
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
-  if (target.isContentEditable) return true
-  if (target.closest('.monaco-editor')) return true
-  return target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT'
+  return target.isContentEditable || target.closest('.monaco-editor') !== null
 }
 
 /**
@@ -52,5 +54,9 @@ export function useQuickNavShortcut() {
   }
 
   onMounted(() => window.addEventListener('keydown', handleKeydown))
-  onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown))
+  onBeforeUnmount(() => {
+    window.removeEventListener('keydown', handleKeydown)
+    // The open state is module-scope: never let it leak into the next mount.
+    closeQuickNav()
+  })
 }
