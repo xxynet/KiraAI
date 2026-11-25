@@ -624,7 +624,7 @@ export default {
     skills_delete_success: '技能删除成功',
     skills_delete_error: '技能删除失败',
     scope: '作用域',
-    scope_tab_desc: '控制每个会话可用的 MCP 服务器、技能和子代理预设',
+    scope_tab_desc: '控制每个会话可用的 MCP 服务器、技能和用户创建的子代理预设。插件预设由对应插件管理。',
     scope_no_sessions: '暂无会话，请先开始对话',
     scope_edit: '编辑作用域',
     scope_mcp_section: 'MCP 服务器',

@@ -220,8 +220,7 @@ async def test_presets_routes_validate_persist_edit_delete_and_require_auth(tmp_
 
 
 @pytest.mark.anyio
-async def test_cancelled_plugin_unregister_finishes_disk_commit_and_tool_cleanup(tmp_path, monkeypatch):
-    import threading
+async def test_plugin_unregister_clears_runtime_tools_and_scope_without_disk_io(tmp_path, monkeypatch):
     from unittest.mock import Mock
 
     from core.utils.tool_utils import BaseTool
@@ -230,32 +229,19 @@ async def test_cancelled_plugin_unregister_finishes_disk_commit_and_tool_cleanup
     tool = Mock(spec=BaseTool)
     tool.name = "private"
     manager = plugin_manager(store)
-    item = await manager.register_plugin_subagent("plugin", PluginSubAgentPreset(name="Private", tools=[tool]))
-    await store.replace_scopes({item["id"]: {"allow": ["session"]}})
-    original_write = store._write
-    started = asyncio.Event()
-    release = threading.Event()
-    loop = asyncio.get_running_loop()
+    item = await manager.register_plugin_subagent(
+        "plugin", PluginSubAgentPreset(name="Private", tools=[tool], scope={"allow": ["session"]}),
+    )
+    def fail_write(*args):
+        raise AssertionError("Plugin unregister must not write configuration")
 
-    def slow_write(items, scopes):
-        loop.call_soon_threadsafe(started.set)
-        if not release.wait(timeout=5):
-            raise TimeoutError("Test write was not released")
-        original_write(items, scopes)
-
-    monkeypatch.setattr(store, "_write", slow_write)
-    task = asyncio.create_task(manager.unregister_plugin_subagent("plugin", item["id"]))
-    try:
-        await asyncio.wait_for(started.wait(), timeout=5)
-        task.cancel()
-    finally:
-        release.set()
-    with pytest.raises(asyncio.CancelledError):
-        await task
+    monkeypatch.setattr(store, "_write", fail_write)
+    assert await manager.unregister_plugin_subagent("plugin", item["id"])
     assert store.list() == []
     assert store.get_scopes() == {}
     assert store.get_plugin_tools(item["id"]) == []
     assert registry._plugin_components["plugin"].subagents == {}
+    assert not store.path.exists()
     restored = SubAgentPresetStore(store.path)
     await restored.initialize()
     assert restored.list() == []

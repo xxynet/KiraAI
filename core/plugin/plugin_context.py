@@ -282,7 +282,8 @@ class PluginContext:
 
         Call during plugin initialization with a core.plugin.SubAgentPreset.
         The plugin ID and preset name identify the registration. Repeated calls
-        update settings from plugin code while preserving session scopes.
+        update settings and scope from plugin code. Populate preset.scope from
+        plugin configuration to let users choose sessions in the plugin schema.
         Presets are read-only in WebUI and exist only while registered.
         BaseTool instances in tools are runtime-only and scoped to this preset.
         Plugin shutdown removes these bindings; initialization must restore them.

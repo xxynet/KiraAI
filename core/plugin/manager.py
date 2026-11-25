@@ -17,7 +17,11 @@ from packaging.version import InvalidVersion, Version
 
 from core.adapter import AdapterManager
 from core.adapter.base import BaseAdapter, BaseCapability
-from core.agent.subagent_presets import PluginSubAgentRegistration, SubAgentPreset as StoredSubAgentPreset
+from core.agent.subagent_presets import (
+    PluginSubAgentRegistration,
+    SubAgentPreset as StoredSubAgentPreset,
+    validate_preset_scope,
+)
 from core.config import VERSION, ConfigError
 from core.config.config_field import BaseConfigField, SectionField, build_fields
 from core.logging_manager import get_logger
@@ -375,6 +379,8 @@ class PluginManager:
             raise TypeError("preset must be a core.plugin.SubAgentPreset instance")
         store = self._subagent_preset_store()
         payload = {item.name: getattr(preset, item.name) for item in fields(preset)}
+        raw_scope = payload.pop("scope")
+        scope = validate_preset_scope(raw_scope) if raw_scope is not None else None
         if not isinstance(preset.tools, list):
             raise TypeError("preset.tools must be a list of names or BaseTool instances")
         instances = {}
@@ -395,13 +401,13 @@ class PluginManager:
         validated = StoredSubAgentPreset.model_validate(payload)
         key = json.dumps([plugin_id, validated.name], ensure_ascii=False)
         identity = f"plugin_preset_{uuid.uuid5(uuid.NAMESPACE_URL, key).hex}"
-        registration = PluginSubAgentRegistration(plugin_id, validated, tuple(instances.values()))
+        registration = PluginSubAgentRegistration(plugin_id, validated, tuple(instances.values()), scope)
         result = await store.register_plugin(identity, registration)
         registry._ensure_components(plugin_id).register_subagent(identity, registration)
         return result
 
     async def unregister_plugin_subagent(
-        self, plugin_id: str, preset_id: str, *, preserve_scopes: bool = False,
+        self, plugin_id: str, preset_id: str,
     ) -> bool:
         store = self._subagent_preset_store()
         comp = registry._plugin_components.get(plugin_id)
@@ -412,7 +418,7 @@ class PluginManager:
                 return False
             raise PermissionError("Subagent preset is not owned by the calling plugin")
         try:
-            removed = await store.unregister_plugin(preset_id, preserve_scopes=preserve_scopes)
+            removed = await store.unregister_plugin(preset_id)
         finally:
             if not store.has_plugin(preset_id):
                 comp.unregister_subagent(preset_id)
@@ -687,7 +693,7 @@ class PluginManager:
             return
         for preset_id in list(comp.subagents):
             try:
-                await self.unregister_plugin_subagent(plugin_id, preset_id, preserve_scopes=True)
+                await self.unregister_plugin_subagent(plugin_id, preset_id)
             except Exception:
                 logger.exception("Failed to clean up subagent preset %s for plugin %s", preset_id, plugin_id)
         for platform in list(comp.adapters):

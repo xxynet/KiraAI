@@ -24,6 +24,18 @@ from .config import AgentExecutionConfig, SubAgentConfig, ToolExecutionConfig
 _PresetScopes = dict[str, dict[str, list[str]]]
 
 
+def validate_preset_scope(scope: object) -> dict[str, list[str]]:
+    """Validate one allow/deny rule and copy its session SID list."""
+    if not isinstance(scope, dict) or len(scope) != 1:
+        raise ValueError("Subagent scope must have one allow or deny rule")
+    mode, sessions = next(iter(scope.items()))
+    if mode not in ("allow", "deny") or not isinstance(sessions, list):
+        raise ValueError("Invalid subagent scope")
+    if any(not isinstance(sid, str) or not sid.strip() for sid in sessions):
+        raise ValueError("Subagent scope session IDs must be non-empty strings")
+    return {mode: list(dict.fromkeys(sessions))}
+
+
 class SubAgentPreset(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -132,6 +144,7 @@ class PluginSubAgentRegistration:
     plugin_id: str
     preset: SubAgentPreset
     tools: tuple[BaseTool, ...] = ()
+    scope: dict[str, list[str]] | None = None
 
     def to_dict(self, identity: str) -> dict:
         return {"id": identity, "plugin_id": self.plugin_id, **self.preset.model_dump()}
@@ -157,8 +170,7 @@ class SubAgentPresetStore:
                 raise TypeError("Subagent presets must be an object")
             scopes = raw.pop("_scope", {})
             items = {identity: SubAgentPreset.model_validate(item) for identity, item in raw.items()}
-            # Plugin scope rules may be loaded before their runtime registrations.
-            self._scopes = self._validate_scopes(scopes)
+            self._scopes = self._validate_scopes(scopes, items)
             self._items = items
 
     def list(self, *, enabled_only: bool = False) -> list[dict]:
@@ -189,7 +201,8 @@ class SubAgentPresetStore:
         raise ValueError(f"Unknown subagent preset: {name}")
 
     def is_preset_allowed(self, identity: str, session_id: str | None) -> bool:
-        scope = self._scopes.get(identity)
+        registration = self._plugin_items.get(identity)
+        scope = registration.scope if registration is not None else self._scopes.get(identity)
         if scope is None:
             return True
         if session_id is None:
@@ -244,40 +257,27 @@ class SubAgentPresetStore:
         )
 
     def get_scopes(self) -> _PresetScopes:
-        items = self._all_items()
         return {
             identity: {mode: list(sessions) for mode, sessions in scope.items()}
             for identity, scope in self._scopes.items()
-            if identity in items
         }
 
     @staticmethod
-    def _validate_scopes(scopes: object, items: dict[str, SubAgentPreset] | None = None) -> _PresetScopes:
+    def _validate_scopes(scopes: object, items: dict[str, SubAgentPreset]) -> _PresetScopes:
         if not isinstance(scopes, dict):
             raise ValueError("Subagent scopes must be an object")
         validated = {}
         for identity, scope in scopes.items():
             if not isinstance(identity, str) or not identity.strip():
                 raise ValueError("Subagent scope IDs must be non-empty strings")
-            if items is not None and identity not in items:
+            if identity not in items:
                 raise ValueError(f"Unknown subagent preset ID: {identity}")
-            if not isinstance(scope, dict) or len(scope) != 1:
-                raise ValueError(f"Subagent scope must have one allow or deny rule: {identity}")
-            mode, sessions = next(iter(scope.items()))
-            if mode not in ("allow", "deny") or not isinstance(sessions, list):
-                raise ValueError(f"Invalid subagent scope: {identity}")
-            if any(not isinstance(sid, str) or not sid.strip() for sid in sessions):
-                raise ValueError(f"Subagent scope session IDs must be non-empty strings: {identity}")
-            validated[identity] = {mode: list(dict.fromkeys(sessions))}
+            validated[identity] = validate_preset_scope(scope)
         return validated
 
     async def replace_scopes(self, scopes: object) -> None:
         async with self._lock:
-            items = self._all_items()
-            validated = {
-                identity: scope for identity, scope in self._scopes.items() if identity not in items
-            }
-            validated.update(self._validate_scopes(scopes, items))
+            validated = self._validate_scopes(scopes, self._items)
             if validated != self._scopes:
                 await self._commit(self._items, validated)
 
@@ -345,22 +345,10 @@ class SubAgentPresetStore:
             self._plugin_items[identity] = registration
             return registration.to_dict(identity)
 
-    async def unregister_plugin(self, identity: str, *, preserve_scopes: bool = False) -> bool:
-        """Drop a runtime index; lifecycle cleanup retains user-owned scope rules."""
+    async def unregister_plugin(self, identity: str) -> bool:
+        """Drop a runtime registration, including its plugin-owned scope."""
         async with self._lock:
-            if identity not in self._plugin_items:
-                return False
-            scopes = dict(self._scopes)
-            scopes.pop(identity, None)
-            if not preserve_scopes and scopes != self._scopes:
-                try:
-                    await self._commit(self._items, scopes)
-                finally:
-                    if identity not in self._scopes:
-                        self._plugin_items.pop(identity, None)
-            else:
-                self._plugin_items.pop(identity, None)
-            return True
+            return self._plugin_items.pop(identity, None) is not None
 
     def has_plugin(self, identity: str) -> bool:
         return identity in self._plugin_items

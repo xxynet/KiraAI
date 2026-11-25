@@ -16,7 +16,7 @@ def isolated_plugin_components(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_register_subagent_is_plugin_owned_and_updates_settings_while_preserving_scopes(tmp_path):
+async def test_register_subagent_is_plugin_owned_and_updates_settings_and_scope(tmp_path):
     from core.agent.subagent_presets import SubAgentPreset as StoredSubAgentPreset
     from core.agent.subagent_presets import ReadOnlyPresetError, SubAgentPresetStore
     from core.plugin import SubAgentPreset
@@ -26,7 +26,9 @@ async def test_register_subagent_is_plugin_owned_and_updates_settings_while_pres
     context.plugin_mgr = Mock(wraps=PluginManager(ctx=context))
     context.plugin_mgr.get_plugin_id_for_module.return_value = "research_plugin"
     context.subagent_mgr = SimpleNamespace(presets=store)
-    defaults = SubAgentPreset(name="Research", instruction_source="custom", instruction="Study")
+    defaults = SubAgentPreset(
+        name="Research", instruction_source="custom", instruction="Study", scope={"allow": ["session"]},
+    )
 
     item = await context.register_subagent(defaults)
     context.plugin_mgr.get_plugin_id_for_module.assert_called_with(__name__)
@@ -37,7 +39,7 @@ async def test_register_subagent_is_plugin_owned_and_updates_settings_while_pres
         await store.save(StoredSubAgentPreset(name="Renamed", enabled=False), item["id"])
     with pytest.raises(ReadOnlyPresetError):
         await store.delete(item["id"])
-    await store.replace_scopes({item["id"]: {"allow": ["session"]}})
+    assert not store.is_preset_allowed(item["id"], "other")
 
     restored = SubAgentPresetStore(store.path)
     await restored.initialize()
@@ -45,13 +47,16 @@ async def test_register_subagent_is_plugin_owned_and_updates_settings_while_pres
     assert restored.list() == []
     defaults.description = "Updated by plugin"
     defaults.enabled = False
+    defaults.scope = {"deny": ["session"]}
     registered = await asyncio.gather(*(context.register_subagent(defaults) for _ in range(3)))
     assert all(result == restored.list()[0] for result in registered)
     assert registered[0]["id"] == item["id"]
     assert registered[0]["name"] == "Research"
     assert registered[0]["description"] == "Updated by plugin"
     assert registered[0]["enabled"] is False
-    assert restored.get_scopes() == {item["id"]: {"allow": ["session"]}}
+    assert restored.get_scopes() == {}
+    assert not restored.is_preset_allowed(item["id"], "session")
+    assert restored.is_preset_allowed(item["id"], "other")
 
     with pytest.raises(ReadOnlyPresetError):
         await restored.delete(item["id"])
@@ -115,7 +120,9 @@ async def test_register_subagent_converts_plugin_fields_without_sharing_lists(tm
         skills=["review"], enabled=False, model="provider:model",
     )
     item = await context.register_subagent(preset)
-    assert store.get(item["id"]).model_dump() == asdict(preset)
+    expected = asdict(preset)
+    expected.pop("scope")
+    assert store.get(item["id"]).model_dump() == expected
     preset.tools.append("mutated")
     preset.skills.append("mutated")
     assert store.get(item["id"]).tools == ["search"]
@@ -198,9 +205,8 @@ async def test_unregister_subagent_removes_owned_preset_tools_and_scopes(tmp_pat
     context.subagent_mgr = SimpleNamespace(presets=store)
     tool = Mock(spec=BaseTool)
     tool.name = "private"
-    item = await context.register_subagent(SubAgentPreset(name="Private", tools=[tool]))
-    other = await context.register_subagent(SubAgentPreset(name="Other"))
-    await store.replace_scopes({item["id"]: {"allow": ["session"]}, other["id"]: {"deny": ["session"]}})
+    item = await context.register_subagent(SubAgentPreset(name="Private", tools=[tool], scope={"allow": ["session"]}))
+    other = await context.register_subagent(SubAgentPreset(name="Other", scope={"deny": ["session"]}))
 
     async def unregister():
         return await context.unregister_subagent(item["id"])
@@ -211,7 +217,8 @@ async def test_unregister_subagent_removes_owned_preset_tools_and_scopes(tmp_pat
     assert results.count(False) == 2
     context.plugin_mgr.get_plugin_id_for_module.assert_called_with(__name__)
     assert store.list() == [other]
-    assert store.get_scopes() == {other["id"]: {"deny": ["session"]}}
+    assert store.get_scopes() == {}
+    assert not store.is_preset_allowed(other["id"], "session")
     assert store.get_plugin_tools(item["id"]) == []
     assert "Private" not in store.build_presets_prompt("other-session").content
     restored = SubAgentPresetStore(store.path)
@@ -222,7 +229,7 @@ async def test_unregister_subagent_removes_owned_preset_tools_and_scopes(tmp_pat
 
 
 @pytest.mark.anyio
-async def test_unregister_subagent_rejects_other_owners_and_keeps_state_on_write_failure(tmp_path, monkeypatch):
+async def test_unregister_subagent_rejects_other_owners_and_does_not_write_user_configuration(tmp_path, monkeypatch):
     from core.agent.subagent_presets import SubAgentPreset as StoredSubAgentPreset
     from core.agent.subagent_presets import SubAgentPresetStore
     from core.plugin import SubAgentPreset
@@ -235,9 +242,8 @@ async def test_unregister_subagent_rejects_other_owners_and_keeps_state_on_write
     context.subagent_mgr = SimpleNamespace(presets=store)
     tool = Mock(spec=BaseTool)
     tool.name = "private"
-    owned = await context.register_subagent(SubAgentPreset(name="Owned", tools=[tool]))
+    owned = await context.register_subagent(SubAgentPreset(name="Owned", tools=[tool], scope={"allow": ["session"]}))
     user = await store.save(StoredSubAgentPreset(name="User"))
-    await store.replace_scopes({owned["id"]: {"allow": ["session"]}})
     snapshot = store.path.read_bytes()
     context.plugin_mgr.get_plugin_id_for_module.return_value = "other"
     for identity in (owned["id"], user["id"]):
@@ -251,11 +257,10 @@ async def test_unregister_subagent_rejects_other_owners_and_keeps_state_on_write
         raise OSError("disk failure")
 
     monkeypatch.setattr("core.agent.subagent_presets.os.replace", fail)
-    with pytest.raises(OSError, match="disk failure"):
-        await context.unregister_subagent(owned["id"])
-    assert store.list() == [user, owned]
-    assert store.get_plugin_tools(owned["id"]) == [tool]
-    assert store.get_scopes() == {owned["id"]: {"allow": ["session"]}}
+    assert await context.unregister_subagent(owned["id"])
+    assert store.list() == [user]
+    assert store.get_plugin_tools(owned["id"]) == []
+    assert store.get_scopes() == {}
     assert store.path.read_bytes() == snapshot
 
 

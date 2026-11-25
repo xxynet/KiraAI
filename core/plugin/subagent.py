@@ -14,6 +14,9 @@ class SubAgentPreset:
     Model selections use provider_id:model_id. Tools accept names or BaseTool
     instances; use tool_mode="custom" to select only those tools. Instances are
     runtime bindings scoped to this preset and must be registered after restart.
+    Scope uses session SIDs: None allows all sessions, {"allow": [...]} allows
+    only those sessions, and {"deny": [...]} excludes them. Plugins can populate
+    the list from their own schema using multi_select with source="session".
     """
 
     name: str
@@ -28,3 +31,4 @@ class SubAgentPreset:
     skills: list[str] = field(default_factory=list)
     enabled: bool = True
     model: str | None = None
+    scope: dict[Literal["allow", "deny"], list[str]] | None = None

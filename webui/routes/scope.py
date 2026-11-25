@@ -63,6 +63,7 @@ class ScopeRoutes(Routes):
             subagent_presets = [
                 {"id": item["id"], "name": item["name"], "enabled": item["enabled"]}
                 for item in manager.presets.list()
+                if item["plugin_id"] is None
             ]
             subagent_scopes = manager.presets.get_scopes()
 

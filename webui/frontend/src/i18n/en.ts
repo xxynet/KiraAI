@@ -624,7 +624,7 @@ export default {
     skills_delete_success: 'Skill deleted successfully',
     skills_delete_error: 'Failed to delete skill',
     scope: 'Scope',
-    scope_tab_desc: 'Control which MCP servers, skills, and subagent presets are available per session',
+    scope_tab_desc: 'Control which MCP servers, skills, and user-created subagent presets are available per session. Plugin presets are managed by their plugins.',
     scope_no_sessions: 'No sessions available. Start a conversation first.',
     scope_edit: 'Edit Scope',
     scope_mcp_section: 'MCP Servers',
