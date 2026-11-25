@@ -15,6 +15,18 @@
       </h2>
     </div>
     <div class="header-actions flex items-center gap-2">
+      <!-- Quick navigation: Ctrl+K works from anywhere, the trigger keeps it usable without the shortcut -->
+      <button
+        type="button"
+        class="quick-search-trigger flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[#f5f5f5] hover:bg-[#e7e7e8] dark:bg-[#121215] dark:hover:bg-[#2b2b2e] text-theme-subtle transition-colors"
+        :aria-label="t('header.quick_search')"
+        :title="t('header.quick_search')"
+        @click="openQuickNav"
+      >
+        <IconSearch class="w-4 h-4 shrink-0" aria-hidden="true" />
+        <span class="quick-search-trigger-label">{{ t('header.quick_search_placeholder') }}</span>
+        <kbd class="quick-search-trigger-kbd">{{ quickSearchShortcut }}</kbd>
+      </button>
       <!-- Update -->
       <button
         type="button"
@@ -88,6 +100,10 @@
           id="mobile-header-menu-panel"
           class="mobile-header-menu-panel absolute right-0 top-full mt-2 min-w-48 rounded-xl border border-gray-200 bg-white/95 p-1.5 text-theme-supporting shadow-lg dark:border-gray-700 dark:bg-[#1b1b1f]/95"
         >
+          <button type="button" class="mobile-header-menu-item hover:bg-gray-100 active:bg-gray-200 focus-visible:bg-gray-100 dark:hover:bg-[#2b2b2e] dark:active:bg-[#3a3a3e] dark:focus-visible:bg-[#2b2b2e]" @click="openQuickNavFromMobileMenu">
+            <IconSearch class="w-5 h-5" />
+            <span>{{ t('header.quick_search') }}</span>
+          </button>
           <button type="button" class="mobile-header-menu-item hover:bg-gray-100 active:bg-gray-200 focus-visible:bg-gray-100 dark:hover:bg-[#2b2b2e] dark:active:bg-[#3a3a3e] dark:focus-visible:bg-[#2b2b2e]" @click="openReleases">
             <IconDownload class="w-5 h-5" :class="hasNewVersion ? 'text-blue-500 dark:text-blue-400' : ''" />
             <span>{{ t('header.releases') }}</span>
@@ -144,17 +160,21 @@ import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 import { useTheme } from '@/composables/useTheme'
 import { useI18n } from 'vue-i18n'
+import { useQuickNav } from '@/composables/useQuickNav'
+import { detectMacPlatform, quickNavShortcutLabel } from '@/utils/quickNavSearch'
 import { getReleases } from '@/api/auth'
 import ReleasesModal from './ReleasesModal.vue'
 import type { ReleaseItem } from '@/types'
 import {
-  IconHamburger, IconMoreVertical, IconDownload, IconBook, IconGithub, IconMoon, IconSun, IconLogout,
+  IconHamburger, IconMoreVertical, IconDownload, IconBook, IconGithub, IconMoon, IconSun, IconLogout, IconSearch,
 } from '@/components/icons'
 
 defineProps<{ title: string; sidebarOpen: boolean }>()
 defineEmits<{ 'toggle-sidebar': [] }>()
 
 const { t } = useI18n()
+const { openQuickNav } = useQuickNav()
+const quickSearchShortcut = quickNavShortcutLabel(detectMacPlatform(navigator.platform))
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const router = useRouter()
@@ -196,6 +216,11 @@ function closeMobileMenuOnOutsideClick(event: PointerEvent) {
   if (!mobileMenu.value?.contains(event.target as Node)) {
     closeMobileMenu()
   }
+}
+
+function openQuickNavFromMobileMenu() {
+  closeMobileMenu()
+  openQuickNav()
 }
 
 function toggleMobileMenu() {
@@ -282,6 +307,35 @@ async function handleLogout() {
 .mobile-header-menu-leave-to {
   opacity: 0;
   transform: translateY(-0.5rem) scale(0.96);
+}
+
+.quick-search-trigger-label {
+  max-width: 6rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  font-size: 0.875rem;
+}
+
+.quick-search-trigger-kbd {
+  padding: 0 0.3rem;
+  border: 1px solid rgb(209 213 219);
+  border-radius: 0.375rem;
+  font-size: 0.6875rem;
+  line-height: 1.5;
+}
+
+.dark .quick-search-trigger-kbd {
+  border-color: rgb(63 63 70);
+}
+
+/* Narrow desktops keep only the icon so the header still fits the page title. */
+@media (max-width: 1279px) {
+  .quick-search-trigger-label,
+  .quick-search-trigger-kbd {
+    display: none;
+  }
 }
 
 @media (max-width: 1024px) {

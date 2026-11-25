@@ -14,6 +14,8 @@ export default {
   header: {
     collapse_menu: '收起侧边栏',
     expand_menu: '展开侧边栏',
+    quick_search: '搜索页面',
+    quick_search_placeholder: '搜索…',
     logout: '退出登录',
     more_actions: '更多操作',
     theme_toggle: '切换主题',
@@ -65,6 +67,16 @@ export default {
     update_stage_done: '完成',
     update_stage_running: '进行中',
     update_stage_pending: '等待中',
+  },
+  quickNav: {
+    title: '快速导航',
+    aria_label: '搜索侧边栏条目',
+    placeholder: '搜索页面、分组或路由…',
+    no_results: '没有与“{query}”匹配的条目',
+    results_count: '{count} 个条目',
+    hint_navigate: '切换',
+    hint_open: '打开',
+    hint_close: '关闭',
   },
   nav: {
     more_features: '更多功能',
