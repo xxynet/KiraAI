@@ -42,6 +42,22 @@ function tokenizeInlineMath(source: string) {
   }
 }
 
+// Inline $$...$$ that appears mid-line never reaches the block-level tokenizer,
+// so catch it with an inline-level rule and render it in display mode.
+function tokenizeDisplayMath(source: string) {
+  if (source[0] !== '$' || source[1] !== '$' || source[2] === '$') return
+  const close = source.indexOf('$$', 2)
+  if (close < 0) return
+  const tex = source.slice(2, close)
+  if (!tex.trim()) return
+  if (tex.includes('\n\n')) return
+  return {
+    type: 'displayMath',
+    raw: source.slice(0, close + 2),
+    tex,
+  }
+}
+
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => {
     const entities: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
@@ -78,6 +94,16 @@ const messageMarkdown = new Marked({
       tokenizer: tokenizeInlineMath,
       renderer(token) {
         return renderMath(token.tex, false) || escapeHtml(token.raw)
+      },
+    },
+    {
+      name: 'displayMath',
+      level: 'inline',
+      start: (source) => source.indexOf('$$'),
+      tokenizer: tokenizeDisplayMath,
+      renderer(token) {
+        const rendered = renderMath(token.tex, true)
+        return rendered ? `<span class="md-math-inline-block">${rendered}</span>` : escapeHtml(token.raw)
       },
     },
   ],
