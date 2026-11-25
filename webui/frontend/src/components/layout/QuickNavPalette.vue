@@ -11,13 +11,11 @@
           role="combobox"
           aria-autocomplete="list"
           aria-controls="quick-nav-results"
-          :aria-expanded="results.length > 0"
+          aria-expanded="true"
           :aria-activedescendant="activeOptionId"
           :aria-label="t('quickNav.aria_label')"
           :placeholder="t('quickNav.placeholder')"
-          @keydown.down.prevent="stepActive(1)"
-          @keydown.up.prevent="stepActive(-1)"
-          @keydown.enter.prevent="activateActive"
+          @keydown="onInputKeydown"
         />
         <kbd class="quick-nav-kbd">Esc</kbd>
       </div>
@@ -28,6 +26,7 @@
         class="quick-nav-results"
         role="listbox"
         :aria-label="t('quickNav.title')"
+        @mousedown.prevent
       >
         <li
           v-for="(entry, index) in results"
@@ -52,10 +51,10 @@
       </ul>
 
       <p v-if="results.length === 0" class="quick-nav-empty">
-        {{ t('quickNav.no_results', { query: query.trim() }) }}
+        {{ query.trim() ? t('quickNav.no_results', { query: query.trim() }) : t('quickNav.no_entries') }}
       </p>
 
-      <div class="quick-nav-footer border-gray-200 dark:border-gray-700">
+      <div class="quick-nav-footer border-gray-200 dark:border-gray-700" @mousedown.prevent>
         <span>{{ t('quickNav.results_count', { count: results.length }) }}</span>
         <span class="quick-nav-footer-hints">
           <kbd class="quick-nav-kbd">↑</kbd>
@@ -138,35 +137,75 @@ function activateActive() {
   if (entry) activate(entry)
 }
 
+function scrollActiveIntoView() {
+  const id = activeOptionId.value
+  if (!id) return
+  listRef.value?.querySelector<HTMLElement>(`#${id}`)?.scrollIntoView({ block: 'nearest' })
+}
+
+/**
+ * Key handling lives in one place so IME composition is honoured: while a
+ * candidate window is open, Enter and Escape belong to the IME, not to the
+ * palette and not to modalFocus's document-level Escape handler.
+ */
+function onInputKeydown(event: KeyboardEvent) {
+  if (event.isComposing) {
+    if (event.key === 'Enter' || event.key === 'Escape') event.stopPropagation()
+    return
+  }
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    stepActive(1)
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    stepActive(-1)
+  } else if (event.key === 'Enter') {
+    event.preventDefault()
+    activateActive()
+  } else if (event.key === 'Home') {
+    event.preventDefault()
+    activeIndex.value = 0
+    scrollActiveIntoView()
+  } else if (event.key === 'End') {
+    event.preventDefault()
+    activeIndex.value = Math.max(0, results.value.length - 1)
+    scrollActiveIntoView()
+  }
+}
+
 function onVisibleChange(visible: boolean) {
   if (!visible) closeQuickNav()
 }
 
-// A new query restarts the highlight at the best match.
+// A new query restarts the highlight at the best match, and the list must not
+// keep a scroll offset from the previous result set.
 watch(query, () => {
   activeIndex.value = 0
+  nextTick(() => {
+    if (listRef.value) listRef.value.scrollTop = 0
+  })
 })
 
 // Plugin menus can load or unload while the palette is open; keep the
-// highlight inside the current result list.
+// highlight inside the current result list and visible.
 watch(() => results.value.length, (length) => {
   if (activeIndex.value >= length) activeIndex.value = Math.max(0, length - 1)
+  nextTick(scrollActiveIntoView)
 })
 
 watch(open, (visible) => {
   if (!visible) return
   query.value = ''
   activeIndex.value = 0
-  nextTick(() => inputRef.value?.focus())
+  nextTick(() => {
+    if (listRef.value) listRef.value.scrollTop = 0
+    inputRef.value?.focus()
+  })
 })
 
 // Keep the highlighted row inside the scroll view.
 watch(activeIndex, () => {
-  nextTick(() => {
-    const id = activeOptionId.value
-    if (!id) return
-    listRef.value?.querySelector<HTMLElement>(`#${id}`)?.scrollIntoView({ block: 'nearest' })
-  })
+  nextTick(scrollActiveIntoView)
 })
 </script>
 
