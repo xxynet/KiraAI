@@ -1103,6 +1103,56 @@ async def test_custom_preset_skips_unavailable_tools_and_restores_them_when_regi
 
 
 @pytest.mark.anyio
+async def test_custom_tools_respect_agent_plugin_enabled_tools(agents, tmp_path):
+    from core.agent.func_tool_manager import FuncToolManager
+    from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
+    from core.config import KiraConfig
+    from core.plugin.builtin_plugins.agent.main import AgentPlugin
+    from core.plugin.builtin_plugins.subagents.main import SubAgentsPlugin
+    from core.provider import LLMRequest
+
+    def make_tool(name):
+        return type(f"Tool_{name}", (RecordingTool,), {"name": name})()
+    manager, sessions, parent, model = agents
+    registry = FuncToolManager()
+    agent_names = ("exec", "manage_background_exec", "read_file")
+    registry.tool_set.add(*(make_tool(n) for n in agent_names), RecordingTool())
+    manager.presets = SubAgentPresetStore(tmp_path / "presets.json")
+    preset = await manager.presets.save(SubAgentPreset(
+        name="CustomAgent", instruction_source="custom", tool_mode="custom", tools=[*agent_names, "record"],
+    ))
+    agent_plugin = AgentPlugin(SimpleNamespace(), {"tools": {"enabled_tools": ["read_file"]}})
+    agent_plugin.exec_sessions = [parent.sid]
+    assert agent_plugin._is_exec_session_allowed(parent.sid)
+    ctx = SimpleNamespace(
+        config=dict.__new__(KiraConfig), session_mgr=sessions, subagent_mgr=manager, tool_mgr=registry,
+        mcp_mgr=None, plugin_mgr=SimpleNamespace(get_plugin_inst=lambda p: agent_plugin if p == "agent" else None),
+    )
+    plugin, event = SubAgentsPlugin(ctx, {}), SimpleNamespace(session=parent)
+
+    async def run_turn(control, **kwargs):
+        req = LLMRequest(tool_set=ToolSet([make_tool(n) for n in agent_names]))
+        await agent_plugin.filter_tools(event, req)
+        await plugin.inject_tools(event, req)
+        info = agent_fields(await req.tool_set.get(control).execute(event, **kwargs))
+        assert (await manager.wait(info["id"], timeout=2))["status"] == "done"
+        return info, {t["function"]["name"] for t in model.chat.await_args.args[0].tools}
+
+    info, tools = await run_turn("spawn_agent", task="run", preset_name=preset["name"])
+    assert tools == {"read_file", "record"}
+    agent_plugin.plugin_cfg["tools"]["enabled_tools"] = ["read_file", "exec"]
+    manager._agents.clear()
+    _, tools = await run_turn("followup_task", agent_id=info["id"], message="enabled")
+    assert tools == {*agent_names, "record"}
+    agent_plugin.plugin_cfg["tools"]["enabled_tools"] = ["read_file"]
+    _, tools = await run_turn("send_message", agent_id=info["id"], message="disabled")
+    assert tools == {"read_file", "record"}
+    req = LLMRequest(tool_set=registry.build_tool_set())
+    await plugin.inject_tools(event, req)
+    assert [t.name for t in req.tool_set.get("spawn_agent")._custom_tools(["exec", "read_file"]).tools] == ["read_file"]
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("persona_id", [None, "reviewer"])
 @pytest.mark.parametrize("instruction_source", ["persona", "mixed"])
 async def test_preset_persona_follows_edits_for_existing_and_restored_agents(

@@ -356,8 +356,8 @@ class AgentPlugin(BasePlugin):
         logger.warning(f"Invalid {key} value; using default of {default} seconds")
         return default
 
-    @on.llm_request(priority=Priority.LOW)
-    async def filter_tools(self, event: KiraMessageBatchEvent, req: LLMRequest, *_):
+    def get_disabled_tool_names(self) -> set[str]:
+        """Return agent tool names disabled by the plugin's enabled_tools config."""
         tools_cfg = self.plugin_cfg.get("tools")
         enabled = tools_cfg.get("enabled_tools") if isinstance(tools_cfg, dict) else None
         if enabled is None:
@@ -367,7 +367,11 @@ class AgentPlugin(BasePlugin):
             enabled.add("manage_background_exec")
         else:
             enabled.discard("manage_background_exec")
-        disabled = set(ALL_TOOL_NAMES) - enabled
+        return set(ALL_TOOL_NAMES) - enabled
+
+    @on.llm_request(priority=Priority.LOW)
+    async def filter_tools(self, event: KiraMessageBatchEvent, req: LLMRequest, *_):
+        disabled = self.get_disabled_tool_names()
         if disabled:
             req.tool_set.remove(*disabled)
 

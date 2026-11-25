@@ -38,13 +38,30 @@ class SubAgentTool(BaseTool):
     async def _get_source(self):
         return await self.ctx.session_mgr.get_session(self.source.sid, ensure_session=True)
 
+    def _disabled_agent_tools(self) -> set[str]:
+        plugin_mgr = getattr(self.ctx, "plugin_mgr", None)
+        get_inst = getattr(plugin_mgr, "get_plugin_inst", None)
+        agent_plugin = get_inst("agent") if callable(get_inst) else None
+        if agent_plugin is None:
+            ctx_get_inst = getattr(self.ctx, "get_plugin_inst", None)
+            if callable(ctx_get_inst):
+                try:
+                    agent_plugin = ctx_get_inst("agent")
+                except AttributeError:
+                    agent_plugin = None
+        get_disabled = getattr(agent_plugin, "get_disabled_tool_names", None)
+        return set(get_disabled()) if callable(get_disabled) else set()
+
     def _custom_tools(self, names: list[str], preset_id: str | None = None) -> ToolSet:
+        disabled_tools = self._disabled_agent_tools()
         pool = self.ctx.tool_mgr.build_tool_set()
+        if disabled_tools:
+            pool.remove(*disabled_tools)
         selected = []
         private_names = {tool.name for tool in self.ctx.subagent_mgr.presets.get_plugin_tools(preset_id)}
         server_map = self.ctx.mcp_mgr.get_tool_server_map() if self.ctx.mcp_mgr else {}
         for name in names:
-            if name in private_names:
+            if name in private_names or name in disabled_tools:
                 continue
             tool = self.parent_tools.get(name)
             if tool is None:
