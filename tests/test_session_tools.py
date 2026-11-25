@@ -307,18 +307,18 @@ async def test_request_local_history_tools_log_arguments_and_results(session_plu
     tools = manager.build_tool_set()
     assert "session_view" not in tools and "get_message_history" not in tools
     await session_plugin.inject_session_prompt(SimpleNamespace(sid=SID), LLMRequest(tool_set=tools))
-    assert "session_view" in tools and "get_message_history" in tools and "session_send" in tools
+    assert all(name in tools for name in ("session_view", "search_messages", "read_messages", "session_send"))
     monkeypatch.setattr(event_handler_reg, "get_handlers", lambda **kwargs: [])
     log = Mock()
     monkeypatch.setattr(tool_executor.tool_logger, "info", log)
     await archive_text(session_plugin.ctx.message_history, "history-keyword", "one")
     response = LLMResponse("")
     response.tool_calls = [{"id": "query", "function": {
-        "name": "get_message_history", "arguments": '{"keyword": "history-keyword"}',
+        "name": "search_messages", "arguments": '{"query": "history-keyword"}',
     }}]
     await manager.execute_tool(SimpleNamespace(sid=SID, is_stopped=False), response, tools)
     assert "history-keyword" in response.tool_results[0]["content"]
-    log.assert_any_call("get_message_history args: {'keyword': 'history-keyword'}")
+    log.assert_any_call("search_messages args: {'query': 'history-keyword'}")
     assert log.call_args.args == (f"tool_result: {response.tool_results[0]['content']}",)
 
 def test_session_tools_config_schema_has_matching_english_and_chinese_fields():
@@ -782,8 +782,8 @@ async def test_read_tool_switches_inject_request_local_schemas_and_instructions(
     await session_plugin.inject_session_prompt(SimpleNamespace(sid=SID), request)
     schemas = {item["function"]["name"] for item in request.tool_set.to_list()}
     instructions = request.system_prompt[0].content
-    for name in ("session_view", "get_message_history"):
-        enabled = config.get(f"enable_{name}", True)
+    for name in ("session_view", "search_messages", "read_messages"):
+        enabled = session_plugin._tool_enabled(name)
         assert (name in schemas) is enabled
         assert (name in instructions) is enabled
     assert "session_send" in schemas and "session_send" in instructions
@@ -795,7 +795,7 @@ async def test_read_tool_switches_inject_request_local_schemas_and_instructions(
     from core.utils.tool_utils import BaseTool
 
     assert set(registry._plugin_components["kira_session_plugin"].tools) == {"session_send"}
-    for name in ("session_view", "get_message_history"):
+    for name in ("session_view", "search_messages", "read_messages"):
         if name in request.tool_set:
             assert isinstance(request.tool_set.get(name), BaseTool)
 
@@ -805,8 +805,8 @@ async def test_read_tool_switches_inject_request_local_schemas_and_instructions(
         system_prompt=[Prompt("", name="tools")],
     )
     await session_plugin.inject_session_prompt(SimpleNamespace(sid=SID), next_request)
-    assert "session_view" in next_request.tool_set and "get_message_history" in next_request.tool_set
-    for name in ("session_view", "get_message_history"):
+    assert "session_view" in next_request.tool_set and "search_messages" in next_request.tool_set and "read_messages" in next_request.tool_set
+    for name in ("session_view", "search_messages", "read_messages"):
         if name in request.tool_set:
             assert next_request.tool_set.get(name) is not request.tool_set.get(name)
 
@@ -815,31 +815,43 @@ async def test_read_tool_switches_inject_request_local_schemas_and_instructions(
     await session_plugin.inject_session_prompt(SimpleNamespace(sid=SID), disabled_request)
     assert "session_view" not in disabled_request.tool_set
     assert "get_message_history" not in disabled_request.tool_set
+    assert "search_messages" not in disabled_request.tool_set
+    assert "read_messages" not in disabled_request.tool_set
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("tool_name", ["session_view", "get_message_history"])
+@pytest.mark.parametrize("tool_name", ["session_view", "search_messages", "read_messages"])
 async def test_disabled_read_tool_rejects_calls_before_querying(session_plugin, tool_name, monkeypatch):
     """Disabled tools cannot query data through residual or direct invocations."""
-    session_plugin.plugin_cfg = {f"enable_{tool_name}": False}
-    get_session = AsyncMock()
-    get_messages = AsyncMock()
-    list_sessions = AsyncMock()
-    monkeypatch.setattr(session_plugin.ctx.session_mgr, "get_session", get_session)
-    monkeypatch.setattr(session_plugin.ctx.message_history, "get_messages", get_messages)
-    monkeypatch.setattr(session_plugin.ctx.message_history, "list_sessions", list_sessions)
+    config_name = "session_view" if tool_name == "session_view" else "get_message_history"
+    session_plugin.plugin_cfg = {f"enable_{config_name}": False}
+    queries = []
+    for owner, method in (
+        (session_plugin.ctx.session_mgr, "get_session"),
+        (session_plugin.ctx.message_history, "search_messages"),
+        (session_plugin.ctx.message_history, "read_messages"),
+        (session_plugin.ctx.message_history, "list_sessions"),
+    ):
+        query = AsyncMock()
+        monkeypatch.setattr(owner, method, query)
+        queries.append(query)
 
     from core.plugin.builtin_plugins.session_tools.tools import (
-        GetMessageHistoryTool,
+        ReadMessagesTool,
+        SearchMessagesTool,
         SessionViewTool,
     )
 
-    tool_type = SessionViewTool if tool_name == "session_view" else GetMessageHistoryTool
-    result = session_result(await tool_type(session_plugin).execute(SimpleNamespace(sid=SID)))
-    assert result == {"error": f"{tool_name} is disabled"}
-    get_session.assert_not_awaited()
-    get_messages.assert_not_awaited()
-    list_sessions.assert_not_awaited()
+    tool_type = {
+        "session_view": SessionViewTool,
+        "search_messages": SearchMessagesTool,
+        "read_messages": ReadMessagesTool,
+    }[tool_name]
+    arguments = {"query": "test"} if tool_name == "search_messages" else {}
+    result = await tool_type(session_plugin).execute(SimpleNamespace(sid=SID), **arguments)
+    assert result == f"Error: {tool_name} is disabled"
+    for query in queries:
+        query.assert_not_awaited()
     session_plugin.ctx.adapter_mgr.get_adapter.assert_not_called()
 
 

@@ -53,10 +53,13 @@ def _message_chain_matches(chain: list[dict], keyword: str, *, depth: int = 0) -
     return bool(text_run) and keyword in "".join(text_run).casefold()
 
 
-async def _matching_message_records(records: list[MessageRecord], keyword: str) -> list[MessageRecord]:
+async def _matching_message_records(
+    records: list[MessageRecord], keyword: str, terms: list[str] | None = None,
+) -> list[MessageRecord]:
     """Finish in-flight matching before a cancelled search releases its shared slot."""
     task = asyncio.create_task(asyncio.to_thread(
-        lambda: [record for record in records if _message_chain_matches(record.chain, keyword)],
+        lambda: [record for record in records
+                 if all(_message_chain_matches(record.chain, term) for term in (terms or [keyword]))],
     ))
     try:
         return await asyncio.shield(task)
@@ -146,6 +149,8 @@ class MessageHistoryMixin:
         limit: int = 50, llm_message_id: str | None = None, internal_message_id: str | None = None,
         platform_message_id: str | int | None = None, self_id: str | None = None,
         direction: str | None = None, keyword: str | None = None,
+        match_all: bool = False, author: str | None = None,
+        sent_after: int | None = None, sent_before: int | None = None,
     ) -> dict:
         """Search visible text before pagination, sharing two scan slots across callers.
 
@@ -156,12 +161,28 @@ class MessageHistoryMixin:
             raise ValueError("limit must be an integer between 1 and 200")
         if keyword is not None and (not isinstance(keyword, str) or len(keyword) > 200):
             raise ValueError("keyword must be a string of at most 200 characters")
+        for name, value in (("sent_after", sent_after), ("sent_before", sent_before)):
+            if value is not None and (isinstance(value, bool) or not isinstance(value, int)):
+                raise ValueError(f"{name} must be an integer Unix timestamp in seconds")
+        if sent_after is not None and sent_before is not None and sent_after >= sent_before:
+            raise ValueError("sent_after must be earlier than sent_before")
+        if author is not None and (not isinstance(author, str) or not author):
+            raise ValueError("author must be a non-empty sender ID")
         keyword = keyword.casefold() if keyword else None
+        terms = keyword.split() if keyword and match_all else None
+        if match_all and not terms:
+            keyword = None
         conditions = self._message_record_conditions(
             internal_message_id=internal_message_id, session_id=session_id,
             platform_message_id=platform_message_id, self_id=self_id, direction=direction,
             llm_message_id=llm_message_id or None,
         )
+        if author is not None:
+            conditions.append(MessageRecord.sender_id == author)
+        if sent_after is not None:
+            conditions.append(MessageRecord.timestamp > sent_after)
+        if sent_before is not None:
+            conditions.append(MessageRecord.timestamp < sent_before)
         query = select(MessageRecord).where(*conditions)
         async with AsyncExitStack() as resources:
             if keyword:
@@ -169,7 +190,7 @@ class MessageHistoryMixin:
             session = await resources.enter_async_context(self.db.get_session())
             if cursor:
                 previous = await session.scalar(query.where(MessageRecord.id == cursor))
-                if previous is None or (keyword and not await _matching_message_records([previous], keyword)):
+                if previous is None or (keyword and not await _matching_message_records([previous], keyword, terms)):
                     raise ValueError("Invalid message cursor")
                 query = query.where(or_(
                     MessageRecord.created_at < previous.created_at,
@@ -181,7 +202,7 @@ class MessageHistoryMixin:
                 rows = []
                 try:
                     async for batch in stream.partitions(100):
-                        matches = await _matching_message_records(batch, keyword)
+                        matches = await _matching_message_records(batch, keyword, terms)
                         rows.extend(matches[:limit + 1 - len(rows)])
                         if len(rows) > limit:
                             break
@@ -191,6 +212,40 @@ class MessageHistoryMixin:
                 rows = list((await session.scalars(query.limit(limit + 1))).all())
         return {"messages": [self._message_record(row) for row in rows[:limit]],
                 "next_cursor": rows[limit - 1].id if len(rows) > limit else None}
+
+    async def read_message_records(
+        self, session_id: str, *, message_id: str | None = None,
+        before: int = 10, after: int = 10,
+    ) -> dict:
+        """Read an anchor and its neighbors in stable archive order within one session."""
+        for name, count in (("before", before), ("after", after)):
+            if isinstance(count, bool) or not isinstance(count, int) or not 0 <= count <= 50:
+                raise ValueError(f"{name} must be an integer between 0 and 50")
+        if message_id is not None and (not isinstance(message_id, str) or not message_id):
+            raise ValueError("message_id must be a non-empty internal archive ID")
+        query = select(MessageRecord).where(MessageRecord.session_id == session_id)
+        async with self.db.get_session() as session:
+            anchor_query = query if message_id is None else query.where(MessageRecord.id == message_id)
+            anchor = await session.scalar(anchor_query.order_by(
+                MessageRecord.created_at.desc(), MessageRecord.id.desc()).limit(1))
+            if anchor is None:
+                if message_id is not None:
+                    raise ValueError("Message not found in target session")
+                return {"messages": [], "anchor_id": None, "has_more_before": False, "has_more_after": False}
+            older = list((await session.scalars(query.where(or_(
+                MessageRecord.created_at < anchor.created_at,
+                and_(MessageRecord.created_at == anchor.created_at, MessageRecord.id < anchor.id),
+            )).order_by(MessageRecord.created_at.desc(), MessageRecord.id.desc()).limit(before + 1))).all())
+            newer = list((await session.scalars(query.where(or_(
+                MessageRecord.created_at > anchor.created_at,
+                and_(MessageRecord.created_at == anchor.created_at, MessageRecord.id > anchor.id),
+            )).order_by(MessageRecord.created_at, MessageRecord.id).limit(after + 1))).all())
+            return {
+                "messages": [self._message_record(row) for row in [*reversed(older[:before]), anchor, *newer[:after]]],
+                "anchor_id": anchor.id,
+                "has_more_before": len(older) > before,
+                "has_more_after": len(newer) > after,
+            }
 
     async def list_message_sessions(self, session_id: str | None = None) -> list[dict]:
         """List retained session counts, optionally restricted to one routing SID."""
