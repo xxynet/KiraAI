@@ -87,6 +87,17 @@ test('the shortcut is Ctrl+K, Cmd+K or the Alt+K fallback', () => {
   assert.equal(isQuickNavShortcut({ key: 'k', ctrlKey: true, repeat: true }), false)
 })
 
+test('non-Latin keyboard layouts keep the shortcut through the physical key', () => {
+  // A Russian layout maps the K key to "л", but the event still reports KeyK.
+  assert.equal(isQuickNavShortcut({ key: 'л', code: 'KeyK', ctrlKey: true }), true)
+  assert.equal(isQuickNavShortcut({ key: 'л', code: 'KeyK', metaKey: true }), true)
+  assert.equal(isQuickNavShortcut({ key: 'л', code: 'KeyK', altKey: true }), true)
+  assert.equal(isQuickNavShortcut({ key: 'л', code: 'KeyJ', ctrlKey: true }), false)
+  assert.equal(isQuickNavShortcut({ key: 'л', code: 'KeyK' }), false)
+  assert.equal(isQuickNavShortcut({ key: 'л', code: 'KeyK', ctrlKey: true, shiftKey: true }), false)
+  assert.equal(isQuickNavShortcut({ key: 'л', code: 'KeyK', ctrlKey: true, repeat: true }), false)
+})
+
 test('the shortcut hint follows the platform', () => {
   assert.equal(detectMacPlatform('MacIntel'), true)
   assert.equal(detectMacPlatform('iPhone'), true)

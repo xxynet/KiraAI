@@ -17,7 +17,10 @@ export interface QuickNavTarget {
 }
 
 export interface QuickNavShortcutEvent {
+  /** Layout-dependent character, e.g. "k" or "л" on a Cyrillic layout. */
   key: string
+  /** Layout-independent physical key, e.g. "KeyK". */
+  code?: string
   ctrlKey?: boolean
   metaKey?: boolean
   altKey?: boolean
@@ -83,8 +86,11 @@ export function searchQuickNav<T extends QuickNavTarget>(targets: readonly T[], 
 export function isQuickNavShortcut(event: QuickNavShortcutEvent): boolean {
   if (event.repeat) return false
   if (event.shiftKey) return false
-  if (event.key.length !== 1 || event.key.toLowerCase() !== 'k') return false
-  return Boolean(event.ctrlKey || event.metaKey || event.altKey)
+  if (!event.ctrlKey && !event.metaKey && !event.altKey) return false
+  // event.key depends on the keyboard layout: a Cyrillic layout reports "л" for
+  // the K key, so the layout-independent physical code is accepted as well.
+  if (event.code === 'KeyK') return true
+  return event.key.length === 1 && event.key.toLowerCase() === 'k'
 }
 
 export function detectMacPlatform(platform: string): boolean {
