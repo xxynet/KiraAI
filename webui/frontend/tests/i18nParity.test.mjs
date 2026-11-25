@@ -47,11 +47,13 @@ function flatten(messages, prefix = '', flat = {}) {
  * differ between locales, so they are intentionally not compared here.
  */
 function placeholders(message) {
-  const names = []
+  // Names are collected as a set: plural branches repeat the same placeholder
+  // ("{count} item | {count} items"), and only the set of names matters.
+  const names = new Set()
   const pattern = /\{([a-zA-Z0-9_]+)\}/g
   let match
-  while ((match = pattern.exec(message)) !== null) names.push(match[1])
-  return names.sort().join(', ')
+  while ((match = pattern.exec(message)) !== null) names.add(match[1])
+  return [...names].sort().join(', ')
 }
 
 const catalogues = Object.fromEntries(
@@ -106,4 +108,10 @@ test('each key keeps the same placeholders in both locales', () => {
     [],
     `${mismatched.length} key(s) use different placeholders per locale:\n${mismatched.join('\n')}`,
   )
+})
+
+test('repeated placeholders across plural branches compare as a set', () => {
+  assert.equal(placeholders('{count} item | {count} items'), placeholders('{count} 项'))
+  assert.notEqual(placeholders('{count} items'), placeholders('{total} items'))
+  assert.notEqual(placeholders('{count} items'), placeholders('items'))
 })
