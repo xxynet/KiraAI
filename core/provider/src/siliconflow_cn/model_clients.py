@@ -108,29 +108,29 @@ class SiliconflowEmbeddingClient(EmbeddingModelClient):
         timeout_sec = self.model.model_config.get("timeout", 60) if self.model.model_config else 60
         slow_threshold = self.model.model_config.get("slow_request_threshold", 5.0) if self.model.model_config else 5.0
 
-        client = AsyncOpenAI(
+        async with AsyncOpenAI(
             api_key=self.model.provider_config.get("api_key", ""),
             base_url="https://api.siliconflow.cn/v1",
             timeout=timeout_sec
-        )
-        try:
-            start_time = time.perf_counter()
-            response = await client.embeddings.create(
-                model=self.model.model_name,
-                input=texts
-            )
-            elapsed = round(time.perf_counter() - start_time, 2)
-            if elapsed > slow_threshold:
-                logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_name})")
-            if not isinstance(getattr(response, "data", None), list):
-                raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
-            return [item.embedding for item in response.data]
-        except (APIStatusError, APITimeoutError, APIConnectionError) as e:
-            logger.error(f"Embedding API error: {e}")
-            return []
-        except Exception as e:
-            logger.error(f"Embedding error: {e}")
-            return []
+        ) as client:
+            try:
+                start_time = time.perf_counter()
+                response = await client.embeddings.create(
+                    model=self.model.model_name,
+                    input=texts
+                )
+                elapsed = round(time.perf_counter() - start_time, 2)
+                if elapsed > slow_threshold:
+                    logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_name})")
+                if not isinstance(getattr(response, "data", None), list):
+                    raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
+                return [item.embedding for item in response.data]
+            except (APIStatusError, APITimeoutError, APIConnectionError) as e:
+                logger.error(f"Embedding API error: {e}")
+                return []
+            except Exception as e:
+                logger.error(f"Embedding error: {e}")
+                return []
 
 
 class SiliconflowRerankClient(RerankModelClient):

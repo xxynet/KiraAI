@@ -27,20 +27,20 @@ class VolcengineImageClient(ImageModelClient):
         super().__init__(model)
 
     async def text_to_image(self, prompt) -> Image:
-        client = AsyncOpenAI(
+        async with AsyncOpenAI(
             base_url=self.model.provider_config.get("base_url", ""),
             api_key=self.model.provider_config.get("api_key", ""),
-        )
-        image_size = self.model.model_config.get("size", None)
-        images_response = await client.images.generate(
-            model=self.model.model_name,
-            prompt=prompt,
-            size=image_size if image_size else None,
-            response_format="url",
-            extra_body={
-                "watermark": False,
-            },
-        )
+        ) as client:
+            image_size = self.model.model_config.get("size", None)
+            images_response = await client.images.generate(
+                model=self.model.model_name,
+                prompt=prompt,
+                size=image_size if image_size else None,
+                response_format="url",
+                extra_body={
+                    "watermark": False,
+                },
+            )
 
         if not isinstance(getattr(images_response, "data", None), list):
             raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(images_response).__name__}): {images_response!r}")
@@ -51,21 +51,21 @@ class VolcengineImageClient(ImageModelClient):
             image = [image]
         ref_imgs = [await img.to_data_url() for img in image]
 
-        client = AsyncOpenAI(
+        async with AsyncOpenAI(
             base_url=self.model.provider_config.get("base_url", "https://ark.cn-beijing.volces.com/api/v3"),
             api_key=self.model.provider_config.get("api_key", ""),
-        )
-        image_size = self.model.model_config.get("size", None)
-        images_response = await client.images.generate(
-            model=self.model.model_name,
-            prompt=prompt,
-            size=image_size if image_size else None,
-            response_format="url",
-            extra_body={
-                "image": ref_imgs,
-                "watermark": False
-            }
-        )
+        ) as client:
+            image_size = self.model.model_config.get("size", None)
+            images_response = await client.images.generate(
+                model=self.model.model_name,
+                prompt=prompt,
+                size=image_size if image_size else None,
+                response_format="url",
+                extra_body={
+                    "image": ref_imgs,
+                    "watermark": False
+                }
+            )
         if not isinstance(getattr(images_response, "data", None), list):
             raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(images_response).__name__}): {images_response!r}")
         return Image(image=images_response.data[0].url)
@@ -180,26 +180,26 @@ class VolcengineEmbeddingClient(EmbeddingModelClient):
         except (TypeError, ValueError):
             slow_threshold = None
 
-        client = AsyncOpenAI(
+        async with AsyncOpenAI(
             api_key=self.model.provider_config.get("api_key", ""),
             base_url=self.model.provider_config.get("base_url", ""),
             timeout=validated_timeout
-        )
-        try:
-            start_time = time.perf_counter()
-            response = await client.embeddings.create(
-                model=self.model.model_name,
-                input=texts
-            )
-            elapsed = round(time.perf_counter() - start_time, 2)
-            if slow_threshold is not None and elapsed > slow_threshold:
-                logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_name})")
-            if not isinstance(getattr(response, "data", None), list):
-                raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
-            return [item.embedding for item in response.data]
-        except (APIStatusError, APITimeoutError, APIConnectionError) as e:
-            logger.error(f"Embedding API error: {e}")
-            return []
-        except Exception as e:
-            logger.error(f"Embedding error: {e}")
-            return []
+        ) as client:
+            try:
+                start_time = time.perf_counter()
+                response = await client.embeddings.create(
+                    model=self.model.model_name,
+                    input=texts
+                )
+                elapsed = round(time.perf_counter() - start_time, 2)
+                if slow_threshold is not None and elapsed > slow_threshold:
+                    logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_name})")
+                if not isinstance(getattr(response, "data", None), list):
+                    raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
+                return [item.embedding for item in response.data]
+            except (APIStatusError, APITimeoutError, APIConnectionError) as e:
+                logger.error(f"Embedding API error: {e}")
+                return []
+            except Exception as e:
+                logger.error(f"Embedding error: {e}")
+                return []

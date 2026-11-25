@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
+from contextlib import aclosing
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -190,27 +191,28 @@ class PersonaGenerator:
         tool_call_fragments: dict[int, dict] = {}
         complete_tool_calls: list[dict] = []
         emitted_text = False
-        async for chunk in self.llm_client.chat_stream(request, max_tokens=PERSONA_GENERATION_MAX_TOKENS):
-            if chunk.delta_text:
-                emitted_text = True
-                yield PersonaTextDelta(chunk.delta_text)
-            for fragment in chunk.tool_calls_delta:
-                if "index" not in fragment:
-                    complete_tool_calls.append(fragment)
-                    continue
-                index = fragment["index"]
-                tool_call = tool_call_fragments.setdefault(index, {
-                    "id": "",
-                    "type": "function",
-                    "function": {"name": "", "arguments": ""},
-                })
-                if fragment.get("id"):
-                    tool_call["id"] = fragment["id"]
-                function = fragment.get("function") or {}
-                if function.get("name"):
-                    tool_call["function"]["name"] += function["name"]
-                if function.get("arguments"):
-                    tool_call["function"]["arguments"] += function["arguments"]
+        async with aclosing(self.llm_client.chat_stream(request, max_tokens=PERSONA_GENERATION_MAX_TOKENS)) as stream:
+            async for chunk in stream:
+                if chunk.delta_text:
+                    emitted_text = True
+                    yield PersonaTextDelta(chunk.delta_text)
+                for fragment in chunk.tool_calls_delta:
+                    if "index" not in fragment:
+                        complete_tool_calls.append(fragment)
+                        continue
+                    index = fragment["index"]
+                    tool_call = tool_call_fragments.setdefault(index, {
+                        "id": "",
+                        "type": "function",
+                        "function": {"name": "", "arguments": ""},
+                    })
+                    if fragment.get("id"):
+                        tool_call["id"] = fragment["id"]
+                    function = fragment.get("function") or {}
+                    if function.get("name"):
+                        tool_call["function"]["name"] += function["name"]
+                    if function.get("arguments"):
+                        tool_call["function"]["arguments"] += function["arguments"]
 
         complete_tool_calls.extend(tool_call_fragments.values())
         if complete_tool_calls:

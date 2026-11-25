@@ -106,26 +106,26 @@ class ModelScopeEmbeddingClient(EmbeddingModelClient):
             model_cfg.get("slow_request_threshold", None) if isinstance(model_cfg, dict) else None
         )
 
-        client = AsyncOpenAI(
+        async with AsyncOpenAI(
             api_key=self.model.provider_config.get("api_key", ""),
             base_url="https://api-inference.modelscope.cn/v1",
             timeout=timeout_sec
-        )
-        try:
-            start_time = time.perf_counter()
-            response = await client.embeddings.create(
-                model=self.model.model_name,
-                input=texts
-            )
-            elapsed = round(time.perf_counter() - start_time, 2)
-            if slow_threshold is not None and elapsed > slow_threshold:
-                logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_name})")
-            if not isinstance(getattr(response, "data", None), list):
-                raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
-            return [item.embedding for item in response.data]
-        except (APIStatusError, APITimeoutError, APIConnectionError) as e:
-            logger.error(f"Embedding API error: {e}")
-            return []
-        except Exception as e:
-            logger.error(f"Embedding error: {e}")
-            return []
+        ) as client:
+            try:
+                start_time = time.perf_counter()
+                response = await client.embeddings.create(
+                    model=self.model.model_name,
+                    input=texts
+                )
+                elapsed = round(time.perf_counter() - start_time, 2)
+                if slow_threshold is not None and elapsed > slow_threshold:
+                    logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_name})")
+                if not isinstance(getattr(response, "data", None), list):
+                    raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
+                return [item.embedding for item in response.data]
+            except (APIStatusError, APITimeoutError, APIConnectionError) as e:
+                logger.error(f"Embedding API error: {e}")
+                return []
+            except Exception as e:
+                logger.error(f"Embedding error: {e}")
+                return []

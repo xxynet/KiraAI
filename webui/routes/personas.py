@@ -1,5 +1,6 @@
 import json
 from collections.abc import AsyncIterator
+from contextlib import aclosing
 
 from fastapi import Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse, Response, StreamingResponse
@@ -271,24 +272,25 @@ class PersonasRoutes(Routes):
                     OpenAIMessage(role=message.role, content=message.content)
                     for message in payload.messages
                 ]
-                async for result in PersonaGenerator(client).stream_respond(messages, lang):
-                    if isinstance(result, PersonaTextDelta):
-                        yield self._sse_event({"type": "text", "content": result.content})
-                    elif isinstance(result, PersonaQuestion):
-                        yield self._sse_event({
-                            "type": "question",
-                            "question": result.question,
-                            "options": result.options,
-                            "allow_custom": result.allow_custom,
-                        })
-                    else:
-                        yield self._sse_event({
-                            "type": "proposal",
-                            "name": result.name,
-                            "format": result.format,
-                            "content": result.content,
-                            "chat_rules": result.chat_rules,
-                        })
+                async with aclosing(PersonaGenerator(client).stream_respond(messages, lang)) as results:
+                    async for result in results:
+                        if isinstance(result, PersonaTextDelta):
+                            yield self._sse_event({"type": "text", "content": result.content})
+                        elif isinstance(result, PersonaQuestion):
+                            yield self._sse_event({
+                                "type": "question",
+                                "question": result.question,
+                                "options": result.options,
+                                "allow_custom": result.allow_custom,
+                            })
+                        else:
+                            yield self._sse_event({
+                                "type": "proposal",
+                                "name": result.name,
+                                "format": result.format,
+                                "content": result.content,
+                                "chat_rules": result.chat_rules,
+                            })
             except PersonaGenerationError as exc:
                 logger.warning("Persona generator returned an invalid streamed result: %s", exc)
                 yield self._sse_event({"type": "error", "message": "Persona generator returned an invalid response"})

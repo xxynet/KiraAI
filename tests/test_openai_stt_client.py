@@ -1,5 +1,6 @@
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -38,12 +39,16 @@ async def test_openai_compatible_stt_sends_audio_path_and_optional_settings(tmp_
             model_config={"language": "zh", "prompt": "Names: KiraAI"},
         )
     )
-    client._build_client = lambda: SimpleNamespace(
+    sdk_client = MagicMock(
         audio=SimpleNamespace(transcriptions=transcriptions)
     )
 
+    sdk_client.__aenter__.return_value = sdk_client
+    client._build_client = lambda: sdk_client
+
     text = await client.speech_to_text(_FakeRecord(str(audio_path)))
 
+    sdk_client.__aexit__.assert_awaited_once()
     assert text == "transcribed text"
     assert transcriptions.kwargs == {
         "model": "transcription-model",
