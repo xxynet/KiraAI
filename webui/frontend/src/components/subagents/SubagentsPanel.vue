@@ -67,6 +67,7 @@
         <div class="flex items-start justify-between gap-3 mb-3">
           <div class="min-w-0">
             <h4 class="text-base font-semibold text-theme-high truncate" :title="preset.name">{{ preset.name }}</h4>
+            <p class="mt-1 text-xs text-theme-subtle break-all">{{ preset.plugin_id ? $t('plugin.subagents.plugin_source', { plugin: preset.plugin_id }) : $t('plugin.subagents.user_source') }}</p>
             <p class="mt-1 text-xs text-theme-subtle">{{ $t(preset.max_steps === -1 ? 'plugin.subagents.summary_unlimited' : 'plugin.subagents.summary', { steps: preset.max_steps, mode: $t('plugin.subagents.mode_' + preset.tool_mode) }) }}</p>
           </div>
           <button
@@ -75,7 +76,7 @@
             :class="preset.enabled ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500' : 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600'"
             :aria-pressed="preset.enabled"
             :aria-label="$t('plugin.subagents.toggle_label', { name: preset.name })"
-            :disabled="operationsBusy"
+            :disabled="operationsBusy || !!preset.plugin_id"
             @click.stop="togglePreset(preset)"
           >
             <span
@@ -93,8 +94,9 @@
               class="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-theme-body hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-800 transition-colors disabled:opacity-50"
               :disabled="operationsBusy"
               @click.stop="openEditor(preset)"
-            >{{ $t('plugin.configure') }}</button>
+            >{{ $t(preset.plugin_id ? 'plugin.subagents.view' : 'plugin.configure') }}</button>
             <button
+              v-if="!preset.plugin_id"
               type="button"
               class="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors disabled:opacity-50"
               :disabled="operationsBusy"
@@ -115,7 +117,7 @@
     <form class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full flex flex-col max-h-[90vh]" @submit.prevent="savePreset">
       <div class="flex justify-between items-center gap-4 px-6 py-4 border-b border-gray-200 dark:border-gray-700">
         <div class="min-w-0">
-          <h3 class="text-lg font-semibold text-theme-strong">{{ $t(editingId ? 'plugin.subagents.edit' : 'plugin.subagents.create') }}</h3>
+          <h3 class="text-lg font-semibold text-theme-strong">{{ $t(readOnly ? 'plugin.subagents.view' : editingId ? 'plugin.subagents.edit' : 'plugin.subagents.create') }}</h3>
           <p class="mt-1 text-sm text-theme-subtle break-words">{{ editingId ? form.name : $t('plugin.subagents.description') }}</p>
         </div>
         <button
@@ -129,7 +131,8 @@
         </button>
       </div>
       <div class="px-6 py-4 flex-1 min-h-0 overflow-y-auto">
-        <fieldset class="space-y-4 min-w-0" :disabled="saving">
+        <p v-if="readOnly" class="mb-4 text-sm text-theme-subtle">{{ $t('plugin.subagents.read_only_hint', { plugin: editingPluginId }) }}</p>
+        <fieldset class="space-y-4 min-w-0" :disabled="saving || readOnly">
           <div>
             <label for="subagent-preset-name" class="block text-sm font-medium text-theme-body mb-1">{{ $t('plugin.name') }}</label>
             <UiInput id="subagent-preset-name" v-model="form.name" :placeholder="$t('plugin.subagents.name_placeholder')" class="w-full rounded-lg px-3 py-2" required maxlength="100" />
@@ -151,7 +154,7 @@
               :model-value="form.model || ''"
               :options="modelOptions"
               :placeholder="$t('plugin.subagents.model_default')"
-              :disabled="saving || modelsLoading"
+              :disabled="saving || readOnly || modelsLoading"
               @update:model-value="form.model = $event || null"
             />
             <div v-if="modelsError" role="alert" class="mt-1 text-xs text-red-600 dark:text-red-400">
@@ -161,7 +164,7 @@
           </div>
           <div>
             <p class="block text-sm font-medium text-theme-body mb-1">{{ $t('plugin.subagents.instruction_source') }}</p>
-            <CustomSelect v-model="form.instruction_source" :options="instructionSourceOptions" :disabled="saving" />
+            <CustomSelect v-model="form.instruction_source" :options="instructionSourceOptions" :disabled="saving || readOnly" />
           </div>
           <div v-if="form.instruction_source !== 'custom'">
             <p class="block text-sm font-medium text-theme-body mb-1">{{ $t('plugin.subagents.persona') }}</p>
@@ -169,7 +172,7 @@
               :model-value="form.persona_id || ''"
               :options="personaOptions"
               :placeholder="$t('plugin.subagents.persona_active')"
-              :disabled="saving || personasLoading"
+              :disabled="saving || readOnly || personasLoading"
               @update:model-value="form.persona_id = $event || null"
             />
             <p class="mt-1 text-xs text-theme-subtle">{{ $t('plugin.subagents.persona_hint') }}</p>
@@ -190,11 +193,12 @@
           </div>
           <div>
             <p class="block text-sm font-medium text-theme-body mb-1">{{ $t('plugin.subagents.tool_mode') }}</p>
-            <CustomSelect v-model="form.tool_mode" :options="toolModeOptions" :disabled="saving" />
+            <CustomSelect v-model="form.tool_mode" :options="toolModeOptions" :disabled="saving || readOnly" />
           </div>
-          <div v-if="form.tool_mode !== 'inherit'">
+          <div v-if="form.tool_mode !== 'inherit' || readOnly">
             <p class="block text-sm font-medium text-theme-body mb-1">{{ $t(form.tool_mode === 'exclude' ? 'plugin.subagents.excluded_tools' : 'plugin.subagents.custom_tools') }}</p>
-            <SubagentToolPicker v-model="form.tools" :label="$t(form.tool_mode === 'exclude' ? 'plugin.subagents.excluded_tools' : 'plugin.subagents.custom_tools')" :disabled="saving" />
+            <p v-if="readOnly" class="text-sm text-theme-body whitespace-pre-wrap break-words">{{ form.tools.join(', ') || '—' }}</p>
+            <SubagentToolPicker v-else v-model="form.tools" :label="$t(form.tool_mode === 'exclude' ? 'plugin.subagents.excluded_tools' : 'plugin.subagents.custom_tools')" :disabled="saving" />
             <p class="mt-1 text-xs text-theme-subtle">{{ $t('plugin.subagents.tools_hint') }}</p>
           </div>
           <div class="flex items-start justify-between gap-4">
@@ -208,11 +212,13 @@
               aria-describedby="subagent-exclude-tools-hint"
             />
           </div>
-          <div v-if="form.tool_mode !== 'inherit'">
+          <div v-if="form.tool_mode !== 'inherit' || readOnly">
             <p class="block text-sm font-medium text-theme-body mb-1">
               {{ $t(form.tool_mode === 'exclude' ? 'plugin.subagents.excluded_skills' : 'plugin.subagents.custom_skills') }}
             </p>
+            <p v-if="readOnly" class="text-sm text-theme-body whitespace-pre-wrap break-words">{{ form.skills.join(', ') || '—' }}</p>
             <CustomMultiSelect
+              v-else
               v-model="form.skills"
               :options="skillOptions"
               :placeholder="$t(skillsLoading ? 'plugin.status_loading' : 'plugin.subagents.choose_skills')"
@@ -226,8 +232,8 @@
         </fieldset>
       </div>
       <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
-        <button type="button" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-theme-body hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50" :disabled="saving" @click="editorVisible = false">{{ $t('plugin.config_modal_cancel') }}</button>
-        <button type="submit" class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" :disabled="saving">{{ $t(saving ? 'plugin.subagents.saving' : 'plugin.config_modal_save') }}</button>
+        <button type="button" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-theme-body hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50" :disabled="saving" @click="editorVisible = false">{{ $t(readOnly ? 'plugin.close' : 'plugin.config_modal_cancel') }}</button>
+        <button v-if="!readOnly" type="submit" class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" :disabled="saving">{{ $t(saving ? 'plugin.subagents.saving' : 'plugin.config_modal_save') }}</button>
       </div>
     </form>
   </Modal>
@@ -267,6 +273,8 @@ const loading = ref(false)
 const loadError = ref('')
 const editorVisible = ref(false)
 const editingId = ref<string | null>(null)
+const editingPluginId = ref<string | null>(null)
+const readOnly = computed(() => editingPluginId.value !== null)
 const saving = ref(false)
 const saveError = ref('')
 const deleting = ref(false)
@@ -338,8 +346,9 @@ function newForm(): SubagentPresetInput {
 function openEditor(preset?: SubagentPreset) {
   if (operationsBusy.value) return
   editingId.value = preset?.id || null
+  editingPluginId.value = preset?.plugin_id || null
   if (preset) {
-    const { id, ...settings } = preset
+    const { id, plugin_id, ...settings } = preset
     form.value = { ...settings, tools: [...settings.tools], skills: [...settings.skills] }
   } else {
     form.value = newForm()
@@ -430,7 +439,7 @@ function setEditorVisible(visible: boolean) {
 }
 
 async function savePreset() {
-  if (saving.value) return
+  if (saving.value || readOnly.value) return
   if (form.value.max_steps === 0) {
     saveError.value = t('plugin.subagents.steps_invalid')
     return
@@ -462,14 +471,14 @@ async function savePreset() {
 }
 
 function confirmDelete(preset: SubagentPreset) {
-  if (operationsBusy.value) return
+  if (operationsBusy.value || preset.plugin_id) return
   deleteTarget.value = preset
   deleteModal.value?.open()
 }
 
 async function removePreset() {
   const target = deleteTarget.value
-  if (!target || deleting.value) return
+  if (!target || deleting.value || target.plugin_id) return
   deleting.value = true
   try {
     await deleteSubagentPreset(target.id)
@@ -483,10 +492,10 @@ async function removePreset() {
 }
 
 async function togglePreset(preset: SubagentPreset) {
-  if (operationsBusy.value) return
+  if (operationsBusy.value || preset.plugin_id) return
   toggling.value = true
   try {
-    const { id, ...settings } = preset
+    const { id, plugin_id, ...settings } = preset
     const response = await updateSubagentPreset(id, { ...settings, enabled: !settings.enabled })
     const index = presets.value.findIndex(item => item.id === id)
     if (index >= 0) presets.value[index] = response.data

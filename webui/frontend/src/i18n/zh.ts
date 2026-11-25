@@ -399,6 +399,10 @@ export default {
     tab_mcp: 'MCP',
     tab_subagents: '子代理',
     subagents: {
+      plugin_source: '插件：{plugin} · 只读',
+      user_source: '用户预设',
+      view: '查看预设',
+      read_only_hint: '由插件 {plugin} 管理，预设配置只能通过插件修改。',
       description: '创建可供主代理选择的子代理预设。',
       empty: '暂无子代理预设，点击“创建预设”添加',
       load_failed: '加载子代理预设失败，请点击刷新重试',

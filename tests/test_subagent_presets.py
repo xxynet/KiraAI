@@ -8,9 +8,19 @@ from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 
 from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
+from core.plugin import PluginManager, SubAgentPreset as PluginSubAgentPreset, registry
 from webui.routes.auth import require_auth
 from webui.routes.scope import ScopeRoutes
 from webui.routes.subagents import SubAgentsRoutes
+
+
+@pytest.fixture(autouse=True)
+def isolated_plugin_components(monkeypatch):
+    monkeypatch.setattr(registry, "_plugin_components", {})
+
+
+def plugin_manager(store):
+    return PluginManager(ctx=SimpleNamespace(subagent_mgr=SimpleNamespace(presets=store)))
 
 
 @pytest.mark.anyio
@@ -87,6 +97,26 @@ async def test_concurrent_preset_creates_do_not_overwrite_each_other(tmp_path):
     restored = SubAgentPresetStore(store.path)
     await restored.initialize()
     assert restored.list() == store.list()
+
+
+@pytest.mark.anyio
+async def test_concurrent_plugin_registration_creates_one_runtime_component(tmp_path):
+    store = SubAgentPresetStore(tmp_path / "presets.json")
+    preset = PluginSubAgentPreset(name="Research", tools=["search"])
+    manager = plugin_manager(store)
+    items = await asyncio.gather(*(manager.register_plugin_subagent("plugin", preset) for _ in range(10)))
+    assert all(item == items[0] for item in items)
+    items[0]["tools"].append("mutated")
+    preset.tools.append("mutated")
+    restored = SubAgentPresetStore(store.path)
+    await restored.initialize()
+    assert restored.list() == []
+    assert not store.path.exists()
+    assert len(store.list()) == 1
+    assert store.get(items[0]["id"]).tools == ["search"]
+    component = registry._plugin_components["plugin"]
+    assert component.has_any()
+    assert component.subagents[items[0]["id"]] is store._plugin_items[items[0]["id"]]
 
 
 @pytest.mark.parametrize("changes", [
@@ -187,6 +217,93 @@ async def test_presets_routes_validate_persist_edit_delete_and_require_auth(tmp_
         missing = await client.delete(f"/api/subagents/presets/{identity}")
         assert missing.status_code == 404
         assert not store.list()
+
+
+@pytest.mark.anyio
+async def test_cancelled_plugin_unregister_finishes_disk_commit_and_tool_cleanup(tmp_path, monkeypatch):
+    import threading
+    from unittest.mock import Mock
+
+    from core.utils.tool_utils import BaseTool
+
+    store = SubAgentPresetStore(tmp_path / "presets.json")
+    tool = Mock(spec=BaseTool)
+    tool.name = "private"
+    manager = plugin_manager(store)
+    item = await manager.register_plugin_subagent("plugin", PluginSubAgentPreset(name="Private", tools=[tool]))
+    await store.replace_scopes({item["id"]: {"allow": ["session"]}})
+    original_write = store._write
+    started = asyncio.Event()
+    release = threading.Event()
+    loop = asyncio.get_running_loop()
+
+    def slow_write(items, scopes):
+        loop.call_soon_threadsafe(started.set)
+        if not release.wait(timeout=5):
+            raise TimeoutError("Test write was not released")
+        original_write(items, scopes)
+
+    monkeypatch.setattr(store, "_write", slow_write)
+    task = asyncio.create_task(manager.unregister_plugin_subagent("plugin", item["id"]))
+    try:
+        await asyncio.wait_for(started.wait(), timeout=5)
+        task.cancel()
+    finally:
+        release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert store.list() == []
+    assert store.get_scopes() == {}
+    assert store.get_plugin_tools(item["id"]) == []
+    assert registry._plugin_components["plugin"].subagents == {}
+    restored = SubAgentPresetStore(store.path)
+    await restored.initialize()
+    assert restored.list() == []
+
+
+@pytest.mark.anyio
+async def test_plugin_presets_require_runtime_registration_and_reject_webui_changes(tmp_path):
+    from core.agent.subagent_presets import ReadOnlyPresetError
+
+    store = SubAgentPresetStore(tmp_path / "presets.json")
+    manager = plugin_manager(store)
+    preset = PluginSubAgentPreset(name="Research", tools=["search"])
+    item = await manager.register_plugin_subagent("research_plugin", preset)
+    restored = SubAgentPresetStore(store.path)
+    await restored.initialize()
+    assert restored.list() == []
+    assert not store.path.exists()
+    await plugin_manager(restored).register_plugin_subagent("research_plugin", preset)
+    assert item["plugin_id"] == "research_plugin"
+    assert restored.get_enabled_by_name("Research", session_id="session")[0] == item["id"]
+    with pytest.raises(ReadOnlyPresetError):
+        await restored.save(SubAgentPreset(name="Changed"), item["id"])
+    with pytest.raises(ReadOnlyPresetError):
+        await restored.delete(item["id"])
+    assert not store.path.exists()
+
+    app = FastAPI()
+    app.dependency_overrides[require_auth] = lambda: "admin"
+    SubAgentsRoutes(app, SimpleNamespace(subagent_manager=SimpleNamespace(presets=restored))).register()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        assert (await client.get("/api/subagents/presets")).json() == {"presets": [item]}
+        for changes in ({"enabled": False}, {"instruction": "Changed"}, {"tools": []}):
+            response = await client.put(
+                f"/api/subagents/presets/{item['id']}", json={"name": "Research", **changes},
+            )
+            assert response.status_code == 403
+        assert (await client.delete(f"/api/subagents/presets/{item['id']}")).status_code == 403
+        spoofed = await client.post("/api/subagents/presets", json={"name": "Spoofed", "plugin_id": "plugin"})
+        assert spoofed.status_code == 422
+        assert restored.list() == [item]
+        assert not store.path.exists()
+
+        user = await client.post("/api/subagents/presets", json={"name": "User preset"})
+        assert user.status_code == 201
+        assert user.json()["plugin_id"] is None
+        identity = user.json()["id"]
+        assert (await client.put(f"/api/subagents/presets/{identity}", json={"name": "Edited"})).status_code == 200
+        assert (await client.delete(f"/api/subagents/presets/{identity}")).status_code == 204
 
 
 @pytest.mark.anyio

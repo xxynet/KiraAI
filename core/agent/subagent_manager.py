@@ -187,11 +187,15 @@ class SubAgentManager:
             tool for tool in tools.tools if tool.name not in SUBAGENT_TOOL_NAMES
         ]) if tools is not None else ToolSet()
 
-    @staticmethod
-    def _tools(config: SubAgentConfig, parent_tools: ToolSet, custom_tools: ToolSet) -> ToolSet:
+    def _tools(
+        self, config: SubAgentConfig, parent_tools: ToolSet, custom_tools: ToolSet,
+        preset_id: str | None = None,
+    ) -> ToolSet:
         pool = custom_tools if config.tool_mode == "custom" else parent_tools
-        tools = list(pool.tools)
-        if config.tool_mode == "custom" and config.tool_names:
+        merged = ToolSet(list(pool.tools))
+        merged.add(*self.presets.get_plugin_tools(preset_id))
+        tools = merged.tools
+        if config.tool_mode == "custom" and (config.tool_names or preset_id is not None):
             tools = [tool for tool in tools if tool.name in config.tool_names]
         blocked = SUBAGENT_TOOL_NAMES | set(config.excluded_tools)
         return ToolSet([tool for tool in tools if tool.name not in blocked])
@@ -291,7 +295,7 @@ class SubAgentManager:
         config = config or SubAgentConfig()
         parent_tools = self._copy_tools(parent_tools)
         custom_tools = self._copy_tools(tools if tools is not None else parent_tools)
-        selected = self._tools(config, parent_tools, custom_tools)
+        selected = self._tools(config, parent_tools, custom_tools, preset_id)
         if preset_id is not None and model_group is not None:
             raise ValueError("A subagent preset supplies its own model configuration")
         models = self._preset_models(preset_id) if preset_id is not None else self._models(model_group)
@@ -380,7 +384,12 @@ class SubAgentManager:
             content="",
         )
         ctx = SubAgentExecutionContext(event=event)
-        request = LLMRequest(tool_set=self._tools(agent.config, agent.parent_tools, agent.custom_tools))
+
+        def selected_tools() -> ToolSet:
+            preset_id = agent.session.data.get("subagent", {}).get("preset_id")
+            return self._tools(agent.config, agent.parent_tools, agent.custom_tools, preset_id)
+
+        request = LLMRequest(tool_set=selected_tools())
         instruction = None
         if agent.config.instruction_source == "custom" and agent.config.instruction:
             instruction = OpenAIMessage(
@@ -422,6 +431,8 @@ class SubAgentManager:
                 raise ValueError("The subagent session no longer exists")
             agent.session = await self.session_manager.resolve_session(agent.session.internal_id)
             ctx.event.agent_session = agent.session
+            request.tool_set = selected_tools()
+            request.tool_choice = "auto" if request.tool_set.tools else "none"
             ctx.messages[:] = [OpenAIMessage(**message) for message in agent.session.flatten_content()]
             if instruction is not None:
                 ctx.messages.insert(0, instruction)
@@ -467,7 +478,7 @@ class SubAgentManager:
                 error=agent.error,
                 turn=agent.turn,
                 step_index=agent.step.step_index if agent.step else 0,
-                resolved_tools=[tool.name for tool in self._tools(agent.config, agent.parent_tools, agent.custom_tools).tools],
+                resolved_tools=[tool.name for tool in selected_tools().tools],
                 updated_at=int(time.time()),
             )
             saved = await self.session_manager.update_memory(
@@ -670,7 +681,10 @@ class SubAgentManager:
             parent_tools=self._copy_tools(parent_tools) if parent_tools is not None else agent.parent_tools,
             custom_tools=self._copy_tools(tools) if tools is not None else agent.custom_tools,
         )
-        selected = self._tools(selection.config, selection.parent_tools, selection.custom_tools)
+        selected = self._tools(
+            selection.config, selection.parent_tools, selection.custom_tools,
+            session.data.get("subagent", {}).get("preset_id"),
+        )
         agent.parent_tools = selection.parent_tools
         agent.custom_tools = selection.custom_tools
         agent.executor.request.tool_set = selected

@@ -399,6 +399,10 @@ export default {
     tab_mcp: 'MCP',
     tab_subagents: 'Subagents',
     subagents: {
+      plugin_source: 'Plugin: {plugin} · Read-only',
+      user_source: 'User preset',
+      view: 'View Preset',
+      read_only_hint: 'Managed by plugin {plugin}. Settings can only be changed by the plugin.',
       description: 'Create subagent presets for the main agent to choose from.',
       empty: 'No subagent presets yet. Select “Create Preset” to add one.',
       load_failed: 'Failed to load subagent presets. Refresh to try again.',

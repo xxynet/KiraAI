@@ -1,11 +1,14 @@
 """Persist reusable subagent definitions independently of live sessions."""
 
+from __future__ import annotations
+
 import asyncio
 import json
 import os
 import tempfile
 import uuid
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -13,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from core.prompt_manager import Prompt
 from core.utils.path_utils import get_config_path
+from core.utils.tool_utils import BaseTool
 
 from .config import AgentExecutionConfig, SubAgentConfig, ToolExecutionConfig
 
@@ -119,10 +123,25 @@ class DuplicatePresetNameError(ValueError):
     pass
 
 
+class ReadOnlyPresetError(PermissionError):
+    pass
+
+
+@dataclass(frozen=True)
+class PluginSubAgentRegistration:
+    plugin_id: str
+    preset: SubAgentPreset
+    tools: tuple[BaseTool, ...] = ()
+
+    def to_dict(self, identity: str) -> dict:
+        return {"id": identity, "plugin_id": self.plugin_id, **self.preset.model_dump()}
+
+
 class SubAgentPresetStore:
     def __init__(self, path: Path | None = None):
         self.path = path if path is not None else get_config_path() / "subagent_presets.json"
         self._items: dict[str, SubAgentPreset] = {}
+        self._plugin_items: dict[str, PluginSubAgentRegistration] = {}
         self._scopes: _PresetScopes = {}
         self._lock = asyncio.Lock()
 
@@ -138,27 +157,35 @@ class SubAgentPresetStore:
                 raise TypeError("Subagent presets must be an object")
             scopes = raw.pop("_scope", {})
             items = {identity: SubAgentPreset.model_validate(item) for identity, item in raw.items()}
-            self._scopes = self._validate_scopes(scopes, items)
+            # Plugin scope rules may be loaded before their runtime registrations.
+            self._scopes = self._validate_scopes(scopes)
             self._items = items
 
     def list(self, *, enabled_only: bool = False) -> list[dict]:
         return [
-            {"id": identity, **preset.model_dump()}
+            {"id": identity, "plugin_id": None, **preset.model_dump()}
             for identity, preset in self._items.items()
             if not enabled_only or preset.enabled
+        ] + [
+            registration.to_dict(identity)
+            for identity, registration in self._plugin_items.items()
+            if not enabled_only or registration.preset.enabled
         ]
 
+    def _all_items(self) -> dict[str, SubAgentPreset]:
+        return {**self._items, **{identity: item.preset for identity, item in self._plugin_items.items()}}
+
     def get(self, identity: str) -> SubAgentPreset:
-        return self._items[identity].model_copy(deep=True)
+        return self._all_items()[identity].model_copy(deep=True)
 
     def get_enabled_by_name(self, name: str, *, session_id: str) -> tuple[str, SubAgentPreset]:
-        for identity, preset in self._items.items():
+        for identity, preset in self._all_items().items():
             if preset.name == name:
                 if not preset.enabled:
                     raise ValueError(f"Subagent preset is disabled: {name}")
                 if not self.is_preset_allowed(identity, session_id):
                     raise PermissionError(f"Subagent preset is not allowed for the calling session: {name}")
-                return identity, preset.model_copy(deep=True)
+                return identity, self.get(identity)
         raise ValueError(f"Unknown subagent preset: {name}")
 
     def is_preset_allowed(self, identity: str, session_id: str | None) -> bool:
@@ -173,7 +200,7 @@ class SubAgentPresetStore:
 
     def _available_presets(self, session_id: str) -> Iterator[SubAgentPreset]:
         return (
-            preset for identity, preset in self._items.items()
+            preset for identity, preset in self._all_items().items()
             if preset.enabled and self.is_preset_allowed(identity, session_id)
         )
 
@@ -217,18 +244,22 @@ class SubAgentPresetStore:
         )
 
     def get_scopes(self) -> _PresetScopes:
+        items = self._all_items()
         return {
             identity: {mode: list(sessions) for mode, sessions in scope.items()}
             for identity, scope in self._scopes.items()
+            if identity in items
         }
 
     @staticmethod
-    def _validate_scopes(scopes: object, items: dict[str, SubAgentPreset]) -> _PresetScopes:
+    def _validate_scopes(scopes: object, items: dict[str, SubAgentPreset] | None = None) -> _PresetScopes:
         if not isinstance(scopes, dict):
             raise ValueError("Subagent scopes must be an object")
         validated = {}
         for identity, scope in scopes.items():
-            if identity not in items:
+            if not isinstance(identity, str) or not identity.strip():
+                raise ValueError("Subagent scope IDs must be non-empty strings")
+            if items is not None and identity not in items:
                 raise ValueError(f"Unknown subagent preset ID: {identity}")
             if not isinstance(scope, dict) or len(scope) != 1:
                 raise ValueError(f"Subagent scope must have one allow or deny rule: {identity}")
@@ -242,7 +273,11 @@ class SubAgentPresetStore:
 
     async def replace_scopes(self, scopes: object) -> None:
         async with self._lock:
-            validated = self._validate_scopes(scopes, self._items)
+            items = self._all_items()
+            validated = {
+                identity: scope for identity, scope in self._scopes.items() if identity not in items
+            }
+            validated.update(self._validate_scopes(scopes, items))
             if validated != self._scopes:
                 await self._commit(self._items, validated)
 
@@ -290,17 +325,61 @@ class SubAgentPresetStore:
 
     async def save(self, preset: SubAgentPreset, identity: str | None = None) -> dict:
         async with self._lock:
+            if identity in self._plugin_items:
+                raise ReadOnlyPresetError("Plugin subagent presets are read-only")
             if identity is not None and identity not in self._items:
                 raise KeyError(identity)
-            if any(other_id != identity and other.name == preset.name for other_id, other in self._items.items()):
-                raise DuplicatePresetNameError(f"A subagent preset named {preset.name!r} already exists")
-            identity = identity or f"preset_{uuid.uuid4().hex}"
-            items = {**self._items, identity: preset.model_copy(deep=True)}
-            await self._commit(items, self._scopes)
-            return {"id": identity, **preset.model_dump()}
+            return await self._save(preset, identity or f"preset_{uuid.uuid4().hex}")
+
+    def get_plugin_tools(self, identity: str | None) -> list[BaseTool]:
+        """Return only the runtime tools bound to this preset."""
+        registration = self._plugin_items.get(identity)
+        return list(registration.tools) if registration is not None else []
+
+    async def register_plugin(self, identity: str, registration: PluginSubAgentRegistration) -> dict:
+        """Index the same runtime registration owned by PluginComponents."""
+        async with self._lock:
+            if identity in self._items:
+                raise ValueError(f"Subagent preset ID is already in use: {identity}")
+            self._check_name(registration.preset, identity)
+            self._plugin_items[identity] = registration
+            return registration.to_dict(identity)
+
+    async def unregister_plugin(self, identity: str, *, preserve_scopes: bool = False) -> bool:
+        """Drop a runtime index; lifecycle cleanup retains user-owned scope rules."""
+        async with self._lock:
+            if identity not in self._plugin_items:
+                return False
+            scopes = dict(self._scopes)
+            scopes.pop(identity, None)
+            if not preserve_scopes and scopes != self._scopes:
+                try:
+                    await self._commit(self._items, scopes)
+                finally:
+                    if identity not in self._scopes:
+                        self._plugin_items.pop(identity, None)
+            else:
+                self._plugin_items.pop(identity, None)
+            return True
+
+    def has_plugin(self, identity: str) -> bool:
+        return identity in self._plugin_items
+
+    def _check_name(self, preset: SubAgentPreset, identity: str) -> None:
+        if any(other_id != identity and other.name == preset.name for other_id, other in self._all_items().items()):
+            raise DuplicatePresetNameError(f"A subagent preset named {preset.name!r} already exists")
+
+    async def _save(self, preset: SubAgentPreset, identity: str) -> dict:
+        # Callers must hold the store lock through the commit.
+        self._check_name(preset, identity)
+        items = {**self._items, identity: preset.model_copy(deep=True)}
+        await self._commit(items, self._scopes)
+        return {"id": identity, "plugin_id": None, **preset.model_dump()}
 
     async def delete(self, identity: str) -> None:
         async with self._lock:
+            if identity in self._plugin_items:
+                raise ReadOnlyPresetError("Plugin subagent presets are read-only")
             items = dict(self._items)
             del items[identity]
             scopes = dict(self._scopes)

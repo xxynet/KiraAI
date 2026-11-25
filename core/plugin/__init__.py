@@ -9,6 +9,7 @@ from .metadata import PluginInfo
 from .pages import PageMenu, PluginPage
 from .plugin_agent_executor import PluginAgentExecutor
 from .plugin_context import PluginContext
+from .subagent import SubAgentPreset
 
 logger = get_logger("plugin", "orange")
 
@@ -23,6 +24,7 @@ __all__ = [
     'PluginManager',
     'PluginPage',
     "Priority",
+    "SubAgentPreset",
     "ToolCallContext",
     'logger',
     "on",
