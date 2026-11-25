@@ -1,6 +1,6 @@
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
@@ -33,7 +33,10 @@ def llm_client(request, monkeypatch):
         provider_id="test", provider_name="test",
     ))
     create = AsyncMock()
-    sdk = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    sdk = MagicMock()
+    sdk.chat.completions.create = create
+    sdk.__aenter__ = AsyncMock(return_value=sdk)
+    sdk.__aexit__ = AsyncMock(return_value=False)
     monkeypatch.setattr(client, "_build_client", lambda: sdk)
     return client, create
 
@@ -147,9 +150,11 @@ async def test_actual_sdk_text_response_finishes_agent_or_falls_back(
                     content="fallback reply", tool_calls=None,
                 ))], usage=None,
             ))
-            monkeypatch.setattr(fallback, "_build_client", lambda: SimpleNamespace(
-                chat=SimpleNamespace(completions=SimpleNamespace(create=create)),
-            ))
+            fallback_sdk = MagicMock()
+            fallback_sdk.chat.completions.create = create
+            fallback_sdk.__aenter__ = AsyncMock(return_value=fallback_sdk)
+            fallback_sdk.__aexit__ = AsyncMock(return_value=False)
+            monkeypatch.setattr(fallback, "_build_client", lambda: fallback_sdk)
             models.append(fallback)
         executor = BaseAgentExecutor(
             models, request=LLMRequest(), context=BaseAgentExecutionContext(),
