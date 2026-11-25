@@ -74,16 +74,17 @@ test('a query without any match returns nothing', () => {
   assert.deepEqual(ids(searchQuickNav(entries(), 'zzz')), [])
 })
 
-test('the shortcut is Ctrl+K or Cmd+K only', () => {
+test('the shortcut is Ctrl+K, Cmd+K or the Alt+K fallback', () => {
   assert.equal(isQuickNavShortcut({ key: 'k', ctrlKey: true }), true)
   assert.equal(isQuickNavShortcut({ key: 'K', ctrlKey: true }), true)
   assert.equal(isQuickNavShortcut({ key: 'k', metaKey: true }), true)
+  // Some browsers route Ctrl+K to their own search box; Alt+K is the fallback.
+  assert.equal(isQuickNavShortcut({ key: 'k', altKey: true }), true)
   assert.equal(isQuickNavShortcut({ key: 'k' }), false)
   assert.equal(isQuickNavShortcut({ key: 'j', ctrlKey: true }), false)
   assert.equal(isQuickNavShortcut({ key: 'k', ctrlKey: true, shiftKey: true }), false)
-  assert.equal(isQuickNavShortcut({ key: 'k', ctrlKey: true, altKey: true }), false)
+  assert.equal(isQuickNavShortcut({ key: 'k', altKey: true, shiftKey: true }), false)
   assert.equal(isQuickNavShortcut({ key: 'k', ctrlKey: true, repeat: true }), false)
-  assert.equal(isQuickNavShortcut({ key: 'K', ctrlKey: true, altKey: false, shiftKey: false, repeat: false }), true)
 })
 
 test('the shortcut hint follows the platform', () => {

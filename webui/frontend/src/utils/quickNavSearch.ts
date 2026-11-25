@@ -76,12 +76,15 @@ export function searchQuickNav<T extends QuickNavTarget>(targets: readonly T[], 
   return matches.map(match => match.target)
 }
 
-/** Ctrl+K on Windows and Linux, Cmd+K on macOS. */
+/**
+ * Ctrl+K on Windows and Linux, Cmd+K on macOS, plus Alt+K as a fallback: some
+ * browsers route Ctrl+K to their own search box, and Alt+K is free there.
+ */
 export function isQuickNavShortcut(event: QuickNavShortcutEvent): boolean {
   if (event.repeat) return false
-  if (event.altKey || event.shiftKey) return false
-  if (!event.ctrlKey && !event.metaKey) return false
-  return event.key.length === 1 && event.key.toLowerCase() === 'k'
+  if (event.shiftKey) return false
+  if (event.key.length !== 1 || event.key.toLowerCase() !== 'k') return false
+  return Boolean(event.ctrlKey || event.metaKey || event.altKey)
 }
 
 export function detectMacPlatform(platform: string): boolean {
