@@ -29,6 +29,7 @@ cd webui/frontend
 npm install
 npm run dev      # Dev server on :3000, proxies /api → :5267
 npm run build    # Type-check (vue-tsc) + build → webui/static/dist/
+npm test         # Unit tests (node --test) incl. EN/CN i18n key parity
 ```
 
 ### Docker
