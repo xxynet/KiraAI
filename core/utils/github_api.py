@@ -163,6 +163,38 @@ async def get_release_assets(
     return assets
 
 
+async def _read_limited_body(resp: httpx.Response, max_bytes: int | None) -> bytes:
+    """Read a streamed response body, enforcing *max_bytes* on the bytes buffered."""
+    if max_bytes is None:
+        return await resp.aread()
+
+    # Decoders expand each raw chunk without an output bound (e.g. stacked
+    # gzip), so only identity-encoded bodies can be limited reliably.
+    encodings = [
+        token.strip().lower()
+        for token in resp.headers.get("Content-Encoding", "").split(",")
+        if token.strip()
+    ]
+    if any(token != "identity" for token in encodings):
+        raise ValueError(
+            f"Refusing content-encoded asset (Content-Encoding: {', '.join(encodings)})"
+        )
+
+    content_length = resp.headers.get("Content-Length", "").strip()
+    if content_length.isdigit() and int(content_length) > max_bytes:
+        raise ValueError(f"Asset exceeds the {max_bytes} byte limit")
+
+    chunks: list[bytes] = []
+    total = 0
+    # Identity encoding is verified above, so these chunks are the raw bytes
+    async for chunk in resp.aiter_bytes():
+        total += len(chunk)
+        if total > max_bytes:
+            raise ValueError(f"Asset exceeds the {max_bytes} byte limit")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 async def download_asset(
     download_url: str,
     proxy: str | None = None,
@@ -171,25 +203,39 @@ async def download_asset(
     """
     Download a release asset by its browser_download_url.
 
+    When *max_bytes* is set, the download requests identity encoding, rejects
+    content-encoded responses, and aborts as soon as the body exceeds the limit.
+    Redirects are followed manually so intermediate redirect bodies are never read.
+
     Raises ValueError on HTTP errors, ConnectionError on network failures, and
-    ValueError when max_bytes is exceeded.
+    ValueError when max_bytes is exceeded or the response is content-encoded.
     """
-    client_kwargs: dict = {"timeout": 120.0, "follow_redirects": True}
+    # Redirects are handled below: httpx's automatic redirect handling reads
+    # each intermediate response body in full, bypassing max_bytes.
+    client_kwargs: dict = {"timeout": 120.0, "follow_redirects": False}
     if proxy:
         client_kwargs["proxy"] = proxy
+    headers = {"Accept-Encoding": "identity"} if max_bytes is not None else None
 
     async with httpx.AsyncClient(**client_kwargs) as client:
         try:
-            async with client.stream("GET", download_url) as resp:
-                resp.raise_for_status()
-                chunks: list[bytes] = []
-                total = 0
-                async for chunk in resp.aiter_bytes():
-                    total += len(chunk)
-                    if max_bytes is not None and total > max_bytes:
-                        raise ValueError(f"Asset exceeds the {max_bytes} byte limit")
-                    chunks.append(chunk)
-                return b"".join(chunks)
+            request = client.build_request("GET", download_url, headers=headers)
+            redirects = 0
+            while True:
+                resp = await client.send(request, stream=True)
+                try:
+                    if resp.next_request is None:
+                        resp.raise_for_status()
+                        return await _read_limited_body(resp, max_bytes)
+                    redirects += 1
+                    if redirects > client.max_redirects:
+                        raise httpx.TooManyRedirects(
+                            "Exceeded maximum allowed redirects.", request=request
+                        )
+                    request = resp.next_request
+                finally:
+                    # Close without reading so redirect bodies are never buffered
+                    await resp.aclose()
         except httpx.HTTPStatusError as e:
             status = e.response.status_code
             raise ValueError(f"Failed to download asset (HTTP {status})") from e
