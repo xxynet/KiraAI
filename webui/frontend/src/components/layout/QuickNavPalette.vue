@@ -147,6 +147,12 @@ watch(query, () => {
   activeIndex.value = 0
 })
 
+// Plugin menus can load or unload while the palette is open; keep the
+// highlight inside the current result list.
+watch(() => results.value.length, (length) => {
+  if (activeIndex.value >= length) activeIndex.value = Math.max(0, length - 1)
+})
+
 watch(open, (visible) => {
   if (!visible) return
   query.value = ''
