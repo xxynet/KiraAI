@@ -93,15 +93,15 @@ class DeepSeekLLMClient(LLMModelClient):
         return kwargs
 
     async def chat(self, request: LLMRequest, **kwargs) -> LLMResponse:
-        client = self._build_client()
-        messages = await resolve_media_references(request.messages)
-        request_kwargs = self._build_request_kwargs(request, messages=messages, **kwargs)
+        async with self._build_client() as client:
+            messages = await resolve_media_references(request.messages)
+            request_kwargs = self._build_request_kwargs(request, messages=messages, **kwargs)
 
-        start_time = time.perf_counter()
-        response = await client.chat.completions.create(**request_kwargs)
-        if not isinstance(getattr(response, "choices", None), list):
-            raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
-        end_time = time.perf_counter()
+            start_time = time.perf_counter()
+            response = await client.chat.completions.create(**request_kwargs)
+            if not isinstance(getattr(response, "choices", None), list):
+                raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
+            end_time = time.perf_counter()
 
         llm_resp = LLMResponse("")
         llm_resp.time_consumed = round(end_time - start_time, 2)
@@ -138,67 +138,67 @@ class DeepSeekLLMClient(LLMModelClient):
 
 
     async def chat_stream(self, request: LLMRequest, **kwargs) -> AsyncGenerator[LLMStreamChunk, None]:
-        client = self._build_client()
-        messages = await resolve_media_references(request.messages)
-        request_kwargs = self._build_request_kwargs(
-            request, messages=messages, stream=True, **kwargs
-        )
-        request_kwargs["stream_options"] = {"include_usage": True}
+        async with self._build_client() as client:
+            messages = await resolve_media_references(request.messages)
+            request_kwargs = self._build_request_kwargs(
+                request, messages=messages, stream=True, **kwargs
+            )
+            request_kwargs["stream_options"] = {"include_usage": True}
 
-        stream = await client.chat.completions.create(**request_kwargs)
-        if not hasattr(stream, "__aiter__"):
-            raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(stream).__name__}): {stream!r}")
-        async for event in stream:
-            if not isinstance(getattr(event, "choices", None), list):
-                raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(event).__name__}): {event!r}")
-            # Usage-only event (sent by OpenAI API after the final choice chunk)
-            if not event.choices:
-                if event.usage:
-                    yield LLMStreamChunk(
-                        is_final=True,
-                        usage={
-                            "input_tokens": event.usage.prompt_tokens,
-                            "output_tokens": event.usage.completion_tokens,
-                            "cached_tokens": getattr(event.usage, "prompt_cache_hit_tokens", None),
-                        },
-                    )
-                continue
+            stream = await client.chat.completions.create(**request_kwargs)
+            if not hasattr(stream, "__aiter__"):
+                raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(stream).__name__}): {stream!r}")
+            async for event in stream:
+                if not isinstance(getattr(event, "choices", None), list):
+                    raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(event).__name__}): {event!r}")
+                # Usage-only event (sent by OpenAI API after the final choice chunk)
+                if not event.choices:
+                    if event.usage:
+                        yield LLMStreamChunk(
+                            is_final=True,
+                            usage={
+                                "input_tokens": event.usage.prompt_tokens,
+                                "output_tokens": event.usage.completion_tokens,
+                                "cached_tokens": getattr(event.usage, "prompt_cache_hit_tokens", None),
+                            },
+                        )
+                    continue
 
-            choice = event.choices[0]
-            delta = choice.delta
+                choice = event.choices[0]
+                delta = choice.delta
 
-            chunk = LLMStreamChunk()
+                chunk = LLMStreamChunk()
 
-            # Text content
-            if delta.content:
-                chunk.delta_text = delta.content
+                # Text content
+                if delta.content:
+                    chunk.delta_text = delta.content
 
-            # DeepSeek reasoning_content
-            reasoning = getattr(delta, "reasoning_content", "") or ""
-            if reasoning:
-                chunk.delta_reasoning = reasoning
+                # DeepSeek reasoning_content
+                reasoning = getattr(delta, "reasoning_content", "") or ""
+                if reasoning:
+                    chunk.delta_reasoning = reasoning
 
-            # Tool calls — pass through raw incremental deltas from SDK
-            if delta.tool_calls:
-                for tc in delta.tool_calls:
-                    fragment = {
-                        "index": tc.index,
-                        "id": tc.id or "",
-                        "type": "function",
-                        "function": {
-                            "name": tc.function.name if tc.function and tc.function.name else "",
-                            "arguments": tc.function.arguments if tc.function and tc.function.arguments else "",
-                        },
-                    }
-                    chunk.tool_calls_delta.append(fragment)
+                # Tool calls — pass through raw incremental deltas from SDK
+                if delta.tool_calls:
+                    for tc in delta.tool_calls:
+                        fragment = {
+                            "index": tc.index,
+                            "id": tc.id or "",
+                            "type": "function",
+                            "function": {
+                                "name": tc.function.name if tc.function and tc.function.name else "",
+                                "arguments": tc.function.arguments if tc.function and tc.function.arguments else "",
+                            },
+                        }
+                        chunk.tool_calls_delta.append(fragment)
 
-            # Finish reason
-            finish_reason = choice.finish_reason
-            if finish_reason:
-                chunk.is_final = True
-                chunk.finish_reason = finish_reason
+                # Finish reason
+                finish_reason = choice.finish_reason
+                if finish_reason:
+                    chunk.is_final = True
+                    chunk.finish_reason = finish_reason
 
-            yield chunk
+                yield chunk
 
 
 async def _post_audio_tool(model: ModelInfo, tool: str, **kwargs) -> httpx.Response:

@@ -1,6 +1,6 @@
 import base64
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -21,7 +21,9 @@ def _configured_client(images_api):
         model_id="internal-image-id", model_name="gpt-image-1",
         model_config={"endpoint": "v1/image", "size": "1024x1024"},
     )
-    client._build_client = lambda: SimpleNamespace(images=images_api)
+    sdk_client = MagicMock(images=images_api)
+    sdk_client.__aenter__.return_value = sdk_client
+    client._build_client = lambda: sdk_client
     return client
 
 

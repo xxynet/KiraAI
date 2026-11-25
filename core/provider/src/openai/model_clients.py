@@ -127,39 +127,39 @@ class OpenAIImageClient(ImageModelClient):
     # ──────── Mode A: /v1/images/generations ────────
 
     async def _text_to_image_via_generations(self, prompt: str) -> Image:
-        client = self._build_client()
-        image_size = self.model.model_config.get("size", None)
-        try:
-            images_response = await client.images.generate(
-                model=self.model.model_name,
-                prompt=prompt,
-                size=image_size if image_size else None,
-            )
-            return self._image_from_response(images_response, "Image generation")
-        except (APIStatusError, APITimeoutError, APIConnectionError) as e:
-            logger.error(f"Image generation API error: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"Image generation error: {e}")
-            raise
+        async with self._build_client() as client:
+            image_size = self.model.model_config.get("size", None)
+            try:
+                images_response = await client.images.generate(
+                    model=self.model.model_name,
+                    prompt=prompt,
+                    size=image_size if image_size else None,
+                )
+                return self._image_from_response(images_response, "Image generation")
+            except (APIStatusError, APITimeoutError, APIConnectionError) as e:
+                logger.error(f"Image generation API error: {e}")
+                raise
+            except Exception as e:
+                logger.error(f"Image generation error: {e}")
+                raise
 
     # ──────── Mode B: /v1/chat/completions (non-stream) ────────
 
     async def _text_to_image_via_chat(self, prompt: str) -> Image:
-        client = self._build_client()
-        messages = [{"role": "user", "content": prompt}]
+        async with self._build_client() as client:
+            messages = [{"role": "user", "content": prompt}]
 
-        try:
-            response = await client.chat.completions.create(
-                model=self.model.model_name,
-                messages=messages,
-            )
-        except (APIStatusError, APITimeoutError, APIConnectionError) as e:
-            logger.error(f"Image generation (chat) API error: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"Image generation (chat) error: {e}")
-            raise
+            try:
+                response = await client.chat.completions.create(
+                    model=self.model.model_name,
+                    messages=messages,
+                )
+            except (APIStatusError, APITimeoutError, APIConnectionError) as e:
+                logger.error(f"Image generation (chat) API error: {e}")
+                raise
+            except Exception as e:
+                logger.error(f"Image generation (chat) error: {e}")
+                raise
 
         if not isinstance(getattr(response, "choices", None), list):
             raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
@@ -303,51 +303,51 @@ class OpenAIImageClient(ImageModelClient):
     # ──────── image-to-image Mode A: /v1/images/edits ────────
 
     async def _image_to_image_via_edits(self, prompt: str, images: list[Image]) -> Image:
-        client = self._build_client()
-        image_size = self.model.model_config.get("size", None)
-        try:
-            image_files = [
-                self._image_file_from_data_url(await image.to_data_url(), index)
-                for index, image in enumerate(images)
-            ]
-            if not image_files:
-                raise ValueError("Image edit requires at least one input image")
-            image_input = image_files[0] if len(image_files) == 1 else image_files
+        async with self._build_client() as client:
+            image_size = self.model.model_config.get("size", None)
+            try:
+                image_files = [
+                    self._image_file_from_data_url(await image.to_data_url(), index)
+                    for index, image in enumerate(images)
+                ]
+                if not image_files:
+                    raise ValueError("Image edit requires at least one input image")
+                image_input = image_files[0] if len(image_files) == 1 else image_files
 
-            images_response = await client.images.edit(
-                model=self.model.model_name,
-                prompt=prompt,
-                image=image_input,
-                size=image_size if image_size else None,
-            )
-            return self._image_from_response(images_response, "Image edit")
-        except (APIStatusError, APITimeoutError, APIConnectionError) as e:
-            logger.error(f"Image edit API error: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"Image edit error: {e}")
-            raise
+                images_response = await client.images.edit(
+                    model=self.model.model_name,
+                    prompt=prompt,
+                    image=image_input,
+                    size=image_size if image_size else None,
+                )
+                return self._image_from_response(images_response, "Image edit")
+            except (APIStatusError, APITimeoutError, APIConnectionError) as e:
+                logger.error(f"Image edit API error: {e}")
+                raise
+            except Exception as e:
+                logger.error(f"Image edit error: {e}")
+                raise
 
     # ──────── image-to-image Mode B: /v1/chat/completions ────────
 
     async def _image_to_image_via_chat(self, prompt: str, images: list[Image]) -> Image:
-        client = self._build_client()
-        content = [{"type": "text", "text": prompt}]
-        for img in images:
-            image_data_url = await img.to_data_url()
-            content.append({"type": "image_url", "image_url": {"url": image_data_url}})
-        messages = [{"role": "user", "content": content}]
-        try:
-            response = await client.chat.completions.create(
-                model=self.model.model_name,
-                messages=messages,
-            )
-        except (APIStatusError, APITimeoutError, APIConnectionError) as e:
-            logger.error(f"Image-to-image (chat) API error: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"Image-to-image (chat) error: {e}")
-            raise
+        async with self._build_client() as client:
+            content = [{"type": "text", "text": prompt}]
+            for img in images:
+                image_data_url = await img.to_data_url()
+                content.append({"type": "image_url", "image_url": {"url": image_data_url}})
+            messages = [{"role": "user", "content": content}]
+            try:
+                response = await client.chat.completions.create(
+                    model=self.model.model_name,
+                    messages=messages,
+                )
+            except (APIStatusError, APITimeoutError, APIConnectionError) as e:
+                logger.error(f"Image-to-image (chat) API error: {e}")
+                raise
+            except Exception as e:
+                logger.error(f"Image-to-image (chat) error: {e}")
+                raise
         if not isinstance(getattr(response, "choices", None), list):
             raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
         if not response.choices:
@@ -378,28 +378,28 @@ class OpenAIEmbeddingClient(EmbeddingModelClient):
         if not isinstance(default_headers, dict) or not default_headers:
             default_headers = None
 
-        client = AsyncOpenAI(
+        async with AsyncOpenAI(
             api_key=self.model.provider_config.get("api_key", ""),
             base_url=self.model.provider_config.get("base_url", ""),
             timeout=timeout_sec,
             default_headers=default_headers
-        )
-        try:
-            start_time = time.perf_counter()
-            response = await client.embeddings.create(
-                model=self.model.model_name,
-                input=texts
-            )
-            elapsed = round(time.perf_counter() - start_time, 2)
-            if elapsed > slow_threshold:
-                logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_name})")
-            if not isinstance(getattr(response, "data", None), list):
-                raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
-            return [item.embedding for item in response.data]
-        except (APIStatusError, APITimeoutError, APIConnectionError) as e:
-            logger.error(f"Embedding API error: {e}")
-            return []
-        except Exception as e:
-            logger.error(f"Embedding error: {e}")
-            return []
+        ) as client:
+            try:
+                start_time = time.perf_counter()
+                response = await client.embeddings.create(
+                    model=self.model.model_name,
+                    input=texts
+                )
+                elapsed = round(time.perf_counter() - start_time, 2)
+                if elapsed > slow_threshold:
+                    logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_name})")
+                if not isinstance(getattr(response, "data", None), list):
+                    raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
+                return [item.embedding for item in response.data]
+            except (APIStatusError, APITimeoutError, APIConnectionError) as e:
+                logger.error(f"Embedding API error: {e}")
+                return []
+            except Exception as e:
+                logger.error(f"Embedding error: {e}")
+                return []
 

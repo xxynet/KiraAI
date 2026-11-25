@@ -84,18 +84,18 @@ class OpenAICompatibleLLMClient(LLMModelClient):
         return kwargs
 
     async def chat(self, request: LLMRequest, **kwargs) -> LLMResponse:
-        client = self._build_client()
-        messages = await resolve_media_references(request.messages)
-        request_kwargs = self._build_request_kwargs(request, messages=messages, **kwargs)
-        start_time = time.perf_counter()
-        # APIStatusError: HTTP errors, e.g. unsupported function calling,
-        # invalid API keys (401), or missing permissions (403).
-        # APITimeoutError: the request timed out.
-        # APIConnectionError: connection failure, e.g. an unreachable base_url.
-        response = await client.chat.completions.create(**request_kwargs)
-        if not isinstance(getattr(response, "choices", None), list):
-            raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
-        end_time = time.perf_counter()
+        async with self._build_client() as client:
+            messages = await resolve_media_references(request.messages)
+            request_kwargs = self._build_request_kwargs(request, messages=messages, **kwargs)
+            start_time = time.perf_counter()
+            # APIStatusError: HTTP errors, e.g. unsupported function calling,
+            # invalid API keys (401), or missing permissions (403).
+            # APITimeoutError: the request timed out.
+            # APIConnectionError: connection failure, e.g. an unreachable base_url.
+            response = await client.chat.completions.create(**request_kwargs)
+            if not isinstance(getattr(response, "choices", None), list):
+                raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
+            end_time = time.perf_counter()
         llm_resp = LLMResponse("")
         llm_resp.time_consumed = round(end_time - start_time, 2)
         if response.choices:
@@ -130,73 +130,73 @@ class OpenAICompatibleLLMClient(LLMModelClient):
         return llm_resp
 
     async def chat_stream(self, request: LLMRequest, **kwargs) -> AsyncGenerator[LLMStreamChunk, None]:
-        client = self._build_client()
-        messages = await resolve_media_references(request.messages)
-        request_kwargs = self._build_request_kwargs(
-            request, messages=messages, stream=True, **kwargs
-        )
-        request_kwargs["stream_options"] = {"include_usage": True}
+        async with self._build_client() as client:
+            messages = await resolve_media_references(request.messages)
+            request_kwargs = self._build_request_kwargs(
+                request, messages=messages, stream=True, **kwargs
+            )
+            request_kwargs["stream_options"] = {"include_usage": True}
 
-        # APIStatusError: HTTP errors, e.g. unsupported function calling,
-        # invalid API keys (401), or missing permissions (403).
-        # APITimeoutError: the request timed out.
-        # APIConnectionError: connection failure, e.g. an unreachable base_url.
-        stream = await client.chat.completions.create(**request_kwargs)
-        if not hasattr(stream, "__aiter__"):
-            raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(stream).__name__}): {stream!r}")
-        async for event in stream:
-            if not isinstance(getattr(event, "choices", None), list):
-                raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(event).__name__}): {event!r}")
-            # Usage-only event (sent by OpenAI API after the final choice chunk)
-            if not event.choices:
-                if event.usage:
-                    prompt_details = getattr(event.usage, "prompt_tokens_details", None)
-                    cached = getattr(prompt_details, "cached_tokens", None) if prompt_details else None
-                    yield LLMStreamChunk(
-                        is_final=True,
-                        usage={
-                            "input_tokens": event.usage.prompt_tokens,
-                            "output_tokens": event.usage.completion_tokens,
-                            "cached_tokens": cached,
-                        },
-                    )
-                continue
+            # APIStatusError: HTTP errors, e.g. unsupported function calling,
+            # invalid API keys (401), or missing permissions (403).
+            # APITimeoutError: the request timed out.
+            # APIConnectionError: connection failure, e.g. an unreachable base_url.
+            stream = await client.chat.completions.create(**request_kwargs)
+            if not hasattr(stream, "__aiter__"):
+                raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(stream).__name__}): {stream!r}")
+            async for event in stream:
+                if not isinstance(getattr(event, "choices", None), list):
+                    raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(event).__name__}): {event!r}")
+                # Usage-only event (sent by OpenAI API after the final choice chunk)
+                if not event.choices:
+                    if event.usage:
+                        prompt_details = getattr(event.usage, "prompt_tokens_details", None)
+                        cached = getattr(prompt_details, "cached_tokens", None) if prompt_details else None
+                        yield LLMStreamChunk(
+                            is_final=True,
+                            usage={
+                                "input_tokens": event.usage.prompt_tokens,
+                                "output_tokens": event.usage.completion_tokens,
+                                "cached_tokens": cached,
+                            },
+                        )
+                    continue
 
-            choice = event.choices[0]
-            delta = choice.delta
+                choice = event.choices[0]
+                delta = choice.delta
 
-            chunk = LLMStreamChunk()
+                chunk = LLMStreamChunk()
 
-            # Text content
-            if delta.content:
-                chunk.delta_text = delta.content
+                # Text content
+                if delta.content:
+                    chunk.delta_text = delta.content
 
-            # Reasoning content (DeepSeek / extended models)
-            reasoning = getattr(delta, "reasoning_content", "") or ""
-            if reasoning:
-                chunk.delta_reasoning = reasoning
+                # Reasoning content (DeepSeek / extended models)
+                reasoning = getattr(delta, "reasoning_content", "") or ""
+                if reasoning:
+                    chunk.delta_reasoning = reasoning
 
-            # Tool calls — pass through raw incremental deltas from SDK
-            if delta.tool_calls:
-                for tc in delta.tool_calls:
-                    fragment = {
-                        "index": tc.index,
-                        "id": tc.id or "",
-                        "type": "function",
-                        "function": {
-                            "name": tc.function.name if tc.function and tc.function.name else "",
-                            "arguments": tc.function.arguments if tc.function and tc.function.arguments else "",
-                        },
-                    }
-                    chunk.tool_calls_delta.append(fragment)
+                # Tool calls — pass through raw incremental deltas from SDK
+                if delta.tool_calls:
+                    for tc in delta.tool_calls:
+                        fragment = {
+                            "index": tc.index,
+                            "id": tc.id or "",
+                            "type": "function",
+                            "function": {
+                                "name": tc.function.name if tc.function and tc.function.name else "",
+                                "arguments": tc.function.arguments if tc.function and tc.function.arguments else "",
+                            },
+                        }
+                        chunk.tool_calls_delta.append(fragment)
 
-            # Finish reason
-            finish_reason = choice.finish_reason
-            if finish_reason:
-                chunk.is_final = True
-                chunk.finish_reason = finish_reason
+                # Finish reason
+                finish_reason = choice.finish_reason
+                if finish_reason:
+                    chunk.is_final = True
+                    chunk.finish_reason = finish_reason
 
-            yield chunk
+                yield chunk
 
 
 
@@ -225,18 +225,17 @@ class OpenAICompatibleTTSClient(TTSModelClient):
         default_headers = section_advanced.get("headers", {}) if isinstance(section_advanced, dict) else {}
         if not isinstance(default_headers, dict) or not default_headers:
             default_headers = None
-        client = AsyncOpenAI(
+        async with AsyncOpenAI(
             api_key=self.model.provider_config.get("api_key", ""),
             base_url=self.model.provider_config.get("base_url", ""),
             default_headers=default_headers,
-        )
-
-        async with client.audio.speech.with_streaming_response.create(
-                **self._build_request_kwargs(text, **kwargs)
-        ) as response:
-            audio_bytes = b""
-            async for chunk in response.iter_bytes():
-                audio_bytes += chunk
+        ) as client:
+            async with client.audio.speech.with_streaming_response.create(
+                    **self._build_request_kwargs(text, **kwargs)
+            ) as response:
+                audio_bytes = b""
+                async for chunk in response.iter_bytes():
+                    audio_bytes += chunk
 
         b64_str = base64.b64encode(audio_bytes).decode("utf-8")
         return Record(record=b64_str)
@@ -284,10 +283,10 @@ class OpenAICompatibleSTTClient(STTModelClient):
         if not record_path:
             raise ValueError("Speech recognition received an empty audio record")
 
-        client = self._build_client()
-        response = await client.audio.transcriptions.create(
-            **self._build_request_kwargs(record_path, **kwargs)
-        )
+        async with self._build_client() as client:
+            response = await client.audio.transcriptions.create(
+                **self._build_request_kwargs(record_path, **kwargs)
+            )
         if not hasattr(response, "text"):
             raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
         return response.text or ""

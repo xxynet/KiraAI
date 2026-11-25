@@ -19,9 +19,11 @@ async def test_image_chat_rejects_text_response(method, monkeypatch):
     ))
     body = "<html>image gateway failed</html>"
     create = AsyncMock(return_value=body)
-    monkeypatch.setattr(client, "_build_client", lambda: SimpleNamespace(
-        chat=SimpleNamespace(completions=SimpleNamespace(create=create)),
-    ))
+    sdk = MagicMock()
+    sdk.chat.completions.create = create
+    sdk.__aenter__ = AsyncMock(return_value=sdk)
+    sdk.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr(client, "_build_client", lambda: sdk)
     args = ("draw", []) if method == "_image_to_image_via_chat" else ("draw",)
     with pytest.raises(ProviderAPIError) as caught:
         await getattr(client, method)(*args)
@@ -46,7 +48,10 @@ async def test_volcengine_image_rejects_text_response(editing, monkeypatch):
         provider_id="test", provider_name="test", provider_config={}, model_config={},
     ))
     body = "image gateway failure"
-    sdk = SimpleNamespace(images=SimpleNamespace(generate=AsyncMock(return_value=body)))
+    sdk = MagicMock()
+    sdk.images.generate = AsyncMock(return_value=body)
+    sdk.__aenter__ = AsyncMock(return_value=sdk)
+    sdk.__aexit__ = AsyncMock(return_value=False)
     monkeypatch.setattr(module, "AsyncOpenAI", lambda **kwargs: sdk)
     with pytest.raises(ProviderAPIError) as caught:
         if editing:
@@ -63,9 +68,11 @@ async def test_stt_rejects_text_response(monkeypatch):
         provider_id="test", provider_name="test",
     ))
     body = "transcription gateway failed"
-    monkeypatch.setattr(client, "_build_client", lambda: SimpleNamespace(
-        audio=SimpleNamespace(transcriptions=SimpleNamespace(create=AsyncMock(return_value=body))),
-    ))
+    sdk = MagicMock()
+    sdk.audio.transcriptions.create = AsyncMock(return_value=body)
+    sdk.__aenter__ = AsyncMock(return_value=sdk)
+    sdk.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr(client, "_build_client", lambda: sdk)
     record = SimpleNamespace(to_path=AsyncMock(return_value="voice.wav"))
     with pytest.raises(ProviderAPIError) as caught:
         await client.speech_to_text(record)
