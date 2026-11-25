@@ -2,7 +2,10 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Literal, Optional, Union
+from typing import TYPE_CHECKING, Literal, Optional, Union
+
+if TYPE_CHECKING:
+    from core.agent.subagent_presets import PluginSubAgentRegistration
 
 from .handlers import EventHandler, EventType, Priority
 from .pages import PageMenu, PluginPage
@@ -29,11 +32,18 @@ class PluginComponents:
     providers: dict[str, dict] = field(default_factory=dict)
     adapters: dict[str, dict] = field(default_factory=dict)
     adapter_capabilities: set[tuple[str, type]] = field(default_factory=set)
+    subagents: dict[str, "PluginSubAgentRegistration"] = field(default_factory=dict)
 
     def has_any(self) -> bool:
         return bool(self.tools or self.tags or self.hooks or self.pages
                     or self.api_routes or self.ws_routes or self.static_dirs or self.widgets
-                    or self.providers or self.adapters or self.adapter_capabilities)
+                    or self.providers or self.adapters or self.adapter_capabilities or self.subagents)
+
+    def register_subagent(self, identity: str, registration: "PluginSubAgentRegistration") -> None:
+        self.subagents[identity] = registration
+
+    def unregister_subagent(self, identity: str) -> "PluginSubAgentRegistration | None":
+        return self.subagents.pop(identity, None)
 
     def register_tool(self, name: str, description: str, params: dict, func: Callable):
         self.tools[name] = {

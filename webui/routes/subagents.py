@@ -1,6 +1,6 @@
 from fastapi import Depends, HTTPException
 
-from core.agent.subagent_presets import DuplicatePresetNameError, SubAgentPreset
+from core.agent.subagent_presets import DuplicatePresetNameError, ReadOnlyPresetError, SubAgentPreset
 from core.logging_manager import get_logger
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
@@ -61,6 +61,8 @@ class SubAgentsRoutes(Routes):
     async def _save(self, payload: SubAgentPreset, preset_id: str | None = None):
         try:
             return await self._store().save(payload, preset_id)
+        except ReadOnlyPresetError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
         except DuplicatePresetNameError as exc:
             raise HTTPException(
                 status_code=409,
@@ -75,6 +77,8 @@ class SubAgentsRoutes(Routes):
     async def delete_preset(self, preset_id: str):
         try:
             await self._store().delete(preset_id)
+        except ReadOnlyPresetError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Subagent preset not found") from exc
         except OSError as exc:

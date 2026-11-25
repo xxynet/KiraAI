@@ -92,6 +92,99 @@ def _source_batch(session, supported_elements):
 
 
 @pytest.mark.anyio
+async def test_private_preset_tools_respect_selection_and_do_not_leak_between_presets(agents, tmp_path):
+    from core.agent.subagent_presets import SubAgentPresetStore
+    from core.plugin import PluginManager, SubAgentPreset
+
+    manager, _, _, _ = agents
+    manager.presets = SubAgentPresetStore(tmp_path / "presets.json")
+    tool, other, global_tool = RecordingTool(), RecordingTool(), RecordingTool()
+    plugin_manager = PluginManager(ctx=SimpleNamespace(subagent_mgr=manager))
+    first = await plugin_manager.register_plugin_subagent("first", SubAgentPreset(name="First", tools=[tool]))
+    second = await plugin_manager.register_plugin_subagent("second", SubAgentPreset(name="Second", tools=[other]))
+    pool = ToolSet([global_tool])
+    custom = SubAgentConfig(tool_mode="custom", tool_names=("record",))
+    assert manager._tools(custom, pool, pool, first["id"]).tools == [tool]
+    assert manager._tools(custom, pool, pool, second["id"]).tools == [other]
+    assert manager._tools(custom, pool, pool).tools == [global_tool]
+    assert pool.tools == [global_tool]
+    assert not manager._tools(SubAgentConfig(tool_mode="custom"), pool, pool, first["id"]).tools
+    assert not manager._tools(
+        SubAgentConfig(tool_mode="exclude", excluded_tools=("record",)), pool, pool, first["id"],
+    ).tools
+    await plugin_manager.unregister_plugin_subagent("first", first["id"])
+    assert not manager.presets.get_plugin_tools(first["id"])
+    assert manager.presets.get_plugin_tools(second["id"]) == [other]
+    await plugin_manager.unregister_plugin_subagent("second", second["id"])
+    assert not manager.presets.get_plugin_tools(second["id"])
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("mode", ["custom", "inherit"])
+async def test_plugin_preset_private_tools_execute_and_rebind_on_restored_followup(agents, tmp_path, mode):
+    from core.agent.subagent_presets import SubAgentPresetStore
+    from core.config import KiraConfig
+    from core.plugin import PluginContext, PluginManager, SubAgentPreset
+    from core.plugin.builtin_plugins.subagents.tools import SpawnAgentTool
+
+    manager, sessions, parent, model = agents
+    manager.presets = SubAgentPresetStore(tmp_path / "presets.json")
+    context = object.__new__(PluginContext)
+    context.plugin_mgr = Mock(wraps=PluginManager(ctx=context))
+    context.plugin_mgr.get_plugin_id_for_module.return_value = "plugin"
+    context.subagent_mgr = manager
+    tool = RecordingTool()
+    defaults = SubAgentPreset(name="Private", instruction_source="custom", tool_mode=mode, tools=[tool])
+    item = await context.register_subagent(defaults)
+    other_tool = RecordingTool()
+    await context.register_subagent(SubAgentPreset(name="Other", tools=[other_tool]))
+    assert manager.presets.get_plugin_tools(item["id"]) == [tool]
+    config = dict.__new__(KiraConfig)
+    config.update({"bot_config": {"agent": {"max_tool_loop": 3}}})
+    ctx = SimpleNamespace(
+        session_mgr=sessions, subagent_mgr=manager, config=config,
+        tool_mgr=Mock(build_tool_set=Mock(return_value=ToolSet())), mcp_mgr=None,
+    )
+    spawn = SpawnAgentTool(ctx=ctx, source=parent, parent_tools=ToolSet())
+
+    def responses():
+        model.chat.side_effect = [
+            LLMResponse("", tool_calls=[{"id": "call", "function": {"name": "record", "arguments": "{}"}}]),
+            LLMResponse("done"),
+        ]
+
+    responses()
+    info = agent_fields(await spawn.execute(None, task="run private tool", preset_name="Private"))
+    assert (await manager.wait(info["id"], timeout=2))["status"] == "done"
+    assert len(tool.events) == 1
+    assert not other_tool.events
+    assert not ctx.tool_mgr.build_tool_set().tools
+    assert tool.events[0].session.sid == parent.sid
+
+    # Recreate runtime state and bind a fresh instance, as on process restart.
+    manager._agents.clear()
+    manager.presets = SubAgentPresetStore(manager.presets.path)
+    await manager.presets.initialize()
+    replacement = RecordingTool()
+    defaults.tools = [replacement]
+    await context.register_subagent(defaults)
+    responses()
+    await spawn._followup(None, info["id"], "run again", steer=False)
+    assert (await manager.wait(info["id"], timeout=2))["status"] == "done"
+    assert len(replacement.events) == 1
+    assert len(tool.events) == 1
+
+    plugin_manager = PluginManager(ctx=SimpleNamespace(subagent_mgr=manager))
+    await plugin_manager._cleanup_plugin_runtime_components("plugin")
+    assert manager.presets.get_plugin_tools(item["id"]) == []
+    with pytest.raises(KeyError):
+        manager.presets.get(item["id"])
+    assert not manager._tools(
+        manager._agents[info["id"]].config, ToolSet(), ToolSet(), item["id"],
+    ).tools
+
+
+@pytest.mark.anyio
 async def test_background_agent_has_independent_session_and_parent_tool_permissions(agents):
     manager, sessions, parent, model = agents
     source_event = _source_batch(parent, ["text", "image"])

@@ -46,6 +46,7 @@ from ..provider import (
     ProviderManager,
 )
 from .plugin_agent_executor import PluginAgentExecutor
+from .subagent import SubAgentPreset
 
 if TYPE_CHECKING:
     from core.agent.mcp_mgr import MCPManager
@@ -275,6 +276,50 @@ class PluginContext:
         if isinstance(client, LLMModelClient):
             return client
         return
+
+    async def register_subagent(self, preset: SubAgentPreset) -> dict:
+        """Register a read-only plugin subagent preset and return its ID/settings.
+
+        Call during plugin initialization with a core.plugin.SubAgentPreset.
+        The plugin ID and preset name identify the registration. Repeated calls
+        update settings and scope from plugin code. Populate preset.scope from
+        plugin configuration to let users choose sessions in the plugin schema.
+        Presets are read-only in WebUI and exist only while registered.
+        BaseTool instances in tools are runtime-only and scoped to this preset.
+        Plugin shutdown removes these bindings; initialization must restore them.
+        Names must be unique across all presets; conflicts raise ValueError.
+        """
+        if not isinstance(preset, SubAgentPreset):
+            raise TypeError("preset must be a core.plugin.SubAgentPreset instance")
+        frame = inspect.currentframe().f_back
+        plugin_id = None
+        if frame and self.plugin_mgr:
+            plugin_id = self.plugin_mgr.get_plugin_id_for_module(
+                frame.f_globals.get("__name__", ""),
+            )
+        if not plugin_id:
+            raise RuntimeError("Plugin context is not associated with a loaded plugin")
+        return await self.plugin_mgr.register_plugin_subagent(plugin_id, preset)
+
+    async def unregister_subagent(self, preset_id: str) -> bool:
+        """Remove a preset owned by the calling plugin using its registered ID.
+
+        Return False if it is already absent. Raise PermissionError for user
+        presets or presets owned by another plugin. Remove runtime settings,
+        session scopes and runtime tools, retaining existing agent sessions.
+        Running turns are not interrupted; later turns require the preset again.
+        """
+        if not isinstance(preset_id, str) or not preset_id.strip():
+            raise ValueError("preset_id must be a non-empty string")
+        frame = inspect.currentframe().f_back
+        plugin_id = None
+        if frame and self.plugin_mgr:
+            plugin_id = self.plugin_mgr.get_plugin_id_for_module(
+                frame.f_globals.get("__name__", ""),
+            )
+        if not plugin_id:
+            raise RuntimeError("Plugin context is not associated with a loaded plugin")
+        return await self.plugin_mgr.unregister_plugin_subagent(plugin_id, preset_id)
 
     async def register_provider(self, relative_path: str) -> str:
         """Register a Provider directory for the calling plugin."""

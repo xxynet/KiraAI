@@ -2,6 +2,7 @@ import apiClient from './client'
 
 export interface SubagentPreset {
   id: string
+  plugin_id: string | null
   name: string
   description: string
   instruction_source: 'persona' | 'custom' | 'mixed'
@@ -16,7 +17,7 @@ export interface SubagentPreset {
   model: string | null
 }
 
-export type SubagentPresetInput = Omit<SubagentPreset, 'id'>
+export type SubagentPresetInput = Omit<SubagentPreset, 'id' | 'plugin_id'>
 
 export function getSubagentPresets() {
   return apiClient.get<{ presets: SubagentPreset[] }>('/subagents/presets')

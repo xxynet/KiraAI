@@ -38,11 +38,14 @@ class SubAgentTool(BaseTool):
     async def _get_source(self):
         return await self.ctx.session_mgr.get_session(self.source.sid, ensure_session=True)
 
-    def _custom_tools(self, names: list[str]) -> ToolSet:
+    def _custom_tools(self, names: list[str], preset_id: str | None = None) -> ToolSet:
         pool = self.ctx.tool_mgr.build_tool_set()
         selected = []
+        private_names = {tool.name for tool in self.ctx.subagent_mgr.presets.get_plugin_tools(preset_id)}
         server_map = self.ctx.mcp_mgr.get_tool_server_map() if self.ctx.mcp_mgr else {}
         for name in names:
+            if name in private_names:
+                continue
             tool = self.parent_tools.get(name)
             if tool is None:
                 tool = pool.get(name)
@@ -59,9 +62,10 @@ class SubAgentTool(BaseTool):
     async def _followup(self, event, agent_id: str, message: str, *, steer: bool) -> dict:
         source = await self._get_source()
         target = await self.ctx.session_mgr.resolve_session(agent_id)
-        settings = target.data.get("subagent", {}).get("settings", {})
+        state = target.data.get("subagent", {})
+        settings = state.get("settings", {})
         names = settings.get("tool_names", [])
-        tools = self._custom_tools(names) if settings.get("tool_mode") == "custom" else None
+        tools = self._custom_tools(names, state.get("preset_id")) if settings.get("tool_mode") == "custom" else None
         return await self.ctx.subagent_mgr.followup(
             target,
             message,
@@ -113,7 +117,7 @@ class SpawnAgentTool(SubAgentTool):
         )
         source = await self._get_source()
         config = preset.execution_config(build_tool_execution_config(self.ctx.config))
-        tools = self._custom_tools(list(config.tool_names)) if config.tool_mode == "custom" else None
+        tools = self._custom_tools(list(config.tool_names), preset_id) if config.tool_mode == "custom" else None
         result = await self.ctx.subagent_mgr.spawn(
             task,
             parent_id=source.internal_id,
