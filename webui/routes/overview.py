@@ -111,6 +111,29 @@ class OverviewRoutes(Routes):
             except Exception as e:
                 logger.error(f"Failed to collect LLM summary stats: {e}")
 
+        # --- Main-model cache hit rate (last 24 hours) ---
+        cache_hit_hourly = []
+        cache_hit_since_ts = 0
+        cache_hit_avg = None
+        if self.lifecycle and getattr(self.lifecycle, "db_service", None):
+            try:
+                # Hour-align the window so these backend buckets match the 24
+                # hourly buckets the frontend renders (current hour included).
+                # Using now - 86400 would include a partial bucket one hour
+                # earlier, which the frontend drops while it still skews avg.
+                now = int(time.time())
+                since_ts = now - now % 3600 - 23 * 3600
+                cache_hit_since_ts = since_ts
+                cache_hit_hourly = await self.lifecycle.db_service.get_main_cache_hit_hourly(
+                    since_ts, since_ts + 24 * 3600
+                )
+                total_cached = sum(point["cached_tokens"] for point in cache_hit_hourly)
+                total_input = sum(point["input_tokens"] for point in cache_hit_hourly)
+                if total_input > 0:
+                    cache_hit_avg = round(total_cached / total_input * 100, 2)
+            except Exception as e:
+                logger.error(f"Failed to collect cache hit stats: {e}")
+
         return OverviewResponse(
             total_adapters=total_adapters,
             active_adapters=active_adapters,
@@ -124,4 +147,7 @@ class OverviewRoutes(Routes):
             message_hourly=message_hourly,
             message_by_platform=message_by_platform,
             llm_summary=llm_summary,
+            cache_hit_hourly=cache_hit_hourly,
+            cache_hit_since_ts=cache_hit_since_ts,
+            cache_hit_avg=cache_hit_avg,
         )

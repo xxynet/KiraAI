@@ -61,6 +61,9 @@ export interface OverviewResponse {
   message_hourly: HourlyMessageCount[]
   message_by_platform: PlatformMessageCount[]
   llm_summary: LLMSummary
+  cache_hit_hourly: CacheHitHourlyPoint[]
+  cache_hit_since_ts: number
+  cache_hit_avg: number | null
 }
 
 export interface HourlyMessageCount {
@@ -92,6 +95,15 @@ export interface LLMSummary {
   success_count: number
   total_response_ms: number
   by_model: LLMModelStat[]
+}
+
+export interface CacheHitHourlyPoint {
+  hour_ts: number
+  model: string
+  hit_rate: number
+  cached_tokens: number
+  input_tokens: number
+  calls: number
 }
 
 export interface VersionResponse {

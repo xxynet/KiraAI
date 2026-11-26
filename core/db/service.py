@@ -7,6 +7,7 @@ from sqlalchemy import inspect, text
 from .db_mgr import DatabaseManager
 from .mixins.image_cache import ImageCacheMixin
 from .mixins.messages import MessageHistoryMixin
+from .mixins.overview_cache import OverviewCacheMixin
 from .mixins.personas import PersonaMixin
 from .mixins.plugin_sources import PluginSourceMixin
 from .mixins.sessions import ChatSessionMixin
@@ -23,6 +24,7 @@ class DatabaseService(
     PersonaMixin,
     PluginSourceMixin,
     TelemetryMixin,
+    OverviewCacheMixin,
 ):
     """High-level database service for KiraAI business operations."""
 

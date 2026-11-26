@@ -65,6 +65,16 @@ class LLMSummary(BaseModel):
     by_model: list[LLMModelStat] = Field(default_factory=list)
 
 
+class CacheHitHourlyPoint(BaseModel):
+    """One (hour, model) bucket for the main-model cache hit rate line chart."""
+    hour_ts: int = 0  # Unix timestamp of the hour bucket
+    model: str = ""  # Display name of the model that served the calls
+    hit_rate: float = 0  # Percentage 0..100, token-weighted
+    cached_tokens: int = 0
+    input_tokens: int = 0
+    calls: int = 0
+
+
 class OverviewResponse(BaseModel):
     total_adapters: int = 0
     active_adapters: int = 0
@@ -78,6 +88,11 @@ class OverviewResponse(BaseModel):
     message_hourly: list[HourlyMessageCount] = Field(default_factory=list)
     message_by_platform: list[PlatformMessageCount] = Field(default_factory=list)
     llm_summary: LLMSummary = Field(default_factory=LLMSummary)
+    cache_hit_hourly: list[CacheHitHourlyPoint] = Field(default_factory=list)
+    # Hour-aligned start of the 24-hour window shared by the chart and average.
+    cache_hit_since_ts: int = 0
+    # Overall token-weighted cache hit rate (0..100); None when no call reported cache usage.
+    cache_hit_avg: float | None = None
 
 
 class VersionResponse(BaseModel):

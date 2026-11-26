@@ -383,6 +383,104 @@ async def test_llm_summary_derives_totals_from_model_rows():
 
 
 @pytest.mark.anyio
+async def test_main_cache_hit_hourly_filters_and_weights(svc):
+    h10 = 10 * HOUR
+
+    # Only main calls that report cached_tokens and consumed input tokens count.
+    await svc.add_telemetry_llm_usage(h10 + 100, "gpt-4o", 1000, 500, 800, 800, True, source="main")
+    await svc.add_telemetry_llm_usage(h10 + 200, "gpt-4o", 200, 100, None, 800, True, source="main")
+    await svc.add_telemetry_llm_usage(h10 + 300, "gpt-4o", 1000, 100, 900, 800, True, source="subagent")
+    await svc.add_telemetry_llm_usage(h10 + 400, "gpt-4o", 0, 0, 0, 800, True, source="main")
+
+    rows = await svc.get_main_cache_hit_hourly(since_ts=0, until_ts=h10 + HOUR)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["hour_ts"] == h10
+    assert row["model"] == "gpt-4o"
+    assert row["calls"] == 1
+    assert row["cached_tokens"] == 800
+    assert row["input_tokens"] == 1000
+    assert row["hit_rate"] == 80.0
+
+    # A second main call in the same hour is token-weighted into the same bucket.
+    await svc.add_telemetry_llm_usage(h10 + 500, "gpt-4o", 3000, 100, 600, 800, True, source="main")
+    rows = await svc.get_main_cache_hit_hourly(since_ts=0, until_ts=h10 + HOUR)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["calls"] == 2
+    assert row["cached_tokens"] == 1400
+    assert row["input_tokens"] == 4000
+    assert row["hit_rate"] == 35.0
+
+
+@pytest.mark.anyio
+async def test_main_cache_hit_hourly_boundaries_and_empty(svc):
+    h10 = 10 * HOUR
+
+    # No reportable rows yet.
+    assert await svc.get_main_cache_hit_hourly(since_ts=0, until_ts=h10 + HOUR) == []
+
+    await svc.add_telemetry_llm_usage(h10, "m", 100, 10, 50, 100, True, source="main")
+    await svc.add_telemetry_llm_usage(h10 + 3599, "m", 100, 10, 50, 100, True, source="main")
+
+    # Both timestamps fall into the same hour bucket (boundary is inclusive).
+    rows = await svc.get_main_cache_hit_hourly(since_ts=h10, until_ts=h10 + HOUR)
+    assert len(rows) == 1
+    assert rows[0]["hour_ts"] == h10
+    assert rows[0]["model"] == "m"
+    assert rows[0]["calls"] == 2
+    assert rows[0]["hit_rate"] == 50.0
+
+    # since_ts is inclusive: the row exactly at h10 drops out, the bucket stays.
+    rows = await svc.get_main_cache_hit_hourly(since_ts=h10 + 1, until_ts=h10 + HOUR)
+    assert len(rows) == 1
+    assert rows[0]["hour_ts"] == h10
+    assert rows[0]["calls"] == 1
+
+    # Excluding the whole hour yields nothing.
+    assert await svc.get_main_cache_hit_hourly(since_ts=h10 + HOUR, until_ts=h10 + 2 * HOUR) == []
+
+    # until_ts is exclusive: a row exactly at the window end does not leak in.
+    await svc.add_telemetry_llm_usage(h10 + HOUR, "m", 100, 10, 50, 100, True, source="main")
+    rows = await svc.get_main_cache_hit_hourly(since_ts=h10, until_ts=h10 + HOUR)
+    assert [(r["hour_ts"], r["calls"]) for r in rows] == [(h10, 2)]
+    rows = await svc.get_main_cache_hit_hourly(since_ts=h10, until_ts=h10 + 2 * HOUR)
+    assert [(r["hour_ts"], r["calls"]) for r in rows] == [(h10, 2), (h10 + HOUR, 1)]
+
+
+@pytest.mark.anyio
+async def test_main_cache_hit_hourly_splits_by_model(svc):
+    h10 = 10 * HOUR
+    h11 = 11 * HOUR
+
+    # Two gpt-4o calls in the same hour merge into one bucket.
+    await svc.add_telemetry_llm_usage(h10 + 100, "gpt-4o", 1000, 500, 800, 800, True, source="main")
+    await svc.add_telemetry_llm_usage(h10 + 200, "gpt-4o", 1000, 500, 200, 800, True, source="main")
+    # A different model keeps its own curve.
+    await svc.add_telemetry_llm_usage(h10 + 300, "deepseek", 1000, 100, 100, 800, True, source="main")
+    # Subagent calls and NULL cache reports must not leak into the main curve.
+    await svc.add_telemetry_llm_usage(h10 + 400, "deepseek", 1000, 100, 900, 800, True, source="subagent")
+    await svc.add_telemetry_llm_usage(h10 + 500, "deepseek", 1000, 100, None, 800, True, source="main")
+    await svc.add_telemetry_llm_usage(h11 + 100, "deepseek", 500, 100, 0, 800, True, source="main")
+
+    rows = await svc.get_main_cache_hit_hourly(since_ts=0, until_ts=h11 + HOUR)
+    assert [(r["hour_ts"], r["model"]) for r in rows] == [
+        (h10, "deepseek"),
+        (h10, "gpt-4o"),
+        (h11, "deepseek"),
+    ]
+
+    by_bucket = {(r["hour_ts"], r["model"]): r for r in rows}
+    gpt = by_bucket[(h10, "gpt-4o")]
+    assert (gpt["cached_tokens"], gpt["input_tokens"], gpt["calls"]) == (1000, 2000, 2)
+    assert gpt["hit_rate"] == 50.0
+    deepseek = by_bucket[(h10, "deepseek")]
+    assert (deepseek["cached_tokens"], deepseek["input_tokens"], deepseek["calls"]) == (100, 1000, 1)
+    assert deepseek["hit_rate"] == 10.0
+    assert by_bucket[(h11, "deepseek")]["hit_rate"] == 0.0
+
+
+@pytest.mark.anyio
 async def test_telemetry_message_rows_and_mark_by_ids(svc):
     h10 = 10 * HOUR
     await svc.add_telemetry_message(h10 + 100, "QQ")
