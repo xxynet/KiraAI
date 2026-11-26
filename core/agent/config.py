@@ -46,7 +46,7 @@ class AgentExecutionConfig:
             raise TypeError("final_step_hint must be a string or None")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class SubAgentConfig:
     """Independent execution settings and capability selection for a child session."""
 

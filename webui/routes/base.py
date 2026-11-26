@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 Handler = Callable[..., Any]
 
 
-@dataclass
+@dataclass(slots=True)
 class RouteDefinition:
     path: str
     methods: Sequence[str]

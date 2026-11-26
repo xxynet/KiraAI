@@ -27,7 +27,7 @@ class PersonaGenerationError(ValueError):
     """Raised when the model does not submit a valid persona proposal."""
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class PersonaProposal:
     """A persona draft proposed by the LLM."""
 
@@ -37,7 +37,7 @@ class PersonaProposal:
     chat_rules: str
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class PersonaQuestion:
     """A follow-up question the LLM asks before proposing a persona."""
 
@@ -46,7 +46,7 @@ class PersonaQuestion:
     allow_custom: bool
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class PersonaTextDelta:
     """A streamed natural-language status update from the LLM."""
 

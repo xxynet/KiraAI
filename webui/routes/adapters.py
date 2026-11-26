@@ -21,7 +21,7 @@ from webui.utils import _generate_id, schema_to_dict
 logger = get_logger("webui", "blue")
 
 
-@dataclass
+@dataclass(slots=True)
 class _QRCodeLoginSession:
     handler: QRCodeLoginHandler
     expires_at: float

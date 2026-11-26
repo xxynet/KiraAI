@@ -139,7 +139,7 @@ class ReadOnlyPresetError(PermissionError):
     pass
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class PluginSubAgentRegistration:
     plugin_id: str
     preset: SubAgentPreset

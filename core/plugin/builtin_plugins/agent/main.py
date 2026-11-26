@@ -74,7 +74,7 @@ ALL_TOOL_NAMES = [
 PROCESS_TERMINATION_GRACE_SECONDS = 5
 
 
-@dataclass
+@dataclass(slots=True)
 class BackgroundExecTask:
     task_id: str
     session: str

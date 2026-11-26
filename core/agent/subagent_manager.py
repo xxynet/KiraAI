@@ -46,7 +46,7 @@ SUBAGENT_TOOL_NAMES = frozenset({
 SUBAGENT_COMPLETED_EVENT = "subagent_completed"
 
 
-@dataclass
+@dataclass(slots=True)
 class _Agent:
     session: Session
     config: SubAgentConfig

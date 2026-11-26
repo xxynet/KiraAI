@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from core.workflow.src.im.native_content import MessageMediaService
 
 
-@dataclass
+@dataclass(slots=True)
 class IMWorkflowContext:
     """Services shared by IM stages without depending on the event dispatcher."""
 
@@ -56,7 +56,7 @@ class IMWorkflowContext:
     main_agent_runs: MainAgentRuns = field(default_factory=MainAgentRuns)
 
 
-@dataclass
+@dataclass(slots=True)
 class IMEventContext:
     services: IMWorkflowContext
     event: KiraMessageEvent
@@ -67,7 +67,7 @@ class IMEventContext:
         self.sid = self.event.session.sid
 
 
-@dataclass
+@dataclass(slots=True)
 class IMBatchContext:
     """Mutable state belongs to one batch and is never stored on a stage."""
 
