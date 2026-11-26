@@ -342,17 +342,33 @@
         <kbd class="kbd-hint">/</kbd> {{ $t('configuration.shortcut_search') }}
       </p>
     </div>
+
+    <!-- Unsaved changes dialog (opened by onBeforeRouteLeave above) -->
+    <UnsavedChangesModal
+      v-model="unsavedDialogVisible"
+      :title="$t('configuration.unsaved_title')"
+      :message="$t('configuration.unsaved_message', { count: modifiedFields.size })"
+      :save-text="$t('configuration.unsaved_save_and_leave')"
+      :discard-text="$t('configuration.unsaved_discard')"
+      :stay-text="$t('configuration.unsaved_stay')"
+      :busy="saving"
+      @save="saveThenLeave"
+      @discard="discardAndLeave"
+      @stay="stayOnConfigPage"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick, reactive, type Component } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute } from 'vue-router'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, type RouteLocationNormalized } from 'vue-router'
+import { createLeaveGate, needsLeaveDecision } from '@/utils/leaveDecision'
 import { notify } from '@/composables/useNotification'
 import { getConfiguration, saveConfiguration } from '@/api/config'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import InfoCallout from '@/components/common/InfoCallout.vue'
+import UnsavedChangesModal from '@/components/common/UnsavedChangesModal.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import {
   IconMonitor, IconCog, IconRobot, IconImage, IconDatabase, IconFileText, IconFlask, IconGlobe, IconChat,
@@ -384,6 +400,13 @@ const redoStack = ref<UndoEntry[]>([])
 const collapsedGroups = reactive(new Set<string>())
 const modifiedFields = reactive(new Set<string>())
 const validationErrors = ref<Record<string, string>>({})
+
+// Leaving this page with pending edits would silently drop them, so the route
+// guards below ask first through the dialog.
+const unsavedDialogVisible = ref(false)
+const leaveGate = createLeaveGate()
+/** Screens that must stay reachable, e.g. after the session expires. */
+const AUTH_ROUTE_NAMES = ['Login', 'SetupToken'] as const
 
 // Schema
 interface ConfigField {
@@ -959,22 +982,23 @@ function collapseAll() {
 }
 
 // Save
-async function handleSave() {
-  if (saving.value) return
+/** Returns true when nothing is left unsaved (including "no changes"). */
+async function handleSave(): Promise<boolean> {
+  if (saving.value) return false
   if (modifiedFields.size === 0) {
     notify(t('configuration.no_changes'), 'info')
-    return
+    return true
   }
   const allFields = allGroups.flatMap(g => g.fields)
   allFields.forEach(f => validateField(f.key))
   const cleanup = currentData.value.bot_config?.message_history_cleanup
   if (cleanup?.enabled && cleanup.max_age_days === 0 && cleanup.max_messages_per_session === 0) {
     notify(t('configuration.validation.history_cleanup_limit_required'), 'error')
-    return
+    return false
   }
   if (Object.keys(validationErrors.value).length > 0) {
     notify(t('configuration.validation_failed'), 'error')
-    return
+    return false
   }
   saving.value = true
   const snapshot = deepClone(currentData.value)
@@ -993,12 +1017,62 @@ async function handleSave() {
       redoStack.value = []
     }
     notify(t('configuration.save_success'), 'success')
+    // Editing during the request leaves newer changes behind: report success only
+    // when the saved snapshot matches the configuration on screen.
+    return modifiedFields.size === 0
   } catch (err) {
     console.error('Save failed:', err)
     notify(t('configuration.save_failed'), 'error')
+    return false
   } finally {
     saving.value = false
   }
+}
+
+/**
+ * Ask before dropping edits. Both guard kinds share this decision because the
+ * layout keys its view by full path: a query-only change ("/configuration?tab=models"
+ * to "/configuration") remounts the page and drops the edits even though the route
+ * record is unchanged, so only the update guard can catch it.
+ *
+ * Auth redirects (expired token, first-run setup) must never be blocked.
+ */
+async function requestLeaveDecision(to: RouteLocationNormalized): Promise<boolean> {
+  if (!needsLeaveDecision({
+    targetFullPath: to.fullPath,
+    currentFullPath: route.fullPath,
+    unsavedChanges: modifiedFields.size,
+    targetName: to.name,
+    allowedNames: AUTH_ROUTE_NAMES,
+  })) return true
+  // Let the router cancel the superseded navigation without rolling back its
+  // history traversal, then bind the existing dialog to the latest navigation.
+  leaveGate.settle(true)
+  unsavedDialogVisible.value = true
+  return leaveGate.wait()
+}
+
+onBeforeRouteLeave(requestLeaveDecision)
+onBeforeRouteUpdate(requestLeaveDecision)
+
+/** The user chose to stay: abort the pending navigation. */
+function stayOnConfigPage() {
+  unsavedDialogVisible.value = false
+  leaveGate.settle(false)
+}
+
+/** The user chose to leave without saving: let the original navigation continue. */
+function discardAndLeave() {
+  unsavedDialogVisible.value = false
+  leaveGate.settle(true)
+}
+
+async function saveThenLeave() {
+  const saved = await handleSave()
+  unsavedDialogVisible.value = false
+  // Default-disabled until the answer is settled: if the user already chose to
+  // stay while the request was in flight, settle() ignores the stale answer.
+  leaveGate.settle(saved)
 }
 
 async function loadConfig() {
@@ -1106,6 +1180,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
+  // Never leave a navigation guard waiting on a component that no longer exists.
+  leaveGate.settle(false)
 })
 </script>
 

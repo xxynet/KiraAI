@@ -246,3 +246,43 @@ def test_update_marks_task_failed_when_rollback_raises(tmp_path: Path, monkeypat
     assert progress["status"] == "failed"
     assert progress["stage"] == "failed"
     assert "rollback encountered errors" in progress["message"]
+
+
+def test_run_update_passes_max_update_source_bytes_to_download_asset(tmp_path: Path, monkeypatch) -> None:
+    assert releases.MAX_UPDATE_SOURCE_BYTES == 200 * 1024 * 1024
+
+    captured_calls: list[tuple[str, int | None]] = []
+
+    async def download_webui(_tag: str) -> bytes:
+        return b"webui archive"
+
+    async def fake_pick_fastest_source(direct_url: str) -> list[str]:
+        return [f"https://ghproxy.example/{direct_url}", direct_url]
+
+    async def fake_download_asset(url: str, proxy: str | None = None, max_bytes: int | None = None) -> bytes:
+        captured_calls.append((url, max_bytes))
+        raise ValueError(f"Asset exceeds the {max_bytes} byte limit")
+
+    routes = releases.ReleasesRoutes(None, None)
+    task_id = "task"
+    routes._progress[task_id] = routes._new_progress(task_id, "v2.0.0")
+
+    monkeypatch.setattr(releases, "get_data_path", lambda: tmp_path)
+    monkeypatch.setattr(releases, "download_dist_archive", download_webui)
+    monkeypatch.setattr(releases, "pick_fastest_source", fake_pick_fastest_source)
+    monkeypatch.setattr(releases, "download_asset", fake_download_asset)
+
+    asyncio.run(routes._run_update(task_id, "v2.0.0"))
+
+    assert captured_calls == [
+        (
+            "https://ghproxy.example/https://github.com/KiraAI-Dev/KiraAI/archive/refs/tags/v2.0.0.zip",
+            releases.MAX_UPDATE_SOURCE_BYTES,
+        ),
+        (
+            "https://github.com/KiraAI-Dev/KiraAI/archive/refs/tags/v2.0.0.zip",
+            releases.MAX_UPDATE_SOURCE_BYTES,
+        ),
+    ]
+    assert routes._progress[task_id]["status"] == "failed"
+    assert not (tmp_path / "updates" / "v2.0.0.zip").exists()

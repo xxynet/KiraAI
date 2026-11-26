@@ -21,6 +21,7 @@ runInNewContext(outputText, {
   require(id) {
     if (id === 'vue') return { ...Vue, onUnmounted() {} }
     if (id === '@/components/icons') return {}
+    if (id === './modalFocus') return { modalPanelKey: Symbol('modalPanel') }
     return require(id)
   },
   setTimeout,

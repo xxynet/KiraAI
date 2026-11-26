@@ -12,7 +12,7 @@ def identity(*parts: str) -> str:
     return json.dumps(parts, ensure_ascii=False, separators=(",", ":"))
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class MemoryScope:
     persona_id: str
     session_id: str

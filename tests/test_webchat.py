@@ -949,3 +949,320 @@ async def test_webchat_failed_config_save_does_not_change_live_permissions(store
     with pytest.raises(OSError):
         await service.save_config({"allow_file_tools": False, "allow_exec": True})
     assert adapter.config == {"allow_file_tools": True, "allow_exec": False}
+
+
+@pytest.mark.anyio
+async def test_incoming_quotes_preserve_context_media_and_idempotency(store):
+    from core.chat.message_elements import Reply
+
+    adapter = make_adapter(store)
+    service = WebChatService(adapter, Sessions())
+    await service.save_profile(PROFILE)
+    original = await store.append_reply(MessageChain([
+        Text("Original content"), Image("data:image/png;base64,iVBORw0KGgo="),
+    ]), "Kira")
+    request_id = str(uuid.uuid4())
+    first = await service.submit(request_id, "My reply", reply_to=original)
+    assert await service.submit(request_id, "My reply", reply_to=original) == first
+    event = adapter.ctx.event_queue.get_nowait()
+    reply = event.message.chain[0]
+    assert isinstance(reply, Reply) and reply.message_id == original
+    assert reply.chain[0].text == "Original content"
+    assert isinstance(reply.chain[1], Image)
+    assert event.message.chain[1].text == "My reply"
+    assert adapter.ctx.event_queue.empty()
+    saved = await store.get_message(request_id)
+    assert saved["chain"][0]["chain"] == (await store.get_message(original))["chain"]
+    with pytest.raises(ValueError, match="request_conflict"):
+        await service.submit(request_id, "My reply")
+    another = await store.append_reply(MessageChain([Text("Different")]), "Kira")
+    with pytest.raises(ValueError, match="request_conflict"):
+        await service.submit(request_id, "My reply", reply_to=another)
+    with pytest.raises(ValueError, match="reply_not_found"):
+        await service.submit(str(uuid.uuid4()), "My reply", reply_to="missing")
+    assert adapter.ctx.event_queue.empty()
+
+
+@pytest.mark.anyio
+async def test_quote_routes_accept_text_and_uploads_and_reject_missing_targets(store):
+    adapter = make_adapter(store)
+    service = WebChatService(adapter, Sessions())
+    await service.save_profile(PROFILE)
+    original = await store.append_reply(MessageChain([Text("Quoted text")]), "Kira")
+    app = FastAPI()
+    app.dependency_overrides[require_auth] = lambda: True
+    WebChatRoutes(app, SimpleNamespace(webchat=service)).register()
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://test") as client:
+        for reply_to in [original, "missing", ""]:
+            request_id = str(uuid.uuid4())
+            response = await client.post("/api/webchat/messages", json={
+                "request_id": request_id, "text": "reply", "reply_to": reply_to,
+            })
+            assert response.status_code == (200 if reply_to == original else 409 if reply_to else 422)
+        data = {"request_id": str(uuid.uuid4()), "reply_to": original, "kinds": "file"}
+        files = [("files", ("note.txt", b"contents", "text/plain"))]
+        response = await client.post("/api/webchat/messages/upload", data=data, files=files)
+        assert response.status_code == 200
+        assert (await client.post("/api/webchat/messages/upload", data=data, files=files)).json() == response.json()
+        saved = await store.get_message(data["request_id"])
+        assert saved["chain"][0]["message_id"] == original
+        assert saved["chain"][1]["type"] == "file"
+        assert (await client.get(
+            f"/api/webchat/messages/{data['request_id']}/media?element_path=1"
+        )).content == b"contents"
+        missing = await client.post("/api/webchat/messages/upload", data={
+            **data, "request_id": str(uuid.uuid4()), "reply_to": "missing",
+        }, files=files)
+        assert missing.status_code == 409 and missing.json()["detail"] == "reply_not_found"
+
+
+@pytest.mark.anyio
+async def test_delete_single_message_is_authenticated_durable_and_preserves_quotes(store):
+    from core.chat.message_elements import Reply
+
+    adapter = make_adapter(store)
+    service = WebChatService(adapter, Sessions())
+    await service.save_profile(PROFILE)
+    request_id = str(uuid.uuid4())
+    await service.submit(request_id, "Original content")
+    quoted_id = await store.append_reply(MessageChain([Reply(request_id), Text("Quoted reply")]), "Kira")
+    other_id = await store.append_reply(MessageChain([Text("Other reply")]), "Kira")
+    app = FastAPI()
+    WebChatRoutes(app, SimpleNamespace(webchat=service)).register()
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://test") as client:
+        assert (await client.delete(f"/api/webchat/messages/{request_id}")).status_code == 401
+        assert await store.get_message(request_id) is not None
+        app.dependency_overrides[require_auth] = lambda: True
+        assert (await client.delete(f"/api/webchat/messages/{request_id}")).status_code == 200
+        assert (await client.delete(f"/api/webchat/messages/{request_id}")).status_code == 200
+        assert await store.get_message(request_id) is None
+        assert (await store.get_message(quoted_id))["chain"][0]["chain"][0]["text"] == "Original content"
+        assert {item["id"] for item in (await store.list_messages())["messages"]} == {quoted_id, other_id}
+        with pytest.raises(ValueError, match="request_conflict"):
+            await service.submit(request_id, "Original content")
+        with pytest.raises(ValueError, match="request_conflict"):
+            await store.accept(request_id, "Original content", "Alice")
+        assert (await client.delete(f"/api/webchat/messages/{other_id}")).status_code == 200
+        assert await store.get_message(other_id) is None
+        assert await store.get_setting("profile") == PROFILE
+        await service.stop()
+        assert (await client.delete(f"/api/webchat/messages/{quoted_id}")).status_code == 503
+
+
+@pytest.mark.anyio
+async def test_single_delete_cleans_media_after_last_direct_or_quote_reference(store):
+    from core.chat.message_elements import Reply
+
+    image = Image("data:image/png;base64,iVBORw0KGgo=")
+    original_id = await store.append_reply(MessageChain([image]), "Kira")
+    original = await store.get_message(original_id)
+    media = store.media_dir / original["chain"][0]["file"]
+    duplicate_id = await store.append_reply(MessageChain([image]), "Kira")
+    quote_id = await store.append_reply(MessageChain([Reply(original_id)]), "Kira")
+    assert media.is_file()
+    await store.delete_message(original_id)
+    assert media.is_file()
+    await store.delete_message(duplicate_id)
+    assert media.is_file()
+    await store.delete_message(quote_id)
+    assert not media.exists()
+    await store.delete_message(quote_id)
+    assert (await store.list_messages())["messages"] == []
+
+
+@pytest.mark.anyio
+async def test_single_delete_reports_media_failure_and_keeps_message(store, monkeypatch):
+    from pathlib import Path
+
+    message_id = await store.append_reply(MessageChain([
+        Image("data:image/png;base64,iVBORw0KGgo="),
+    ]), "Kira")
+    original = await store.get_message(message_id)
+    media = store.media_dir / original["chain"][0]["file"]
+    rename = Path.rename
+
+    def fail_media_rename(path, *args, **kwargs):
+        if path == media.resolve():
+            raise PermissionError("Media is in use")
+        return rename(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "rename", fail_media_rename)
+    service = WebChatService(make_adapter(store), Sessions())
+    app = FastAPI()
+    app.dependency_overrides[require_auth] = lambda: True
+    WebChatRoutes(app, SimpleNamespace(webchat=service)).register()
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://test") as client:
+        response = await client.delete(f"/api/webchat/messages/{message_id}")
+        assert response.status_code == 500
+        assert response.json()["detail"] == "delete_failed"
+    assert await store.get_message(message_id) == original
+    assert media.is_file()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("upload", [False, True])
+async def test_accepted_quote_retry_uses_snapshot_after_target_deletion(store, upload):
+    adapter = make_adapter(store)
+    service = WebChatService(adapter, Sessions())
+    await service.save_profile(PROFILE)
+    original_id = await store.append_reply(MessageChain([
+        Text("Original content"), Image("data:image/png;base64,iVBORw0KGgo="),
+    ]), "Kira")
+    app = FastAPI()
+    app.dependency_overrides[require_auth] = lambda: True
+    WebChatRoutes(app, SimpleNamespace(webchat=service)).register()
+    request_id = str(uuid.uuid4())
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://test") as client:
+        async def send(*, text="Reply", reply_to=original_id, content=b"attachment", identifier=request_id):
+            data = {"request_id": identifier, "text": text}
+            if reply_to is not None:
+                data["reply_to"] = reply_to
+            if upload:
+                data["kinds"] = "file"
+                return await client.post("/api/webchat/messages/upload", data=data,
+                                         files=[("files", ("note.txt", content, "text/plain"))])
+            return await client.post("/api/webchat/messages", json=data)
+
+        first = await send()
+        assert first.status_code == 200
+        adapter.ctx.event_queue.get_nowait()
+        snapshot = await store.get_message(request_id)
+        await service.delete_message(original_id)
+        assert await store.get_message(original_id) is None
+        retried = await send()
+        assert retried.status_code == 200
+        assert retried.json() == first.json()
+        assert await store.get_message(request_id) == snapshot
+        assert adapter.ctx.event_queue.empty()
+        for changes in [{"text": "Changed"}, {"reply_to": None}, {"reply_to": "different"}]:
+            conflict = await send(**changes)
+            assert conflict.status_code == 409
+            assert conflict.json()["detail"] == "request_conflict"
+        if upload:
+            conflict = await send(content=b"changed attachment")
+            assert conflict.status_code == 409
+            assert conflict.json()["detail"] == "request_conflict"
+        new = await send(identifier=str(uuid.uuid4()))
+        assert new.status_code == 409
+        assert new.json()["detail"] == "reply_not_found"
+        assert adapter.ctx.event_queue.empty()
+
+
+async def make_message_with_two_attachments(store):
+    from core.chat.message_elements import File
+
+    message_id = await store.append_reply(MessageChain([
+        File("data:application/octet-stream;base64,Zmlyc3Q=", name="first.txt"),
+        File("data:application/octet-stream;base64,c2Vjb25k", name="second.txt"),
+    ]), "Kira")
+    record = await store.get_message(message_id)
+    files = {store.media_dir / element["file"] for element in record["chain"]}
+    return message_id, record, {path: path.read_bytes() for path in files}
+
+
+@pytest.mark.anyio
+async def test_single_delete_restores_first_attachment_when_second_move_fails(store, monkeypatch):
+    from pathlib import Path
+
+    message_id, record, contents = await make_message_with_two_attachments(store)
+    rename = Path.rename
+    moves = []
+
+    def fail_second_move(path, target):
+        if path.parent == store.media_dir:
+            moves.append(path)
+            if len(moves) == 2:
+                raise PermissionError("Second attachment is in use")
+        return rename(path, target)
+
+    monkeypatch.setattr(Path, "rename", fail_second_move)
+    with pytest.raises(PermissionError, match="Second attachment"):
+        await store.delete_message(message_id)
+    assert len(moves) == 2
+    assert await store.get_message(message_id) == record
+    assert all(path.read_bytes() == content for path, content in contents.items())
+    assert not list(store.media_dir.glob(".delete-*"))
+    assert not store._pending_media_cleanup
+
+
+@pytest.mark.anyio
+async def test_single_delete_restores_all_attachments_when_commit_fails(store, monkeypatch):
+    import aiosqlite
+
+    message_id, record, contents = await make_message_with_two_attachments(store)
+
+    async def fail_commit(connection):
+        assert all(not path.exists() for path in contents)
+        raise OSError("Database commit failed")
+
+    monkeypatch.setattr(aiosqlite.Connection, "commit", fail_commit)
+    with pytest.raises(OSError, match="Database commit failed"):
+        await store.delete_message(message_id)
+    assert await store.get_message(message_id) == record
+    assert all(path.read_bytes() == content for path, content in contents.items())
+    assert not list(store.media_dir.glob(".delete-*"))
+
+
+@pytest.mark.anyio
+async def test_single_delete_retries_postcommit_cleanup_in_memory(store, monkeypatch):
+    import core.webchat.store as store_module
+
+    message_id, _, contents = await make_message_with_two_attachments(store)
+    remove = store_module.shutil.rmtree
+    logger = Mock()
+    monkeypatch.setattr(store_module, "logger", logger)
+    fail = True
+
+    def fail_cleanup(path):
+        if fail:
+            next(path.iterdir()).unlink()
+            raise PermissionError("Cleanup temporarily blocked after one deletion")
+        return remove(path)
+
+    monkeypatch.setattr(store_module.shutil, "rmtree", fail_cleanup)
+    await store.delete_message(message_id)
+    assert await store.get_message(message_id) is None
+    assert all(not path.exists() for path in contents)
+    assert len(store._pending_media_cleanup) == 1
+    directory = next(iter(store._pending_media_cleanup))
+    remaining = {path.name for path in directory.iterdir()}
+    assert len(remaining) == 1
+    assert remaining < {path.name for path in contents}
+    logger.exception.assert_called_once()
+    fail = False
+    await store.delete_message(message_id)
+    assert not directory.exists()
+    assert not store._pending_media_cleanup
+
+
+@pytest.mark.anyio
+async def test_single_delete_finishes_staging_before_releasing_lock_on_cancellation(store, monkeypatch):
+    from pathlib import Path
+    from threading import Event
+
+    message_id, _, contents = await make_message_with_two_attachments(store)
+    started, resume = Event(), Event()
+    rename = Path.rename
+
+    def pause_move(path, target):
+        if path.parent == store.media_dir and not started.is_set():
+            started.set()
+            if not resume.wait(5):
+                raise TimeoutError("Test did not resume attachment staging")
+        return rename(path, target)
+
+    monkeypatch.setattr(Path, "rename", pause_move)
+    deletion = asyncio.create_task(store.delete_message(message_id))
+    try:
+        assert await asyncio.to_thread(started.wait, 5)
+        deletion.cancel()
+        await asyncio.sleep(0)
+        assert store.lock.locked()
+    finally:
+        resume.set()
+    with pytest.raises(asyncio.CancelledError):
+        await deletion
+    assert not store.lock.locked()
+    assert await store.get_message(message_id) is None
+    assert all(not path.exists() for path in contents)
+    assert not list(store.media_dir.glob(".delete-*"))

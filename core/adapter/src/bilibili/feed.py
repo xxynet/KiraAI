@@ -45,7 +45,7 @@ if TYPE_CHECKING:
     from .bilibili import BiliBiliAdapter
 
 
-@dataclass
+@dataclass(slots=True)
 class _FeedCursor:
     key: tuple[Any, ...]
     items: list[FeedItem] = field(default_factory=list)

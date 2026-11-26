@@ -1,4 +1,5 @@
 import asyncio
+import gzip
 import hashlib
 
 import httpx
@@ -131,3 +132,146 @@ def test_get_all_releases_propagates_page_failure_and_closes_client(
     assert pages == [1, 2]
     assert len(clients) == 1
     assert clients[0].is_closed
+
+
+class _TrackingStream(httpx.AsyncByteStream):
+    """Async byte stream that records how many chunks were consumed and closure."""
+
+    def __init__(self, chunks: list[bytes]):
+        self.chunks = chunks
+        self.consumed = 0
+        self.closed = False
+
+    async def __aiter__(self):
+        for chunk in self.chunks:
+            self.consumed += 1
+            yield chunk
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+def _mock_async_client(monkeypatch, handler) -> None:
+    real_async_client = httpx.AsyncClient
+
+    def mock_async_client(**kwargs):
+        return real_async_client(transport=httpx.MockTransport(handler), **kwargs)
+
+    monkeypatch.setattr(github_api.httpx, "AsyncClient", mock_async_client)
+
+
+@pytest.mark.anyio
+async def test_download_asset_enforces_max_bytes(monkeypatch):
+    body = b"x" * 2048
+
+    async def handler(request):
+        return httpx.Response(200, content=body, request=request)
+
+    _mock_async_client(monkeypatch, handler)
+
+    assert await github_api.download_asset("https://example.test/a.zip") == body
+    assert await github_api.download_asset("https://example.test/a.zip", max_bytes=4096) == body
+    assert await github_api.download_asset("https://example.test/a.zip", max_bytes=len(body)) == body
+    with pytest.raises(ValueError, match="byte limit"):
+        await github_api.download_asset("https://example.test/a.zip", max_bytes=1024)
+
+
+@pytest.mark.anyio
+async def test_download_asset_rejects_streamed_body_incrementally(monkeypatch):
+    stream = _TrackingStream([b"a" * 600, b"b" * 600, b"sentinel"])
+
+    async def handler(request):
+        return httpx.Response(200, stream=stream, request=request)
+
+    _mock_async_client(monkeypatch, handler)
+
+    with pytest.raises(ValueError, match="byte limit"):
+        await github_api.download_asset("https://example.test/a.zip", max_bytes=1024)
+    assert stream.consumed == 2
+    assert stream.closed
+
+
+@pytest.mark.anyio
+async def test_download_asset_rejects_oversized_content_length_before_reading(monkeypatch):
+    stream = _TrackingStream([b"x" * 10])
+
+    async def handler(request):
+        return httpx.Response(200, stream=stream, headers={"Content-Length": "4096"}, request=request)
+
+    _mock_async_client(monkeypatch, handler)
+
+    with pytest.raises(ValueError, match="byte limit"):
+        await github_api.download_asset("https://example.test/a.zip", max_bytes=1024)
+    assert stream.consumed == 0
+    assert stream.closed
+
+
+@pytest.mark.anyio
+async def test_download_asset_does_not_read_redirect_bodies(monkeypatch):
+    body = b"zip archive"
+    redirect_stream = _TrackingStream([b"r" * 4096])
+    seen: list[tuple[str, str | None]] = []
+
+    async def handler(request):
+        seen.append((str(request.url), request.headers.get("Accept-Encoding")))
+        if request.url.host == "github.test":
+            return httpx.Response(
+                302,
+                stream=redirect_stream,
+                headers={"Location": "https://codeload.test/a.zip"},
+                request=request,
+            )
+        return httpx.Response(200, content=body, request=request)
+
+    _mock_async_client(monkeypatch, handler)
+
+    assert await github_api.download_asset("https://github.test/a.zip", max_bytes=1024) == body
+    assert seen == [
+        ("https://github.test/a.zip", "identity"),
+        ("https://codeload.test/a.zip", "identity"),
+    ]
+    assert redirect_stream.consumed == 0
+    assert redirect_stream.closed
+
+
+@pytest.mark.anyio
+async def test_download_asset_limits_redirect_count(monkeypatch):
+    requests: list[str] = []
+
+    async def handler(request):
+        requests.append(str(request.url))
+        return httpx.Response(302, headers={"Location": "https://example.test/loop"}, request=request)
+
+    _mock_async_client(monkeypatch, handler)
+
+    with pytest.raises(ConnectionError, match="redirects"):
+        await github_api.download_asset("https://example.test/loop", max_bytes=1024)
+    # Initial request plus httpx's default limit of 20 redirects
+    assert len(requests) == 21
+
+
+@pytest.mark.anyio
+async def test_download_asset_rejects_content_encoding_when_limited(monkeypatch):
+    body = b"x" * 2048
+    encoded = gzip.compress(gzip.compress(body))
+    streams: list[_TrackingStream] = []
+
+    async def handler(request):
+        stream = _TrackingStream([encoded])
+        streams.append(stream)
+        return httpx.Response(
+            200,
+            stream=stream,
+            headers={"Content-Encoding": "gzip, gzip"},
+            request=request,
+        )
+
+    _mock_async_client(monkeypatch, handler)
+
+    with pytest.raises(ValueError, match="Content-Encoding"):
+        await github_api.download_asset("https://example.test/a.zip", max_bytes=4096)
+    assert streams[0].consumed == 0
+    assert streams[0].closed
+
+    # Unbounded downloads keep transparent decoding for existing callers.
+    assert await github_api.download_asset("https://example.test/a.zip") == body

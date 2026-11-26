@@ -16,7 +16,7 @@ class TelemetryEventType:
     TELEMETRY_ENABLED = "telemetry_enabled"
 
 
-@dataclass
+@dataclass(slots=True)
 class TelemetryEvent:
     event_type: str
     data: dict[str, Any]

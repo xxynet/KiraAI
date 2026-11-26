@@ -20,7 +20,7 @@ logger = get_logger("plugin_store", "cyan")
 CACHE_TTL_SECONDS = 600
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class StoreSource:
     """An immutable source snapshot; persisted changes remain owned by the database."""
 
@@ -66,7 +66,7 @@ class PluginStoreItemResponse(BaseModel):
     updated_at: int | str | None = None
 
 
-@dataclass
+@dataclass(slots=True)
 class StoreFetchResult:
     data: Any
     cache_file: str | None = None

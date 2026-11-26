@@ -27,6 +27,7 @@
         </PageContainer>
       </main>
     </div>
+    <QuickNavPalette />
     <ChangeTokenModal />
   </div>
 </template>
@@ -34,11 +35,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useQuickNavShortcut } from '@/composables/useQuickNav'
 import { useRouteLoading } from '@/composables/useRouteLoading'
 import { useI18n } from 'vue-i18n'
 import { usePluginMenuStore } from '@/stores/pluginMenu'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import AppHeader from '@/components/layout/AppHeader.vue'
+import QuickNavPalette from '@/components/layout/QuickNavPalette.vue'
 import PageContainer from '@/components/layout/PageContainer.vue'
 import ChangeTokenModal from '@/components/common/ChangeTokenModal.vue'
 
@@ -48,6 +51,8 @@ const { t } = useI18n()
 const pluginMenuStore = usePluginMenuStore()
 
 const { phase: routePhase } = useRouteLoading()
+
+useQuickNavShortcut()
 
 const isMobile = ref(window.innerWidth <= 1024)
 const sidebarOpen = ref(!isMobile.value)

@@ -77,7 +77,7 @@ ContextT = TypeVar("ContextT", bound=BaseAgentExecutionContext)
 AgentExecutorState = Literal["idle", "running", "stopping", "done"]
 
 
-@dataclass
+@dataclass(slots=True)
 class _AgentRunState:
     config: AgentExecutionConfig
     model_group: list[LLMModelClient]
