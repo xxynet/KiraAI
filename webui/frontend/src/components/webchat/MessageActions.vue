@@ -83,10 +83,10 @@ function onPointerMove(event: PointerEvent) {
   if (Math.hypot(event.clientX - pressStart.x, event.clientY - pressStart.y) > 10) cancelPress()
 }
 function onOutside(event: PointerEvent) {
-  if (!menu.value?.contains(event.target as Node)) close()
+  if (!menu.value?.contains(event.target as Node) && !trigger.value?.contains(event.target as Node)) close()
 }
 function onViewportChange(event: Event) {
-  if (!menu.value?.contains(event.target as Node)) close()
+  if (event.type === 'resize' || !menu.value?.contains(event.target as Node)) close()
 }
 function onOtherMenu() { close() }
 function onFocusOut(event: FocusEvent) {

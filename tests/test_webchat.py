@@ -1097,3 +1097,52 @@ async def test_single_delete_reports_media_failure_and_keeps_message(store, monk
         assert response.json()["detail"] == "delete_failed"
     assert await store.get_message(message_id) == original
     assert media.is_file()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("upload", [False, True])
+async def test_accepted_quote_retry_uses_snapshot_after_target_deletion(store, upload):
+    adapter = make_adapter(store)
+    service = WebChatService(adapter, Sessions())
+    await service.save_profile(PROFILE)
+    original_id = await store.append_reply(MessageChain([
+        Text("Original content"), Image("data:image/png;base64,iVBORw0KGgo="),
+    ]), "Kira")
+    app = FastAPI()
+    app.dependency_overrides[require_auth] = lambda: True
+    WebChatRoutes(app, SimpleNamespace(webchat=service)).register()
+    request_id = str(uuid.uuid4())
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://test") as client:
+        async def send(*, text="Reply", reply_to=original_id, content=b"attachment", identifier=request_id):
+            data = {"request_id": identifier, "text": text}
+            if reply_to is not None:
+                data["reply_to"] = reply_to
+            if upload:
+                data["kinds"] = "file"
+                return await client.post("/api/webchat/messages/upload", data=data,
+                                         files=[("files", ("note.txt", content, "text/plain"))])
+            return await client.post("/api/webchat/messages", json=data)
+
+        first = await send()
+        assert first.status_code == 200
+        adapter.ctx.event_queue.get_nowait()
+        snapshot = await store.get_message(request_id)
+        await service.delete_message(original_id)
+        assert await store.get_message(original_id) is None
+        retried = await send()
+        assert retried.status_code == 200
+        assert retried.json() == first.json()
+        assert await store.get_message(request_id) == snapshot
+        assert adapter.ctx.event_queue.empty()
+        for changes in [{"text": "Changed"}, {"reply_to": None}, {"reply_to": "different"}]:
+            conflict = await send(**changes)
+            assert conflict.status_code == 409
+            assert conflict.json()["detail"] == "request_conflict"
+        if upload:
+            conflict = await send(content=b"changed attachment")
+            assert conflict.status_code == 409
+            assert conflict.json()["detail"] == "request_conflict"
+        new = await send(identifier=str(uuid.uuid4()))
+        assert new.status_code == 409
+        assert new.json()["detail"] == "reply_not_found"
+        assert adapter.ctx.event_queue.empty()

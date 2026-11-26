@@ -20,18 +20,25 @@ const message = { id: 'original', chain: [{ type: 'text', text: '**Raw text**' }
 function setup(code = compiled, props = { message, disabled: false }, api = {}) {
   const exports = {}, events = [], notifications = [], errors = [], copied = []
   let timeout, cleared = false
+  const mounted = [], documentListeners = new Map(), windowListeners = new Map()
   const context = {
     exports, AbortController, Event,
     crypto: { getRandomValues: bytes => bytes.fill(7) },
     localStorage: { getItem: () => null },
-    document: { dispatchEvent() {}, activeElement: null },
-    window: { innerWidth: 300, innerHeight: 200 },
+    document: { dispatchEvent() {}, activeElement: null,
+      addEventListener: (name, fn) => documentListeners.set(name, fn),
+      removeEventListener: name => documentListeners.delete(name),
+    },
+    window: { innerWidth: 300, innerHeight: 200,
+      addEventListener: (name, fn) => windowListeners.set(name, fn),
+      removeEventListener: name => windowListeners.delete(name),
+    },
     navigator: { clipboard: { writeText: async text => copied.push(text) } },
     console: { error: (...args) => errors.push(args) },
     setTimeout: fn => { timeout = fn; cleared = false; return 1 },
     clearTimeout: () => { cleared = true },
     require(id) {
-      if (id === 'vue') return { ...Vue, onMounted() {}, onBeforeUnmount() {}, watch() {} }
+      if (id === 'vue') return { ...Vue, onMounted: fn => mounted.push(fn), onBeforeUnmount() {}, watch() {} }
       if (id === 'vue-i18n') return { useI18n: () => ({ t: key => key, locale: Vue.ref('en') }) }
       if (id === '@/composables/useNotification') return { notify: (...args) => notifications.push(args) }
       if (id === './messageText' || id === '@/components/webchat/messageText') return textExports
@@ -42,7 +49,7 @@ function setup(code = compiled, props = { message, disabled: false }, api = {}) 
   }
   runInNewContext(code, context)
   const state = exports.default.setup(props, { expose() {}, emit: (...args) => events.push(args) })
-  return { state, context, events, notifications, copied, errors, fire: () => { if (!cleared) timeout?.() } }
+  return { state, context, events, notifications, copied, errors, mount: () => mounted.forEach(fn => fn()), documentListeners, windowListeners, fire: () => { if (!cleared) timeout?.() } }
 }
 
 test('copy preserves raw Markdown and represents quotes and media without archive paths', () => {
@@ -212,4 +219,44 @@ test('canceling message deletion keeps messages and makes no delete request', as
   assert.equal(state.messageToDelete.value, null)
   assert.equal(calls.length, 0)
   assert.equal(state.messages.value.length, 1)
+})
+
+
+test('registered document pointer listener preserves trigger long press and dismisses outside touches', () => {
+  const { state, mount, documentListeners, fire } = setup()
+  const child = {}, outside = {}
+  state.trigger.value = { contains: target => target === child }
+  mount()
+  const event = { pointerType: 'touch', isPrimary: true, clientX: 20, clientY: 20, target: child }
+  state.onPointerDown(event)
+  documentListeners.get('pointerdown')(event)
+  fire()
+  assert.equal(state.opened.value, true)
+  state.menu.value = { contains: target => target === child }
+  documentListeners.get('pointerdown')({ target: child })
+  assert.equal(state.opened.value, true)
+  documentListeners.get('pointerdown')({ target: outside })
+  assert.equal(state.opened.value, false)
+  state.onPointerDown(event)
+  documentListeners.get('pointerdown')({ target: outside })
+  fire()
+  assert.equal(state.opened.value, false)
+})
+
+test('registered resize listener closes menu without testing Window containment', () => {
+  const { state, context, mount, documentListeners, windowListeners } = setup()
+  const menuChild = {}, outside = {}
+  state.menu.value = { contains: target => {
+    if (target === context.window) throw new TypeError('Window is not a Node')
+    return target === menuChild
+  } }
+  mount()
+  state.opened.value = true
+  documentListeners.get('scroll')({ type: 'scroll', target: menuChild })
+  assert.equal(state.opened.value, true)
+  windowListeners.get('resize')({ type: 'resize', target: context.window })
+  assert.equal(state.opened.value, false)
+  state.opened.value = true
+  documentListeners.get('scroll')({ type: 'scroll', target: outside })
+  assert.equal(state.opened.value, false)
 })

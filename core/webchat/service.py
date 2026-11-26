@@ -59,6 +59,21 @@ class WebChatService:
             chain = MessageChain(([Text(text)] if text else []) + (attachments or []))
             if not list(chain):
                 raise ValueError("empty_message")
+            elements = await serialize_message_chain(chain, archive_root=self.store.media_dir)
+            if any(item.get("file_type") == "unavailable" for item in elements):
+                raise ValueError("attachment_failed")
+            persisted = await self.store.get_message(request_id)
+            snapshot = None
+            if persisted is not None:
+                saved_chain = persisted["chain"]
+                if saved_chain and saved_chain[0].get("type") == "reply":
+                    snapshot = saved_chain[0]
+                if (snapshot.get("message_id") if snapshot is not None else None) != reply_to:
+                    raise ValueError("request_conflict")
+            retry_elements = [snapshot, *elements] if snapshot is not None else elements
+            existing = await self.store.get_request(request_id, text, retry_elements)
+            if existing is not None:
+                return existing
             if reply_to is not None:
                 original = await self.store.get_message(reply_to)
                 if original is None:
@@ -67,12 +82,7 @@ class WebChatService:
                     _deserialize_message_chain, original["chain"], depth=1, archive_root=self.store.media_dir,
                 )
                 chain = MessageChain([Reply(reply_to, chain=quoted), *chain])
-            elements = await serialize_message_chain(chain, archive_root=self.store.media_dir)
-            if any(item.get("file_type") == "unavailable" for item in elements):
-                raise ValueError("attachment_failed")
-            existing = await self.store.get_request(request_id, text, elements)
-            if existing is not None:
-                return existing
+                elements = await serialize_message_chain(chain, archive_root=self.store.media_dir)
             await self._apply_profile(profile)
             request, created = await self.store.accept(request_id, text, profile["nickname"], elements)
             if created:
