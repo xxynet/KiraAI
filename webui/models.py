@@ -89,6 +89,8 @@ class OverviewResponse(BaseModel):
     message_by_platform: list[PlatformMessageCount] = Field(default_factory=list)
     llm_summary: LLMSummary = Field(default_factory=LLMSummary)
     cache_hit_hourly: list[CacheHitHourlyPoint] = Field(default_factory=list)
+    # Hour-aligned start of the 24-hour window shared by the chart and average.
+    cache_hit_since_ts: int = 0
     # Overall token-weighted cache hit rate (0..100); None when no call reported cache usage.
     cache_hit_avg: float | None = None
 

@@ -139,7 +139,7 @@ export default {
     cache_hit_tooltip_cached: 'Cached Tokens',
     cache_hit_tooltip_input: 'Input Tokens',
     cache_hit_tooltip_calls: 'Calls',
-    cache_hit_no_data: 'No calls in this period',
+    cache_hit_no_data: 'No cache-hit data in this period',
   },
   provider: {
     title: 'Providers',

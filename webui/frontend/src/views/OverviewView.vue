@@ -343,12 +343,14 @@ interface CacheHitSeries {
   calls: number
 }
 
-/** Like fillMissingHours, but keeps hours without calls as null so they are
- *  not plotted as a misleading 0% hit rate (the line connects across them). */
-function fillCacheHitHours(hourly: CacheHitHourlyPoint[]): CacheHitBucket[] {
-  const now = Date.now()
-  const currentHour = Math.floor(now / 3600000) * 3600
-  const startTs = currentHour - 23 * 3600
+/** Like fillMissingHours, but keeps hours without cache data as null so they
+ *  are not plotted as a misleading 0% hit rate (the line connects across them). */
+function fillCacheHitHours(hourly: CacheHitHourlyPoint[], windowStartTs: number): CacheHitBucket[] {
+  // The server window is authoritative; the client clock is only a fallback
+  // for older responses so the grid cannot drift from cache_hit_avg.
+  const startTs = windowStartTs > 0
+    ? windowStartTs
+    : Math.floor(Date.now() / 3600000) * 3600 - 23 * 3600
 
   const buckets: CacheHitBucket[] = []
   for (let i = 0; i < 24; i++) {
@@ -375,6 +377,7 @@ function fillCacheHitHours(hourly: CacheHitHourlyPoint[]): CacheHitBucket[] {
  *  not blend its cache rate with the default model's. */
 const cacheHitSeries = computed<CacheHitSeries[]>(() => {
   const raw = overview.value?.cache_hit_hourly ?? []
+  const windowStartTs = overview.value?.cache_hit_since_ts ?? 0
   const byModel = new Map<string, CacheHitHourlyPoint[]>()
   for (const point of raw) {
     const model = point.model || ''
@@ -396,7 +399,7 @@ const cacheHitSeries = computed<CacheHitSeries[]>(() => {
     series.push({
       model,
       label: model.trim() ? model : '—',
-      points: fillCacheHitHours(points),
+      points: fillCacheHitHours(points, windowStartTs),
       avg: inputTokens > 0 ? Math.round(cachedTokens / inputTokens * 1000) / 10 : null,
       calls,
     })
@@ -631,18 +634,32 @@ const cacheSeriesColors = [
   '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#14b8a6',
 ]
 
+// Keep a model's color for the lifetime of the page: a model entering or
+// leaving the 24-hour window must not repaint the remaining series.
+const cacheSeriesColorByModel = new Map<string, string>()
+
+function assignCacheSeriesColors(series: CacheHitSeries[]): Map<string, string> {
+  const used = new Set(cacheSeriesColorByModel.values())
+  for (const model of [...series].map(s => s.model).sort()) {
+    if (cacheSeriesColorByModel.has(model)) continue
+    const color = cacheSeriesColors.find(c => !used.has(c))
+      ?? cacheSeriesColors[cacheSeriesColorByModel.size % cacheSeriesColors.length]
+    cacheSeriesColorByModel.set(model, color)
+    used.add(color)
+  }
+  const colors = new Map<string, string>()
+  for (const s of series) {
+    colors.set(s.model, cacheSeriesColorByModel.get(s.model) ?? cacheSeriesColors[0])
+  }
+  return colors
+}
+
 function buildCacheHitOption(series: CacheHitSeries[], dark: boolean) {
   const tok = themeTokens(dark)
   const points = series[0]?.points ?? []
   const multi = series.length > 1
 
-  // Key colors by model name (not display order) so reordering by call count
-  // does not repaint the lines on every refresh.
-  const colorByModel = new Map(
-    [...series]
-      .sort((a, b) => a.model.localeCompare(b.model))
-      .map((s, i) => [s.model, cacheSeriesColors[i % cacheSeriesColors.length]]),
-  )
+  const colorByModel = assignCacheSeriesColors(series)
   const byLabel = new Map(series.map(s => [s.label, s]))
 
   const legend = multi

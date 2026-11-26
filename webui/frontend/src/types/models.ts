@@ -62,6 +62,7 @@ export interface OverviewResponse {
   message_by_platform: PlatformMessageCount[]
   llm_summary: LLMSummary
   cache_hit_hourly: CacheHitHourlyPoint[]
+  cache_hit_since_ts: number
   cache_hit_avg: number | null
 }
 

@@ -139,7 +139,7 @@ export default {
     cache_hit_tooltip_cached: '缓存 Token',
     cache_hit_tooltip_input: '输入 Token',
     cache_hit_tooltip_calls: '调用次数',
-    cache_hit_no_data: '该时段无调用',
+    cache_hit_no_data: '该时段无缓存命中数据',
   },
   provider: {
     title: '提供商',

@@ -113,6 +113,7 @@ class OverviewRoutes(Routes):
 
         # --- Main-model cache hit rate (last 24 hours) ---
         cache_hit_hourly = []
+        cache_hit_since_ts = 0
         cache_hit_avg = None
         if self.lifecycle and getattr(self.lifecycle, "db_service", None):
             try:
@@ -122,6 +123,7 @@ class OverviewRoutes(Routes):
                 # earlier, which the frontend drops while it still skews avg.
                 now = int(time.time())
                 since_ts = now - now % 3600 - 23 * 3600
+                cache_hit_since_ts = since_ts
                 cache_hit_hourly = await self.lifecycle.db_service.get_main_cache_hit_hourly(since_ts)
                 total_cached = sum(point["cached_tokens"] for point in cache_hit_hourly)
                 total_input = sum(point["input_tokens"] for point in cache_hit_hourly)
@@ -144,5 +146,6 @@ class OverviewRoutes(Routes):
             message_by_platform=message_by_platform,
             llm_summary=llm_summary,
             cache_hit_hourly=cache_hit_hourly,
+            cache_hit_since_ts=cache_hit_since_ts,
             cache_hit_avg=cache_hit_avg,
         )
