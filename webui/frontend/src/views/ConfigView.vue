@@ -1045,9 +1045,9 @@ async function requestLeaveDecision(to: RouteLocationNormalized): Promise<boolea
     targetName: to.name,
     allowedNames: AUTH_ROUTE_NAMES,
   })) return true
-  // A prompt is already open: keep that navigation pending and abort this one
-  // instead of stacking dialogs.
-  if (leaveGate.pending) return false
+  // Let the router cancel the superseded navigation without rolling back its
+  // history traversal, then bind the existing dialog to the latest navigation.
+  leaveGate.settle(true)
   unsavedDialogVisible.value = true
   return leaveGate.wait()
 }
