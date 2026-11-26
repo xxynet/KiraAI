@@ -406,6 +406,9 @@ const router = useRouter()
 const unsavedDialogVisible = ref(false)
 const pendingRoutePath = ref<string | null>(null)
 const skipNextLeaveGuard = ref(false)
+// Bumped whenever the user backs out of the dialog, so an in-flight save
+// continuation cannot act on a navigation decision that no longer applies.
+let navigationEpoch = 0
 
 // Schema
 interface ConfigField {
@@ -1016,7 +1019,9 @@ async function handleSave(): Promise<boolean> {
       redoStack.value = []
     }
     notify(t('configuration.save_success'), 'success')
-    return true
+    // Editing during the request leaves newer changes behind: report success only
+    // when the saved snapshot matches the configuration on screen.
+    return modifiedFields.size === 0
   } catch (err) {
     console.error('Save failed:', err)
     notify(t('configuration.save_failed'), 'error')
@@ -1046,12 +1051,15 @@ onBeforeRouteLeave((to) => {
 })
 
 function stayOnConfigPage() {
+  navigationEpoch += 1
   unsavedDialogVisible.value = false
   pendingRoutePath.value = null
 }
 
 async function navigateToPendingRoute() {
   const target = pendingRoutePath.value
+  // Leaving also supersedes any older save continuation.
+  navigationEpoch += 1
   unsavedDialogVisible.value = false
   pendingRoutePath.value = null
   if (!target) return
@@ -1064,10 +1072,14 @@ async function navigateToPendingRoute() {
 }
 
 async function saveThenLeave() {
+  const epoch = navigationEpoch
   const saved = await handleSave()
+  // The user dismissed the prompt (or started another departure) while the
+  // request was in flight; that decision supersedes this continuation.
+  if (epoch !== navigationEpoch) return
   if (!saved) {
-    // Validation or the request failed: keep the edits and stay on the page,
-    // the error notification already told the user what to fix.
+    // Validation, a failed request, or edits made during the request: keep the
+    // edits and stay on the page, the error notification already explained why.
     stayOnConfigPage()
     return
   }
