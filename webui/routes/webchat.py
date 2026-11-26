@@ -37,6 +37,7 @@ class WebChatMessage(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
     request_id: UUID
     text: str = Field(min_length=1, max_length=16000)
+    reply_to: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class WebChatRoutes(Routes):
@@ -80,7 +81,7 @@ class WebChatRoutes(Routes):
 
     async def send(self, payload: WebChatMessage):
         try:
-            return await self.service.submit(str(payload.request_id), payload.text)
+            return await self.service.submit(str(payload.request_id), payload.text, reply_to=payload.reply_to)
         except ValueError as exc:
             code = str(exc)
             raise HTTPException(503 if code == "unavailable" else 409, detail=code) from exc
@@ -89,6 +90,7 @@ class WebChatRoutes(Routes):
         self,
         request_id: UUID = Form(...),
         text: str = Form("", max_length=16000),
+        reply_to: str | None = Form(None, min_length=1, max_length=128),
         kinds: list[Literal["image", "file"]] = Form(...),
         files: list[UploadFile] = File(...),
     ):
@@ -121,10 +123,10 @@ class WebChatRoutes(Routes):
                     return element
 
                 attachments.append(await asyncio.to_thread(make_element))
-            return await service.submit(str(request_id), text.strip(), attachments)
+            return await service.submit(str(request_id), text.strip(), attachments, reply_to=reply_to)
         except ValueError as exc:
             code = str(exc)
-            status_code = 503 if code == "unavailable" else 409 if code == "request_conflict" else 400
+            status_code = 503 if code == "unavailable" else 409 if code in {"request_conflict", "reply_not_found"} else 400
             raise HTTPException(status_code, detail=code) from exc
         finally:
             for upload in files:

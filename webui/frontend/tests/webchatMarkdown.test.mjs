@@ -33,6 +33,7 @@ function setup(saved = null) {
       require(id) {
         if (id === 'vue') return { ...Vue, onMounted() {}, onBeforeUnmount() {}, watch() {} }
         if (id === 'vue-i18n') return { useI18n: () => ({ t: key => key, locale: Vue.ref('en') }) }
+        if (id === '@/components/webchat/messageText') return { messageText: () => '' }
         if (id === '@/composables/useNotification') return { notify: (...args) => notifications.push(args) }
         if (id === '@element-plus/icons-vue' || id === '@/api/webchat') return {}
         if (id.endsWith('.vue')) return { default: {} }

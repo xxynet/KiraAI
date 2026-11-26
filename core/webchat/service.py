@@ -4,8 +4,8 @@ from __future__ import annotations
 import asyncio
 
 from core.adapter.builtin.webchat.im import WebChatIMCapability
-from core.chat.message_elements import BaseMediaElement, Text
-from core.chat.message_history import serialize_message_chain
+from core.chat.message_elements import BaseMediaElement, Reply, Text
+from core.chat.message_history import _deserialize_message_chain, serialize_message_chain
 from core.chat.message_utils import MessageChain
 
 
@@ -48,7 +48,8 @@ class WebChatService:
             await self._apply_profile(profile)
         return profile
 
-    async def submit(self, request_id: str, text: str, attachments: list[BaseMediaElement] | None = None):
+    async def submit(self, request_id: str, text: str, attachments: list[BaseMediaElement] | None = None,
+                     reply_to: str | None = None):
         async with self._lock:
             if self._closed:
                 raise ValueError("unavailable")
@@ -58,6 +59,14 @@ class WebChatService:
             chain = MessageChain(([Text(text)] if text else []) + (attachments or []))
             if not list(chain):
                 raise ValueError("empty_message")
+            if reply_to is not None:
+                original = await self.store.get_message(reply_to)
+                if original is None:
+                    raise ValueError("reply_not_found")
+                quoted = await asyncio.to_thread(
+                    _deserialize_message_chain, original["chain"], depth=1, archive_root=self.store.media_dir,
+                )
+                chain = MessageChain([Reply(reply_to, chain=quoted), *chain])
             elements = await serialize_message_chain(chain, archive_root=self.store.media_dir)
             if any(item.get("file_type") == "unavailable" for item in elements):
                 raise ValueError("attachment_failed")

@@ -949,3 +949,68 @@ async def test_webchat_failed_config_save_does_not_change_live_permissions(store
     with pytest.raises(OSError):
         await service.save_config({"allow_file_tools": False, "allow_exec": True})
     assert adapter.config == {"allow_file_tools": True, "allow_exec": False}
+
+
+@pytest.mark.anyio
+async def test_incoming_quotes_preserve_context_media_and_idempotency(store):
+    from core.chat.message_elements import Reply
+
+    adapter = make_adapter(store)
+    service = WebChatService(adapter, Sessions())
+    await service.save_profile(PROFILE)
+    original = await store.append_reply(MessageChain([
+        Text("Original content"), Image("data:image/png;base64,iVBORw0KGgo="),
+    ]), "Kira")
+    request_id = str(uuid.uuid4())
+    first = await service.submit(request_id, "My reply", reply_to=original)
+    assert await service.submit(request_id, "My reply", reply_to=original) == first
+    event = adapter.ctx.event_queue.get_nowait()
+    reply = event.message.chain[0]
+    assert isinstance(reply, Reply) and reply.message_id == original
+    assert reply.chain[0].text == "Original content"
+    assert isinstance(reply.chain[1], Image)
+    assert event.message.chain[1].text == "My reply"
+    assert adapter.ctx.event_queue.empty()
+    saved = await store.get_message(request_id)
+    assert saved["chain"][0]["chain"] == (await store.get_message(original))["chain"]
+    with pytest.raises(ValueError, match="request_conflict"):
+        await service.submit(request_id, "My reply")
+    another = await store.append_reply(MessageChain([Text("Different")]), "Kira")
+    with pytest.raises(ValueError, match="request_conflict"):
+        await service.submit(request_id, "My reply", reply_to=another)
+    with pytest.raises(ValueError, match="reply_not_found"):
+        await service.submit(str(uuid.uuid4()), "My reply", reply_to="missing")
+    assert adapter.ctx.event_queue.empty()
+
+
+@pytest.mark.anyio
+async def test_quote_routes_accept_text_and_uploads_and_reject_missing_targets(store):
+    adapter = make_adapter(store)
+    service = WebChatService(adapter, Sessions())
+    await service.save_profile(PROFILE)
+    original = await store.append_reply(MessageChain([Text("Quoted text")]), "Kira")
+    app = FastAPI()
+    app.dependency_overrides[require_auth] = lambda: True
+    WebChatRoutes(app, SimpleNamespace(webchat=service)).register()
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://test") as client:
+        for reply_to in [original, "missing", ""]:
+            request_id = str(uuid.uuid4())
+            response = await client.post("/api/webchat/messages", json={
+                "request_id": request_id, "text": "reply", "reply_to": reply_to,
+            })
+            assert response.status_code == (200 if reply_to == original else 409 if reply_to else 422)
+        data = {"request_id": str(uuid.uuid4()), "reply_to": original, "kinds": "file"}
+        files = [("files", ("note.txt", b"contents", "text/plain"))]
+        response = await client.post("/api/webchat/messages/upload", data=data, files=files)
+        assert response.status_code == 200
+        assert (await client.post("/api/webchat/messages/upload", data=data, files=files)).json() == response.json()
+        saved = await store.get_message(data["request_id"])
+        assert saved["chain"][0]["message_id"] == original
+        assert saved["chain"][1]["type"] == "file"
+        assert (await client.get(
+            f"/api/webchat/messages/{data['request_id']}/media?element_path=1"
+        )).content == b"contents"
+        missing = await client.post("/api/webchat/messages/upload", data={
+            **data, "request_id": str(uuid.uuid4()), "reply_to": "missing",
+        }, files=files)
+        assert missing.status_code == 409 and missing.json()["detail"] == "reply_not_found"

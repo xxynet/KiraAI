@@ -30,11 +30,12 @@ export interface WebChatAttachment {
   file: File
   kind: 'image' | 'file'
 }
-export function sendWebChatMessage(request_id: string, text: string, attachments: WebChatAttachment[] = []) {
-  if (!attachments.length) return apiClient.post<WebChatRequest>('/webchat/messages', { request_id, text })
+export function sendWebChatMessage(request_id: string, text: string, attachments: WebChatAttachment[] = [], reply_to?: string) {
+  if (!attachments.length) return apiClient.post<WebChatRequest>('/webchat/messages', { request_id, text, reply_to })
   const form = new FormData()
   form.append('request_id', request_id)
   form.append('text', text)
+  if (reply_to) form.append('reply_to', reply_to)
   attachments.forEach(({ file, kind }) => {
     form.append('files', file)
     form.append('kinds', kind)
