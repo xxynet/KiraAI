@@ -144,6 +144,7 @@ async def test_plugin_preset_private_tools_execute_and_rebind_on_restored_follow
     ctx = SimpleNamespace(
         session_mgr=sessions, subagent_mgr=manager, config=config,
         tool_mgr=Mock(build_tool_set=Mock(return_value=ToolSet())), mcp_mgr=None,
+        get_plugin_inst=lambda _: None,
     )
     spawn = SpawnAgentTool(ctx=ctx, source=parent, parent_tools=ToolSet())
 
@@ -996,6 +997,7 @@ async def test_native_custom_tools_can_select_outside_the_parent_tool_list(agent
         subagent_mgr=manager,
         tool_mgr=SimpleNamespace(build_tool_set=lambda: ToolSet([tool])),
         mcp_mgr=None,
+        get_plugin_inst=lambda _: None,
         config=config,
     )
     request = LLMRequest(tool_set=ToolSet())
@@ -1061,6 +1063,7 @@ async def test_custom_preset_skips_unavailable_tools_and_restores_them_when_regi
         subagent_mgr=manager,
         tool_mgr=registry,
         mcp_mgr=None,
+        get_plugin_inst=lambda _: None,
     )
     plugin = SubAgentsPlugin(ctx, {})
     event = SimpleNamespace(session=parent)
@@ -1126,7 +1129,7 @@ async def test_custom_tools_respect_agent_plugin_enabled_tools(agents, tmp_path)
     assert agent_plugin._is_exec_session_allowed(parent.sid)
     ctx = SimpleNamespace(
         config=dict.__new__(KiraConfig), session_mgr=sessions, subagent_mgr=manager, tool_mgr=registry,
-        mcp_mgr=None, plugin_mgr=SimpleNamespace(get_plugin_inst=lambda p: agent_plugin if p == "agent" else None),
+        mcp_mgr=None, get_plugin_inst=Mock(return_value=agent_plugin),
     )
     plugin, event = SubAgentsPlugin(ctx, {}), SimpleNamespace(session=parent)
 
@@ -1150,6 +1153,7 @@ async def test_custom_tools_respect_agent_plugin_enabled_tools(agents, tmp_path)
     req = LLMRequest(tool_set=registry.build_tool_set())
     await plugin.inject_tools(event, req)
     assert [t.name for t in req.tool_set.get("spawn_agent")._custom_tools(["exec", "read_file"]).tools] == ["read_file"]
+    ctx.get_plugin_inst.assert_called_with("agent")
 
 
 @pytest.mark.anyio
@@ -1469,6 +1473,7 @@ async def test_excluding_preset_tools_keeps_them_available_on_spawn_and_followup
         subagent_mgr=manager,
         tool_mgr=SimpleNamespace(build_tool_set=ToolSet),
         mcp_mgr=None,
+        get_plugin_inst=lambda _: None,
     ), {})
 
     async def build_main_request():
@@ -1512,6 +1517,7 @@ async def test_native_preset_cannot_bypass_disabled_state_or_custom_tool_permiss
         session_mgr=sessions,
         subagent_mgr=manager,
         tool_mgr=SimpleNamespace(build_tool_set=lambda: ToolSet([RecordingTool()])),
+        get_plugin_inst=lambda _: None,
         mcp_mgr=SimpleNamespace(
             get_tool_server_map=lambda: {"record": "blocked"},
             is_server_allowed=lambda *_: False,
