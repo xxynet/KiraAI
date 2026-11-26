@@ -28,7 +28,7 @@ export const builtinSidebarItems = [
   { id: '/configuration', label: 'nav.configuration', icon: 'Tools' },
   { id: '/plugin', label: 'nav.plugin', icon: 'SetUp' },
   { id: '/webchat', label: 'nav.webchat', icon: 'ChatDotRound' },
-  { id: '/sessions', label: 'nav.sessions', icon: 'ChatDotRound' },
+  { id: '/sessions', label: 'nav.sessions', icon: 'ChatLineSquare' },
   { id: '/logs', label: 'nav.logs', icon: 'Document' },
   { id: '/settings', label: 'nav.settings', icon: 'Setting' },
 ]
