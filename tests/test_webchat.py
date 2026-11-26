@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import sqlite3
 import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -135,13 +136,118 @@ async def test_store_restart_preserves_profile_and_sent_messages(store):
     second = WebChatStore(store.root)
     await second.initialize()
     assert await second.get_setting("profile") == PROFILE
-    assert (await second.latest_request())["status"] == "sent"
+    # Dedup state is in-memory, so a restarted store starts without request history.
+    assert await second.latest_request() is None
     page = await second.list_messages()
     assert page["messages"][0]["chain"] == [{"type": "text", "text": "hello"}]
     duplicate, created = await second.accept(request_id, "hello", "Alice")
     assert not created and duplicate["status"] == "sent"
     with pytest.raises(ValueError, match="request_conflict"):
         await second.accept(request_id, "changed", "Alice")
+
+
+@pytest.mark.anyio
+async def test_initialize_drops_legacy_requests_table(tmp_path):
+    marker = "legacy-request-text-" + "s" * 64
+    root = tmp_path / "webchat"
+    root.mkdir()
+    with sqlite3.connect(root / "webchat.db") as db:
+        db.executescript("""
+            CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE messages (
+                seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE NOT NULL, body TEXT NOT NULL);
+            CREATE TABLE requests (
+                seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE NOT NULL,
+                text TEXT NOT NULL, status TEXT NOT NULL);
+        """)
+        db.execute("INSERT INTO settings VALUES ('profile', '{\"nickname\": \"Alice\"}')")
+        db.execute("INSERT INTO messages (id, body) VALUES ('kept', '{\"id\": \"kept\", \"chain\": []}')")
+        db.execute("INSERT INTO requests (id, text, status) VALUES ('legacy', ?, 'sent')", (marker,))
+    store = WebChatStore(root)
+    await store.initialize()
+    with sqlite3.connect(store.path) as db:
+        tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    assert "requests" not in tables
+    assert marker.encode() not in store.path.read_bytes()
+    assert await store.get_setting("profile") == {"nickname": "Alice"}
+    assert await store.get_message("kept") is not None
+    assert await store.latest_request() is None
+
+
+@pytest.mark.anyio
+async def test_request_dedup_falls_back_to_persisted_message_after_eviction(store, monkeypatch):
+    import core.webchat.store as store_module
+
+    monkeypatch.setattr(store_module, "MAX_TRACKED_REQUESTS", 2)
+    ids = [str(uuid.uuid4()) for _ in range(3)]
+    for request_id in ids:
+        await store.accept(request_id, "hello", "Alice")
+    assert (await store.latest_request())["id"] == ids[-1]
+    duplicate, created = await store.accept(ids[0], "hello", "Alice")
+    assert not created and duplicate["status"] == "sent"
+    assert (await store.latest_request())["id"] == ids[-1]
+    with pytest.raises(ValueError, match="request_conflict"):
+        await store.accept(ids[0], "changed", "Alice")
+
+
+@pytest.mark.anyio
+async def test_restart_dedup_compares_quoted_chain(store):
+    chain = [
+        {"type": "reply", "message_id": "origin", "chain": [{"type": "text", "text": "quoted"}]},
+        {"type": "text", "text": "reply body"},
+    ]
+    request_id = str(uuid.uuid4())
+    await store.accept(request_id, "reply body", "Alice", chain)
+    restarted = WebChatStore(store.root)
+    await restarted.initialize()
+    duplicate, created = await restarted.accept(request_id, "reply body", "Alice", chain)
+    assert not created and duplicate["status"] == "sent"
+    changed_quote = [
+        {"type": "reply", "message_id": "origin", "chain": [{"type": "text", "text": "different quote"}]},
+        {"type": "text", "text": "reply body"},
+    ]
+    with pytest.raises(ValueError, match="request_conflict"):
+        await restarted.accept(request_id, "reply body", "Alice", changed_quote)
+
+
+@pytest.mark.anyio
+async def test_delete_after_restart_blocks_replay(store):
+    request_id = str(uuid.uuid4())
+    await store.accept(request_id, "hello", "Alice")
+    restarted = WebChatStore(store.root)
+    await restarted.initialize()
+    await restarted.delete_message(request_id)
+    with pytest.raises(ValueError, match="request_conflict"):
+        await restarted.accept(request_id, "hello", "Alice")
+
+
+@pytest.mark.anyio
+async def test_deleted_request_tombstone_expires_with_eviction(store, monkeypatch):
+    import core.webchat.store as store_module
+
+    monkeypatch.setattr(store_module, "MAX_TRACKED_REQUESTS", 1)
+    deleted, newer = str(uuid.uuid4()), str(uuid.uuid4())
+    await store.accept(deleted, "deleted", "Alice")
+    await store.delete_message(deleted)
+    assert await store.latest_request() is None
+    with pytest.raises(ValueError, match="request_conflict"):
+        await store.get_request(deleted, "deleted")
+    await store.accept(newer, "kept", "Alice")
+    assert (await store.latest_request())["id"] == newer
+    assert await store.get_request(deleted, "deleted") is None
+    replayed, created = await store.accept(deleted, "deleted", "Alice")
+    assert created and await store.get_message(deleted) is not None
+
+
+@pytest.mark.anyio
+async def test_restart_after_delete_loses_tombstone(store):
+    request_id = str(uuid.uuid4())
+    await store.accept(request_id, "hello", "Alice")
+    await store.delete_message(request_id)
+    restarted = WebChatStore(store.root)
+    await restarted.initialize()
+    replayed, created = await restarted.accept(request_id, "hello", "Alice")
+    assert created and await restarted.get_message(request_id) is not None
 
 
 @pytest.mark.anyio

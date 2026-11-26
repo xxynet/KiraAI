@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
 import shutil
+import sqlite3
 import time
 import uuid
+from collections import OrderedDict
 from pathlib import Path
 
 import aiosqlite
@@ -16,6 +19,11 @@ from core.logging_manager import get_logger
 
 logger = get_logger("webchat", "cyan")
 
+# Dedup state is in-memory and bounded to this many recent requests. Live messages still
+# dedupe through the messages table after eviction or restart; deleted-message tombstones
+# and failed statuses last only until eviction or restart.
+MAX_TRACKED_REQUESTS = 1024
+
 
 class WebChatStore:
     def __init__(self, root: Path):
@@ -24,19 +32,28 @@ class WebChatStore:
         self.media_dir = root / "media"
         self.lock = asyncio.Lock()
         self._pending_media_cleanup: set[Path] = set()
+        self._requests: OrderedDict[str, dict] = OrderedDict()
 
     async def initialize(self):
         await asyncio.to_thread(self.root.mkdir, parents=True, exist_ok=True)
         async with aiosqlite.connect(self.path) as db:
+            async with db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'requests'"
+            ) as cursor:
+                legacy_requests = await cursor.fetchone() is not None
             await db.executescript("""
                 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS messages (
                     seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE NOT NULL, body TEXT NOT NULL);
-                CREATE TABLE IF NOT EXISTS requests (
-                    seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE NOT NULL,
-                    text TEXT NOT NULL, status TEXT NOT NULL);
+                DROP TABLE IF EXISTS requests;
             """)
             await db.commit()
+            if legacy_requests:
+                try:
+                    # Rewrite the file so dropped request text no longer lingers in free pages.
+                    await db.execute("VACUUM")
+                except sqlite3.Error:
+                    logger.warning("Skipped WebChat database compaction after dropping requests table")
 
     async def get_setting(self, key: str):
         async with aiosqlite.connect(self.path) as db:
@@ -50,51 +67,71 @@ class WebChatStore:
                              (key, json.dumps(value, ensure_ascii=False)))
             await db.commit()
 
+    @staticmethod
+    def _digest(text: str, chain: list[dict]) -> str:
+        payload = json.dumps({"text": text, "chain": chain}, ensure_ascii=False, sort_keys=True)
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    def _track(self, request_id: str, entry: dict):
+        self._requests[request_id] = entry
+        self._requests.move_to_end(request_id)
+        while len(self._requests) > MAX_TRACKED_REQUESTS:
+            self._requests.popitem(last=False)
+
+    def _remember(self, request_id: str, digest: str):
+        self._track(request_id, {"digest": digest, "status": "sent", "deleted": False})
+
+    def _remember_tombstone(self, request_id: str):
+        self._track(request_id, {"digest": "", "status": "sent", "deleted": True})
+
     async def latest_request(self):
-        async with aiosqlite.connect(self.path) as db:
-            async with db.execute("SELECT id, status FROM requests ORDER BY seq DESC LIMIT 1") as cursor:
-                row = await cursor.fetchone()
-        return {"id": row[0], "status": row[1]} if row else None
+        for request_id, entry in reversed(self._requests.items()):
+            if not entry["deleted"]:
+                return {"id": request_id, "status": entry["status"]}
+        return None
 
     async def get_request(self, request_id: str, text: str, chain: list[dict] | None = None):
         chain = chain if chain is not None else [{"type": "text", "text": text}]
-        async with aiosqlite.connect(self.path) as db:
-            async with db.execute(
-                "SELECT requests.text, requests.status, messages.body FROM requests "
-                "LEFT JOIN messages ON messages.id = requests.id WHERE requests.id = ?", (request_id,)
-            ) as cursor:
-                row = await cursor.fetchone()
-        if row is None:
+        entry = self._requests.get(request_id)
+        if entry is not None:
+            if entry["deleted"] or entry["digest"] != self._digest(text, chain):
+                raise ValueError("request_conflict")
+            return {"id": request_id, "status": entry["status"]}
+        message = await self.get_message(request_id)
+        if message is None:
             return None
-        if row[2] is None or row[0] != text or json.loads(row[2])["chain"] != chain:
+        if message["chain"] != chain:
             raise ValueError("request_conflict")
-        return {"id": request_id, "status": row[1]}
+        return {"id": request_id, "status": "sent"}
 
     async def accept(self, request_id: str, text: str, nickname: str, chain: list[dict] | None = None):
         """Persist each message once without waiting for a reply to previous input."""
         chain = chain if chain is not None else [{"type": "text", "text": text}]
-        async with self.lock, aiosqlite.connect(self.path) as db:
-            await db.execute("BEGIN IMMEDIATE")
-            async with db.execute(
-                "SELECT requests.text, requests.status, messages.body FROM requests "
-                "LEFT JOIN messages ON messages.id = requests.id WHERE requests.id = ?", (request_id,)
-            ) as cursor:
-                existing = await cursor.fetchone()
-            if existing:
-                if existing[2] is None or existing[0] != text or json.loads(existing[2])["chain"] != chain:
+        digest = self._digest(text, chain)
+        async with self.lock:
+            entry = self._requests.get(request_id)
+            if entry is not None:
+                if entry["deleted"] or entry["digest"] != digest:
                     raise ValueError("request_conflict")
-                return {"id": request_id, "status": existing[1]}, False
-            await db.execute("INSERT INTO requests (id, text, status) VALUES (?, ?, 'sent')", (request_id, text))
-            record = self.message(request_id, "incoming", nickname, chain)
-            await db.execute("INSERT INTO messages (id, body) VALUES (?, ?)",
-                             (request_id, json.dumps(record, ensure_ascii=False)))
-            await db.commit()
+                return {"id": request_id, "status": entry["status"]}, False
+            async with aiosqlite.connect(self.path) as db:
+                async with db.execute("SELECT body FROM messages WHERE id = ?", (request_id,)) as cursor:
+                    row = await cursor.fetchone()
+                if row is not None:
+                    if json.loads(row[0])["chain"] != chain:
+                        raise ValueError("request_conflict")
+                    return {"id": request_id, "status": "sent"}, False
+                record = self.message(request_id, "incoming", nickname, chain)
+                await db.execute("INSERT INTO messages (id, body) VALUES (?, ?)",
+                                 (request_id, json.dumps(record, ensure_ascii=False)))
+                await db.commit()
+            self._remember(request_id, digest)
         return {"id": request_id, "status": "sent"}, True
 
     async def finish(self, request_id: str, status: str):
-        async with aiosqlite.connect(self.path) as db:
-            await db.execute("UPDATE requests SET status = ? WHERE id = ?", (status, request_id))
-            await db.commit()
+        entry = self._requests.get(request_id)
+        if entry is not None and not entry["deleted"]:
+            entry["status"] = status
 
     @staticmethod
     def message(message_id: str, direction: str, nickname: str, chain: list):
@@ -208,6 +245,8 @@ class WebChatStore:
                     await asyncio.to_thread(stage_unused_media, row[0], remaining)
                     await db.execute("DELETE FROM messages WHERE id = ?", (message_id,))
                     await db.commit()
+                    if json.loads(row[0]).get("direction") == "incoming":
+                        self._remember_tombstone(message_id)
                 except BaseException:
                     try:
                         await db.rollback()
@@ -239,9 +278,9 @@ class WebChatStore:
         async with self.lock, aiosqlite.connect(self.path) as db:
             await db.execute("BEGIN IMMEDIATE")
             await db.execute("DELETE FROM messages")
-            await db.execute("DELETE FROM requests")
             await asyncio.to_thread(remove_media)
             await db.commit()
+            self._requests.clear()
 
     async def list_messages(self, *, before: int | None = None, after: int = 0, limit: int = 50):
         async with aiosqlite.connect(self.path) as db:
