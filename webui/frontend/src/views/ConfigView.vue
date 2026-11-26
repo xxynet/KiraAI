@@ -1036,6 +1036,9 @@ onBeforeRouteLeave((to) => {
     return true
   }
   if (modifiedFields.size === 0) return true
+  // Re-clicking the configuration entry (or any navigation that stays on this
+  // page) does not drop anything, so it must not prompt.
+  if (to.name === route.name) return true
   if (to.name === 'Login' || to.name === 'SetupToken') return true
   pendingRoutePath.value = to.fullPath
   unsavedDialogVisible.value = true
