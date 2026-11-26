@@ -124,7 +124,9 @@ class OverviewRoutes(Routes):
                 now = int(time.time())
                 since_ts = now - now % 3600 - 23 * 3600
                 cache_hit_since_ts = since_ts
-                cache_hit_hourly = await self.lifecycle.db_service.get_main_cache_hit_hourly(since_ts)
+                cache_hit_hourly = await self.lifecycle.db_service.get_main_cache_hit_hourly(
+                    since_ts, since_ts + 24 * 3600
+                )
                 total_cached = sum(point["cached_tokens"] for point in cache_hit_hourly)
                 total_input = sum(point["input_tokens"] for point in cache_hit_hourly)
                 if total_input > 0:

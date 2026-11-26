@@ -10,8 +10,12 @@ from ..models import TelemetryLLMUsage
 
 
 class OverviewCacheMixin:
-    async def get_main_cache_hit_hourly(self, since_ts: int) -> list[dict]:
+    async def get_main_cache_hit_hourly(self, since_ts: int, until_ts: int) -> list[dict]:
         """Aggregate the main-model prompt cache hit rate per hour and model.
+
+        Only rows in ``[since_ts, until_ts)`` are aggregated, so the average
+        computed from these buckets covers exactly the charted window even if
+        new telemetry lands between capturing the window and running the query.
 
         Only main-source calls that actually report ``cached_tokens`` (not NULL)
         and consumed input tokens are counted, since the hit rate is undefined
@@ -35,6 +39,7 @@ class OverviewCacheMixin:
             .where(
                 and_(
                     TelemetryLLMUsage.timestamp >= since_ts,
+                    TelemetryLLMUsage.timestamp < until_ts,
                     TelemetryLLMUsage.source == "main",
                     TelemetryLLMUsage.cached_tokens.is_not(None),
                     TelemetryLLMUsage.input_tokens > 0,
