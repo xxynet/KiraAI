@@ -342,17 +342,32 @@
         <kbd class="kbd-hint">/</kbd> {{ $t('configuration.shortcut_search') }}
       </p>
     </div>
+
+    <!-- Unsaved changes dialog (opened by onBeforeRouteLeave above) -->
+    <UnsavedChangesModal
+      v-model="unsavedDialogVisible"
+      :title="$t('configuration.unsaved_title')"
+      :message="$t('configuration.unsaved_message', { count: modifiedFields.size })"
+      :save-text="$t('configuration.unsaved_save_and_leave')"
+      :discard-text="$t('configuration.unsaved_discard')"
+      :stay-text="$t('configuration.unsaved_stay')"
+      :busy="saving"
+      @save="saveThenLeave"
+      @discard="navigateToPendingRoute"
+      @stay="stayOnConfigPage"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick, reactive, type Component } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute } from 'vue-router'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { notify } from '@/composables/useNotification'
 import { getConfiguration, saveConfiguration } from '@/api/config'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import InfoCallout from '@/components/common/InfoCallout.vue'
+import UnsavedChangesModal from '@/components/common/UnsavedChangesModal.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import {
   IconMonitor, IconCog, IconRobot, IconImage, IconDatabase, IconFileText, IconFlask, IconGlobe, IconChat,
@@ -384,6 +399,13 @@ const redoStack = ref<UndoEntry[]>([])
 const collapsedGroups = reactive(new Set<string>())
 const modifiedFields = reactive(new Set<string>())
 const validationErrors = ref<Record<string, string>>({})
+
+// Leaving this page with pending edits would silently drop them, so
+// onBeforeRouteLeave asks first through the dialog below.
+const router = useRouter()
+const unsavedDialogVisible = ref(false)
+const pendingRoutePath = ref<string | null>(null)
+const skipNextLeaveGuard = ref(false)
 
 // Schema
 interface ConfigField {
@@ -959,22 +981,23 @@ function collapseAll() {
 }
 
 // Save
-async function handleSave() {
-  if (saving.value) return
+/** Returns true when nothing is left unsaved (including "no changes"). */
+async function handleSave(): Promise<boolean> {
+  if (saving.value) return false
   if (modifiedFields.size === 0) {
     notify(t('configuration.no_changes'), 'info')
-    return
+    return true
   }
   const allFields = allGroups.flatMap(g => g.fields)
   allFields.forEach(f => validateField(f.key))
   const cleanup = currentData.value.bot_config?.message_history_cleanup
   if (cleanup?.enabled && cleanup.max_age_days === 0 && cleanup.max_messages_per_session === 0) {
     notify(t('configuration.validation.history_cleanup_limit_required'), 'error')
-    return
+    return false
   }
   if (Object.keys(validationErrors.value).length > 0) {
     notify(t('configuration.validation_failed'), 'error')
-    return
+    return false
   }
   saving.value = true
   const snapshot = deepClone(currentData.value)
@@ -993,12 +1016,59 @@ async function handleSave() {
       redoStack.value = []
     }
     notify(t('configuration.save_success'), 'success')
+    return true
   } catch (err) {
     console.error('Save failed:', err)
     notify(t('configuration.save_failed'), 'error')
+    return false
   } finally {
     saving.value = false
   }
+}
+
+/**
+ * Ask before dropping edits. Auth redirects (expired token, first-run setup) must
+ * never be blocked, and a navigation this code requested itself is allowed through.
+ */
+onBeforeRouteLeave((to) => {
+  if (skipNextLeaveGuard.value) {
+    skipNextLeaveGuard.value = false
+    return true
+  }
+  if (modifiedFields.size === 0) return true
+  if (to.name === 'Login' || to.name === 'SetupToken') return true
+  pendingRoutePath.value = to.fullPath
+  unsavedDialogVisible.value = true
+  return false
+})
+
+function stayOnConfigPage() {
+  unsavedDialogVisible.value = false
+  pendingRoutePath.value = null
+}
+
+async function navigateToPendingRoute() {
+  const target = pendingRoutePath.value
+  unsavedDialogVisible.value = false
+  pendingRoutePath.value = null
+  if (!target) return
+  skipNextLeaveGuard.value = true
+  try {
+    await router.push(target)
+  } finally {
+    skipNextLeaveGuard.value = false
+  }
+}
+
+async function saveThenLeave() {
+  const saved = await handleSave()
+  if (!saved) {
+    // Validation or the request failed: keep the edits and stay on the page,
+    // the error notification already told the user what to fix.
+    stayOnConfigPage()
+    return
+  }
+  await navigateToPendingRoute()
 }
 
 async function loadConfig() {
