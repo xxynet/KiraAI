@@ -1,4 +1,5 @@
 import DOMPurify from 'dompurify'
+import i18n from '../i18n'
 import katex from 'katex'
 import 'katex/contrib/mhchem'
 import hljs from 'highlight.js/lib/core'
@@ -52,16 +53,9 @@ for (const [name, definition] of Object.entries(HIGHLIGHT_LANGUAGES)) {
 export function tokenizeBlockMath(source: string) {
   const opening = /^ {0,3}\$\$[ \t]*\n?/.exec(source)
   if (!opening) return
-  // Three or more dollars at the start of a line are ambiguous: keep the whole
-  // line literal so the inline tokenizer cannot pair up the leftovers.
-  if (/^ {0,3}\${3,}/.test(source)) {
-    const lineEnd = source.indexOf('\n')
-    return {
-      type: 'blockMath',
-      raw: source.slice(0, lineEnd < 0 ? source.length : lineEnd),
-      tex: '',
-    }
-  }
+  // Let the inline literal-run handler preserve ambiguous dollar prefixes
+  // without consuming unrelated Markdown and math on the same line.
+  if (/^ {0,3}\${3,}/.test(source)) return
   const contentStart = opening[0].length
   for (let index = contentStart; index < source.length - 1; index++) {
     if (source[index] === '\\') {
@@ -118,7 +112,7 @@ export function tokenizeDisplayMath(source: string) {
     }
     if (source[index] !== '$' || source[index + 1] !== '$') continue
     const tex = source.slice(2, index)
-    if (!tex.trim()) return literalDollarRun(source)
+    if (!tex.trim()) return { type: 'displayMath', raw: source.slice(0, index + 2), tex: '' }
     if (tex.includes('\n\n')) return literalDollarRun(source)
     return {
       type: 'displayMath',
@@ -161,10 +155,11 @@ export function highlightCode(code: string, language: string): string {
 
 export function renderCodeBlock(code: string, lang?: string | null): string {
   const language = ((lang ?? '').trim().split(/\s+/)[0] || 'text').toLowerCase()
+  const label = language === 'text' ? i18n.global.t('common.code_plain_text') : language
   const source = code.replace(/\n$/, '')
   return [
     '<div class="md-code-block">',
-    `<div class="md-code-head"><span class="md-code-lang">${escapeHtml(language)}</span></div>`,
+    `<div class="md-code-head"><span class="md-code-lang">${escapeHtml(label)}</span></div>`,
     `<pre class="md-code-body"><code class="hljs">${highlightCode(source, language)}</code></pre>`,
     '</div>\n',
   ].join('')
@@ -210,7 +205,7 @@ const messageMarkdown = new Marked({
     {
       name: 'blockMath',
       level: 'block',
-      start: (source) => source.match(/(?:^|\n) {0,3}\$\$/)?.index,
+      start: (source) => source.match(/\n {0,3}\$\$(?!\$)/)?.index,
       tokenizer: tokenizeBlockMath,
       renderer(token) {
         if (!token.tex) return escapeHtml(token.raw)

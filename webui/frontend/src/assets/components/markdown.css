@@ -129,6 +129,10 @@
   max-width: 100%;
 }
 
+.markdown-body .md-math-inline-block .katex-display {
+  min-width: max-content;
+}
+
 /* Syntax colours follow the JetBrains palette: IntelliJ Light on the light
    theme, Darcula on the dark theme. */
 .markdown-body .hljs-keyword,

@@ -6,6 +6,7 @@ import { runInNewContext } from 'node:vm'
 import { Marked, Renderer, marked } from 'marked'
 import katex from 'katex'
 import ts from 'typescript'
+import { createI18n } from 'vue-i18n'
 
 const requireDependency = createRequire(import.meta.url)
 
@@ -14,12 +15,23 @@ const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
 }).outputText
 
+function loadLocale(locale) {
+  const exports = {}
+  const source = readFileSync(new URL(`../src/i18n/${locale}.ts`, import.meta.url), 'utf8')
+  runInNewContext(ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS },
+  }).outputText, { exports })
+  return exports.default
+}
+
 function setup() {
+  const i18n = createI18n({ legacy: false, locale: 'en', messages: { en: loadLocale('en'), zh: loadLocale('zh') } })
   const exports = {}
   const sanitized = []
   runInNewContext(compiled, {
     exports, console,
     require(id) {
+      if (id === '../i18n') return { default: i18n }
       if (id === 'marked') return { Marked, Renderer }
       if (id === 'katex/contrib/mhchem') return requireDependency(id)
       if (id === 'highlight.js/lib/core' || id.startsWith('highlight.js/lib/languages/')) {
@@ -33,7 +45,7 @@ function setup() {
       throw new Error(`Unexpected dependency: ${id}`)
     },
   })
-  return { render: exports.renderMessageMarkdown, sanitized, math: exports }
+  return { render: exports.renderMessageMarkdown, sanitized, math: exports, i18n }
 }
 
 for (const [name, input] of [
@@ -230,11 +242,8 @@ test('unclosed display delimiters stay literal', () => {
   assert.equal(tokenizeDisplayMath('$$$').raw, '$$$')
 })
 
-test('triple dollars at line start stay literal in block tokenizer', () => {
-  const token = tokenizeBlockMath('$$$x$$$')
-  assert.ok(token)
-  assert.equal(token.tex, '')
-  assert.equal(token.raw, '$$$x$$$')
+test('triple dollars at line start are left to the inline tokenizer', () => {
+  assert.equal(tokenizeBlockMath('$$$x$$$'), undefined)
   assert.equal(tokenizeBlockMath('$$x$$').tex, 'x')
 })
 
@@ -293,4 +302,38 @@ test('chemistry formulas render through mhchem', () => {
   const html = renderMath('\\ce{H2O}', true)
   assert.ok(html)
   assert.match(html, /katex/)
+})
+
+
+test('triple-dollar line prefixes preserve later Markdown and math', () => {
+  const { render } = setup()
+  for (const prefix of ['', '   ']) {
+    const html = render(prefix + '$$$pending **bold** and $x$')
+    assert.match(html, /\$\$\$pending <strong>bold<\/strong> and /)
+    assert.equal((html.match(/class="katex"/g) || []).length, 1)
+  }
+  assert.equal(render('$$$x$$$'), '<p>$$$x$$$</p>\n')
+})
+
+test('empty display pairs stay literal without stealing later delimiters', () => {
+  const { render } = setup()
+  const html = render('Text $$ $$ and $$y$$ end')
+  assert.match(html, /Text \$\$ \$\$ and /)
+  assert.equal((html.match(/class="katex"/g) || []).length, 1)
+  assert.match(html, /application\/x-tex">y<\/annotation>/)
+  const token = tokenizeDisplayMath('$$ $$ and $$y$$')
+  assert.equal(token.raw, '$$ $$')
+  assert.equal(token.tex, '')
+})
+
+test('plain code headers follow locale changes while language IDs stay intact', () => {
+  const { render, i18n } = setup()
+  for (const [locale, label] of [['en', 'text'], ['zh', '纯文本']]) {
+    i18n.global.locale.value = locale
+    for (const input of ['```\nplain\n```', '    plain', '```text\nplain\n```']) {
+      assert.ok(render(input).includes(`md-code-lang">${label}</span>`))
+    }
+    assert.match(render('```ts\nconst a = 1\n```'), /md-code-lang">ts<\/span>/)
+    assert.match(render('```ts\nconst a = 1\n```'), /hljs-keyword/)
+  }
 })

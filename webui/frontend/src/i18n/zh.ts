@@ -1,5 +1,6 @@
 export default {
   common: {
+    code_plain_text: '纯文本',
     cancel: '取消',
     on: '启用',
     off: '禁用',
