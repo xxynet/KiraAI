@@ -129,6 +129,20 @@ npm run dev
 
 The Vite dev server starts on `:3000` and proxies API requests to the Python backend on `:5267`.
 
+Run the frontend unit tests **only when your change touches `webui/frontend`** (the same
+command is enforced by the `WebUI CI` workflow):
+
+```bash
+npm test
+```
+
+It covers the frontend unit suites plus the CN/EN i18n parity check, so every new translation key
+must be added to both `src/i18n/en.ts` and `src/i18n/zh.ts`.
+
+Backend, plugin and documentation changes do not need this command: `WebUI CI` runs it on every
+pull request anyway, so running it locally for an unrelated change only spends time and tokens.
+Automated agents should apply the same rule and must not run it "just in case".
+
 ### Docker (optional)
 
 ```bash

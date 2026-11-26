@@ -29,6 +29,7 @@ cd webui/frontend
 npm install
 npm run dev      # Dev server on :3000, proxies /api → :5267
 npm run build    # Type-check (vue-tsc) + build → webui/static/dist/
+npm test         # Unit tests incl. i18n parity, only when webui/frontend changed
 ```
 
 ### Docker
