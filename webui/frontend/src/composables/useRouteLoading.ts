@@ -32,7 +32,18 @@ export function useRouteLoading() {
       }, SHOW_DELAY)
     })
 
-    const finish = () => {
+    const finish = (cancelled = false) => {
+      if (cancelled) {
+        if (showTimeout) clearTimeout(showTimeout)
+        if (finishTimeout) clearTimeout(finishTimeout)
+        if (stuckTimeout) clearTimeout(stuckTimeout)
+        showTimeout = null
+        finishTimeout = null
+        stuckTimeout = null
+        reset()
+        return
+      }
+
       if (showTimeout) {
         // Navigation completed before the threshold — keep it invisible
         clearTimeout(showTimeout)
@@ -40,13 +51,16 @@ export function useRouteLoading() {
         return
       }
 
+      // A guard can cancel navigation before the loading guard ever runs.
+      if (phase.value !== 'loading') return
+
       if (stuckTimeout) clearTimeout(stuckTimeout)
       phase.value = 'completing'
       finishTimeout = setTimeout(reset, 350)
     }
 
-    router.afterEach(finish)
-    router.onError(finish)
+    router.afterEach((_to, _from, failure) => finish(Boolean(failure)))
+    router.onError(() => finish(true))
   }
 
   return { phase }
