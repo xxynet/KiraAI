@@ -132,7 +132,9 @@ class ArchivedMessagePlaceholder(BaseMessageElement):
         return f"[{self.type.name}]" if self.type is not None else "[Unsupported message]"
 
 
-def _deserialize_message_chain(data: list[dict], *, depth: int = 0) -> MessageChain:
+def _deserialize_message_chain(
+    data: list[dict], *, depth: int = 0, archive_root: Path | None = None,
+) -> MessageChain:
     """Restore declared element fields without fetching media or forward contents."""
     if depth > 2:
         return MessageChain([ArchivedMessagePlaceholder(None, {"reason": "nesting_limit"})])
@@ -169,7 +171,7 @@ def _deserialize_message_chain(data: list[dict], *, depth: int = 0) -> MessageCh
             nested = item.get("chain")
             element = Reply(
                 item.get("message_id"), item.get("message_content"),
-                _deserialize_message_chain(nested, depth=depth + 1) if nested is not None else None,
+                _deserialize_message_chain(nested, depth=depth + 1, archive_root=archive_root) if nested is not None else None,
             )
         elif element_type == "forward":
             # Forward archives deliberately contain only a display placeholder.
@@ -177,11 +179,12 @@ def _deserialize_message_chain(data: list[dict], *, depth: int = 0) -> MessageCh
         elif element_type in media_types:
             element = ArchivedMessagePlaceholder(ElementType(element_type), copy.deepcopy(item))
             file = item.get("file")
+            archive_pattern = r"[0-9a-f]{64}" if archive_root is not None else rf"{MEDIA_ROOT_NAME}/archive/[0-9a-f]{{64}}"
             if (item.get("file_type") == "archive" and isinstance(file, str)
-                    and re.fullmatch(rf"{MEDIA_ROOT_NAME}/archive/[0-9a-f]{{64}}", file)):
+                    and re.fullmatch(archive_pattern, file)):
                 try:
-                    root = get_data_path() / MEDIA_ROOT_NAME / "archive"
-                    target = (get_data_path() / file).resolve()
+                    root = archive_root if archive_root is not None else get_data_path() / MEDIA_ROOT_NAME / "archive"
+                    target = ((archive_root if archive_root is not None else get_data_path()) / file).resolve()
                     if is_within_directory(root, target) and target.is_file():
                         element_class, argument = media_types[element_type]
                         element = element_class(**{argument: str(target)}, mime=item.get("mime"))

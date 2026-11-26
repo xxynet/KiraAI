@@ -59,11 +59,13 @@
             <div class="min-w-0 max-w-[85%] flex flex-col gap-2" :class="message.direction === 'incoming' ? 'items-end' : 'items-start'">
               <p class="max-w-full break-words text-xs font-medium text-theme-body">{{ message.sender_name }}</p>
               <div class="min-w-0 max-w-full flex flex-col" :class="message.direction === 'incoming' ? 'items-end' : 'items-start'">
-                <div class="message-bubble min-w-0 max-w-full rounded-lg break-words" :class="message.chain.length === 1 && ['image', 'sticker', 'record', 'video', 'file'].includes(message.chain[0]?.type || '')
-                ? null
-                : ['chat-bubble px-4 py-3', { 'chat-bubble--accent': message.direction === 'incoming' }]" tabindex="0" :aria-describedby="`webchat-time-${message.id}`">
-                  <MessageChain :chain="message.chain" :message-id="message.id" media-scope="webchat" :markdown-enabled="chatMarkdownEnabled" />
-                </div>
+                <MessageActions :message="message" :disabled="sending || deleting" class="min-w-0 max-w-full" @reply="selectReply" @delete="requestDeleteMessage">
+                  <div class="message-bubble min-w-0 max-w-full rounded-lg break-words" :class="message.chain.length === 1 && ['image', 'sticker', 'record', 'video', 'file'].includes(message.chain[0]?.type || '')
+                  ? null
+                  : ['chat-bubble px-4 py-3', { 'chat-bubble--accent': message.direction === 'incoming' }]" tabindex="0" :aria-describedby="`webchat-time-${message.id}`">
+                    <MessageChain :chain="message.chain" :message-id="message.id" media-scope="webchat" :markdown-enabled="chatMarkdownEnabled" />
+                  </div>
+                </MessageActions>
                 <time :id="`webchat-time-${message.id}`" class="message-time mt-1 text-xs text-theme-subtle">{{ formatTime(message.timestamp) }}</time>
               </div>
             </div>
@@ -71,6 +73,13 @@
         </div>
       </div>
       <form class="relative mx-auto mt-auto w-full max-w-[1280px] shrink-0 px-7 pb-5 pt-3" @submit.prevent="send">
+        <div v-if="replyTarget" class="mb-3 flex items-center gap-3 rounded-lg border-l-2 border-blue-500 bg-gray-50 px-3 py-2 dark:bg-gray-800" role="status">
+          <div class="min-w-0 flex-1 text-sm text-theme-body">
+            <p class="font-medium">{{ t('webchat.replying_to', { name: replyTarget.sender_name }) }}</p>
+            <p class="truncate text-theme-subtle">{{ messageText(replyTarget.chain, t) }}</p>
+          </div>
+          <button type="button" :disabled="sending" :aria-label="t('webchat.cancel_reply')" class="composer-settings shrink-0 rounded-full p-1 text-theme-subtle disabled:opacity-40" @click="replyTarget = null"><CloseBold aria-hidden="true" class="h-4 w-4" /></button>
+        </div>
         <div v-if="attachments.length" :aria-label="t('webchat.attachments')" class="mb-3 flex max-h-28 flex-wrap gap-2 overflow-y-auto">
           <div v-for="attachment in attachments" :key="attachment.id" class="chat-media flex max-w-full items-center gap-2 rounded-xl border p-2">
             <img v-if="attachment.preview" :src="attachment.preview" :alt="attachment.file.name" class="h-12 w-12 rounded-lg object-cover" />
@@ -118,6 +127,16 @@
       </form>
     </template>
     <ConfirmModal
+      ref="deleteMessageModalRef"
+      :title="t('webchat.delete_message')"
+      :message="t('webchat.delete_message_confirm')"
+      :confirm-text="t('common.delete')"
+      :cancel-text="t('webchat.cancel')"
+      :confirm-disabled="sending || deleting || saving"
+      @confirm="deleteMessage"
+      @cancel="cancelDeleteMessage"
+    />
+    <ConfirmModal
       ref="deleteConfirmModalRef"
       :title="t('webchat.delete_history')"
       :message="t('webchat.delete_history_confirm')"
@@ -131,14 +150,16 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Setting, Plus, Picture, Document, Close } from '@element-plus/icons-vue'
+import { Setting, Plus, Picture, Document, Close, CloseBold } from '@element-plus/icons-vue'
 import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import ToggleSwitch from '@/components/common/ToggleSwitch.vue'
 import { notify } from '@/composables/useNotification'
+import MessageActions from '@/components/webchat/MessageActions.vue'
+import { messageText } from '@/components/webchat/messageText'
 import MessageChain from '@/components/sessions/MessageChain.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
-import { deleteWebChatMessages, getWebChat, getWebChatMessages, saveWebChatProfile, saveWebChatConfig, sendWebChatMessage } from '@/api/webchat'
+import { deleteWebChatMessage, deleteWebChatMessages, getWebChat, getWebChatMessages, saveWebChatProfile, saveWebChatConfig, sendWebChatMessage } from '@/api/webchat'
 import type { WebChatMessage, WebChatProfile, WebChatAttachment, WebChatConfig } from '@/api/webchat'
 
 const { t, locale } = useI18n()
@@ -155,6 +176,8 @@ const configError = ref('')
 let configVersion = 0
 const deleting = ref(false)
 const deleteConfirmModalRef = ref<InstanceType<typeof ConfirmModal>>()
+const deleteMessageModalRef = ref<InstanceType<typeof ConfirmModal>>()
+const messageToDelete = ref<WebChatMessage | null>(null)
 const historyDeleted = ref(false)
 let historyVersion = 0
 const sending = ref(false)
@@ -162,6 +185,11 @@ const loadingOlder = ref(false)
 const hasOlder = ref(false)
 const error = ref('')
 const draft = ref('')
+const replyTarget = ref<WebChatMessage | null>(null)
+function selectReply(message: WebChatMessage) {
+  replyTarget.value = message
+  nextTick(() => (composerTextarea.value?.$el as HTMLTextAreaElement | undefined)?.focus())
+}
 const composerTextarea = ref<InstanceType<typeof UiTextarea> | null>(null)
 let composerObserver: ResizeObserver | undefined
 const messageList = ref<HTMLElement | null>(null)
@@ -185,7 +213,7 @@ const imagePicker = ref<HTMLInputElement | null>(null)
 const filePicker = ref<HTMLInputElement | null>(null)
 const maxAttachments = 10
 const maxAttachmentBytes = 20 * 1024 * 1024
-let pending: { id: string; text: string; attachments: DraftAttachment[] } | null = null
+let pending: { id: string; text: string; attachments: DraftAttachment[]; replyTo?: string } | null = null
 let chatScroll: { top: number; follow: boolean } | null = null
 
 function formatTime(timestamp: number) {
@@ -193,7 +221,7 @@ function formatTime(timestamp: number) {
 }
 function showError(cause: any) {
   const code = cause?.response?.data?.detail
-  error.value = t(['setup_required', 'request_conflict', 'unavailable', 'attachment_count', 'attachments_too_large', 'invalid_attachment', 'invalid_image', 'attachment_failed', 'empty_message'].includes(code) ? `webchat.error_${code}` : 'webchat.error', { count: maxAttachments, size: maxAttachmentBytes / 1024 / 1024 })
+  error.value = t(['setup_required', 'request_conflict', 'unavailable', 'attachment_count', 'attachments_too_large', 'invalid_attachment', 'invalid_image', 'attachment_failed', 'empty_message', 'reply_not_found'].includes(code) ? `webchat.error_${code}` : 'webchat.error', { count: maxAttachments, size: maxAttachmentBytes / 1024 / 1024 })
 }
 function closeAttachmentMenu(restoreFocus = false) {
   attachmentMenuOpen.value = false
@@ -270,6 +298,7 @@ function removeAttachment(id: string) {
   attachments.value = attachments.value.filter(item => item.id !== id)
 }
 function clearSubmission(submission: NonNullable<typeof pending>) {
+  if (replyTarget.value?.id === submission.replyTo) replyTarget.value = null
   if (draft.value.trim() === submission.text) draft.value = ''
   submission.attachments.forEach(item => removeAttachment(item.id))
   if (pending?.id === submission.id) pending = null
@@ -356,6 +385,35 @@ async function saveProfile() {
   } catch (cause) { showError(cause) }
   finally { saving.value = false }
 }
+function requestDeleteMessage(message: WebChatMessage) {
+  if (deleting.value || sending.value || saving.value) return
+  messageToDelete.value = message
+  deleteMessageModalRef.value?.open()
+}
+function cancelDeleteMessage() {
+  messageToDelete.value = null
+}
+async function deleteMessage() {
+  const message = messageToDelete.value
+  if (!message || deleting.value || sending.value || saving.value) return
+  messageToDelete.value = null
+  deleting.value = true
+  historyVersion++
+  try {
+    await deleteWebChatMessage(message.id)
+    if (controller.signal.aborted) return
+    messages.value = messages.value.filter(item => item.id !== message.id)
+    if (replyTarget.value?.id === message.id) replyTarget.value = null
+    if (pending?.id === message.id || pending?.replyTo === message.id) pending = null
+    notify(t('webchat.message_deleted'), 'success')
+  } catch (cause) {
+    console.error('Failed to delete WebChat message:', cause)
+    if (!controller.signal.aborted) notify(t('webchat.error_delete_message'), 'error')
+  } finally {
+    deleting.value = false
+    if (!controller.signal.aborted) await refresh()
+  }
+}
 async function deleteHistory() {
   if (!profile.value || deleting.value || saving.value || sending.value) return
   deleting.value = true
@@ -366,6 +424,7 @@ async function deleteHistory() {
     await deleteWebChatMessages()
     if (controller.signal.aborted) return
     messages.value = []
+    replyTarget.value = null
     hasOlder.value = false
     historyLoaded.value = false
     pending = null
@@ -448,16 +507,16 @@ function requestId() {
 }
 async function send() {
   const text = draft.value.trim()
-  if (!profile.value || (!text && !attachments.value.length) || sending.value) return
+  if (!profile.value || (!text && !attachments.value.length) || sending.value || deleting.value) return
   sending.value = true
   error.value = ''
   closeAttachmentMenu()
-  if (!pending || pending.text !== text || pending.attachments.length !== attachments.value.length || pending.attachments.some((item, index) => item.id !== attachments.value[index]?.id)) {
-    pending = { id: requestId(), text, attachments: [...attachments.value] }
+  if (!pending || pending.replyTo !== replyTarget.value?.id || pending.text !== text || pending.attachments.length !== attachments.value.length || pending.attachments.some((item, index) => item.id !== attachments.value[index]?.id)) {
+    pending = { id: requestId(), text, attachments: [...attachments.value], replyTo: replyTarget.value?.id }
   }
   const submission = pending
   try {
-    await sendWebChatMessage(submission.id, text, submission.attachments)
+    await sendWebChatMessage(submission.id, text, submission.attachments, submission.replyTo)
     if (controller.signal.aborted) return
     clearSubmission(submission)
     await refresh()
@@ -542,9 +601,9 @@ onBeforeUnmount(() => {
 .composer-settings:focus-visible,
 .composer-send:focus-visible { outline: 2px solid var(--color-focus-ring); outline-offset: 2px; }
 .message-time { visibility: hidden; opacity: 0; transition: opacity 150ms ease, visibility 150ms ease; }
-.message-bubble:hover + .message-time,
-.message-bubble:focus-visible + .message-time,
-.message-bubble:has(:focus-visible) + .message-time { visibility: visible; opacity: 1; }
+div:has(> .message-bubble:hover) + .message-time,
+div:has(> .message-bubble:focus-visible) + .message-time,
+div:has(> .message-bubble :focus-visible) + .message-time { visibility: visible; opacity: 1; }
 .message-bubble:focus-visible { outline: 2px solid var(--color-focus-ring); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .message-time { transition: none; } }
 </style>

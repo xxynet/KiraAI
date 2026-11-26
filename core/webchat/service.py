@@ -4,8 +4,8 @@ from __future__ import annotations
 import asyncio
 
 from core.adapter.builtin.webchat.im import WebChatIMCapability
-from core.chat.message_elements import BaseMediaElement, Text
-from core.chat.message_history import serialize_message_chain
+from core.chat.message_elements import BaseMediaElement, Reply, Text
+from core.chat.message_history import _deserialize_message_chain, serialize_message_chain
 from core.chat.message_utils import MessageChain
 
 
@@ -48,7 +48,8 @@ class WebChatService:
             await self._apply_profile(profile)
         return profile
 
-    async def submit(self, request_id: str, text: str, attachments: list[BaseMediaElement] | None = None):
+    async def submit(self, request_id: str, text: str, attachments: list[BaseMediaElement] | None = None,
+                     reply_to: str | None = None):
         async with self._lock:
             if self._closed:
                 raise ValueError("unavailable")
@@ -61,9 +62,27 @@ class WebChatService:
             elements = await serialize_message_chain(chain, archive_root=self.store.media_dir)
             if any(item.get("file_type") == "unavailable" for item in elements):
                 raise ValueError("attachment_failed")
-            existing = await self.store.get_request(request_id, text, elements)
+            persisted = await self.store.get_message(request_id)
+            snapshot = None
+            if persisted is not None:
+                saved_chain = persisted["chain"]
+                if saved_chain and saved_chain[0].get("type") == "reply":
+                    snapshot = saved_chain[0]
+                if (snapshot.get("message_id") if snapshot is not None else None) != reply_to:
+                    raise ValueError("request_conflict")
+            retry_elements = [snapshot, *elements] if snapshot is not None else elements
+            existing = await self.store.get_request(request_id, text, retry_elements)
             if existing is not None:
                 return existing
+            if reply_to is not None:
+                original = await self.store.get_message(reply_to)
+                if original is None:
+                    raise ValueError("reply_not_found")
+                quoted = await asyncio.to_thread(
+                    _deserialize_message_chain, original["chain"], depth=1, archive_root=self.store.media_dir,
+                )
+                chain = MessageChain([Reply(reply_to, chain=quoted), *chain])
+                elements = await serialize_message_chain(chain, archive_root=self.store.media_dir)
             await self._apply_profile(profile)
             request, created = await self.store.accept(request_id, text, profile["nickname"], elements)
             if created:
@@ -73,6 +92,12 @@ class WebChatService:
                     await self.store.finish(request_id, "failed")
                     raise ValueError("unavailable") from None
             return request
+
+    async def delete_message(self, message_id: str):
+        async with self._lock:
+            if self._closed:
+                raise ValueError("unavailable")
+            await self.store.delete_message(message_id)
 
     async def clear_messages(self):
         async with self._lock:
