@@ -59,7 +59,7 @@
             <div class="min-w-0 max-w-[85%] flex flex-col gap-2" :class="message.direction === 'incoming' ? 'items-end' : 'items-start'">
               <p class="max-w-full break-words text-xs font-medium text-theme-body">{{ message.sender_name }}</p>
               <div class="min-w-0 max-w-full flex flex-col" :class="message.direction === 'incoming' ? 'items-end' : 'items-start'">
-                <MessageActions :message="message" :disabled="sending || deleting" class="min-w-0 max-w-full" @reply="selectReply" @delete="deleteMessage">
+                <MessageActions :message="message" :disabled="sending || deleting" class="min-w-0 max-w-full" @reply="selectReply" @delete="requestDeleteMessage">
                   <div class="message-bubble min-w-0 max-w-full rounded-lg break-words" :class="message.chain.length === 1 && ['image', 'sticker', 'record', 'video', 'file'].includes(message.chain[0]?.type || '')
                   ? null
                   : ['chat-bubble px-4 py-3', { 'chat-bubble--accent': message.direction === 'incoming' }]" tabindex="0" :aria-describedby="`webchat-time-${message.id}`">
@@ -127,6 +127,16 @@
       </form>
     </template>
     <ConfirmModal
+      ref="deleteMessageModalRef"
+      :title="t('webchat.delete_message')"
+      :message="t('webchat.delete_message_confirm')"
+      :confirm-text="t('common.delete')"
+      :cancel-text="t('webchat.cancel')"
+      :confirm-disabled="sending || deleting || saving"
+      @confirm="deleteMessage"
+      @cancel="cancelDeleteMessage"
+    />
+    <ConfirmModal
       ref="deleteConfirmModalRef"
       :title="t('webchat.delete_history')"
       :message="t('webchat.delete_history_confirm')"
@@ -166,6 +176,8 @@ const configError = ref('')
 let configVersion = 0
 const deleting = ref(false)
 const deleteConfirmModalRef = ref<InstanceType<typeof ConfirmModal>>()
+const deleteMessageModalRef = ref<InstanceType<typeof ConfirmModal>>()
+const messageToDelete = ref<WebChatMessage | null>(null)
 const historyDeleted = ref(false)
 let historyVersion = 0
 const sending = ref(false)
@@ -373,8 +385,18 @@ async function saveProfile() {
   } catch (cause) { showError(cause) }
   finally { saving.value = false }
 }
-async function deleteMessage(message: WebChatMessage) {
+function requestDeleteMessage(message: WebChatMessage) {
   if (deleting.value || sending.value || saving.value) return
+  messageToDelete.value = message
+  deleteMessageModalRef.value?.open()
+}
+function cancelDeleteMessage() {
+  messageToDelete.value = null
+}
+async function deleteMessage() {
+  const message = messageToDelete.value
+  if (!message || deleting.value || sending.value || saving.value) return
+  messageToDelete.value = null
   deleting.value = true
   historyVersion++
   try {

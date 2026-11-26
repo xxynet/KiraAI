@@ -1005,6 +1005,8 @@ export default {
     },
   },
   webchat: {
+    delete_message: 'Delete message',
+    delete_message_confirm: 'Delete this message and its unused attachments? This action cannot be undone. LLM context and existing quotes in other messages will be retained.',
     message_deleted: 'Message deleted',
     error_delete_message: 'Failed to delete message. Please try again.',
     message_actions: 'Message actions',

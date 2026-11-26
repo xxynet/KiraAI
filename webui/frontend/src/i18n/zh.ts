@@ -1005,6 +1005,8 @@ export default {
     },
   },
   webchat: {
+    delete_message: '删除消息',
+    delete_message_confirm: '确定要删除这条消息及不再使用的附件吗？此操作无法撤销。LLM 上下文和其他消息中的已有引用将保留。',
     message_deleted: '已删除消息',
     error_delete_message: '删除消息失败，请重试。',
     message_actions: '消息操作',

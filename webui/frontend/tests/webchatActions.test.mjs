@@ -181,7 +181,10 @@ test('deleting a message updates the list and quote only on success', async () =
     const other = { ...message, id: 'other' }
     state.messages.value = [message, other]
     state.replyTarget.value = message
-    await state.deleteMessage(message)
+    state.requestDeleteMessage(message)
+    assert.equal(calls.length, 0)
+    assert.equal(state.messages.value.length, 2)
+    await state.deleteMessage()
     assert.deepEqual(calls, [message.id])
     assert.equal(state.messages.value.length, fail ? 2 : 1)
     assert.equal(state.replyTarget.value?.id ?? null, fail ? message.id : null)
@@ -189,4 +192,24 @@ test('deleting a message updates the list and quote only on success', async () =
     assert.equal(notifications[0][0], fail ? 'webchat.error_delete_message' : 'webchat.message_deleted')
     if (fail) assert.equal(errors[0][1], cause)
   }
+})
+
+
+test('canceling message deletion keeps messages and makes no delete request', async () => {
+  const calls = []
+  const { state } = setup(viewCompiled, {}, {
+    deleteWebChatMessage: async id => calls.push(id),
+  })
+  let opened = 0
+  state.deleteMessageModalRef.value = { open: () => opened++ }
+  state.messages.value = [message]
+  state.requestDeleteMessage(message)
+  assert.equal(opened, 1)
+  assert.equal(state.messageToDelete.value.id, message.id)
+  assert.equal(calls.length, 0)
+  state.cancelDeleteMessage()
+  await state.deleteMessage()
+  assert.equal(state.messageToDelete.value, null)
+  assert.equal(calls.length, 0)
+  assert.equal(state.messages.value.length, 1)
 })
