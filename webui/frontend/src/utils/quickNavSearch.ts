@@ -79,18 +79,30 @@ export function searchQuickNav<T extends QuickNavTarget>(targets: readonly T[], 
   return matches.map(match => match.target)
 }
 
+export interface QuickNavShortcutOptions {
+  /**
+   * Alt+K only exists as a fallback for browsers that keep Ctrl+K for
+   * themselves. macOS binds Option+letter to character input, so callers leave
+   * it off there and while a text-entry control has focus.
+   */
+  allowAltFallback?: boolean
+}
+
 /**
- * Ctrl+K on Windows and Linux, Cmd+K on macOS, plus Alt+K as a fallback: some
- * browsers route Ctrl+K to their own search box, and Alt+K is free there.
+ * Ctrl+K on Windows and Linux, Cmd+K on macOS, plus an opt-in Alt+K fallback.
  */
-export function isQuickNavShortcut(event: QuickNavShortcutEvent): boolean {
+export function isQuickNavShortcut(
+  event: QuickNavShortcutEvent,
+  options: QuickNavShortcutOptions = {},
+): boolean {
   if (event.repeat) return false
   if (event.shiftKey) return false
-  if (!event.ctrlKey && !event.metaKey && !event.altKey) return false
   // event.key depends on the keyboard layout: a Cyrillic layout reports "л" for
   // the K key, so the layout-independent physical code is accepted as well.
-  if (event.code === 'KeyK') return true
-  return event.key.length === 1 && event.key.toLowerCase() === 'k'
+  const isK = event.code === 'KeyK' || (event.key.length === 1 && event.key.toLowerCase() === 'k')
+  if (!isK) return false
+  if (event.ctrlKey || event.metaKey) return true
+  return Boolean(options.allowAltFallback && event.altKey)
 }
 
 export function detectMacPlatform(platform: string): boolean {

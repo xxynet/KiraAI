@@ -74,24 +74,30 @@ test('a query without any match returns nothing', () => {
   assert.deepEqual(ids(searchQuickNav(entries(), 'zzz')), [])
 })
 
-test('the shortcut is Ctrl+K, Cmd+K or the Alt+K fallback', () => {
+test('the shortcut is Ctrl+K or Cmd+K, with Alt+K as an opt-in fallback', () => {
+  const fallback = { allowAltFallback: true }
   assert.equal(isQuickNavShortcut({ key: 'k', ctrlKey: true }), true)
   assert.equal(isQuickNavShortcut({ key: 'K', ctrlKey: true }), true)
   assert.equal(isQuickNavShortcut({ key: 'k', metaKey: true }), true)
-  // Some browsers route Ctrl+K to their own search box; Alt+K is the fallback.
-  assert.equal(isQuickNavShortcut({ key: 'k', altKey: true }), true)
+  // Alt+K stays opt-in: on macOS Option+letter types characters, and text entry
+  // must keep it even on other platforms.
+  assert.equal(isQuickNavShortcut({ key: 'k', altKey: true }), false)
+  assert.equal(isQuickNavShortcut({ key: 'k', altKey: true }, fallback), true)
   assert.equal(isQuickNavShortcut({ key: 'k' }), false)
+  assert.equal(isQuickNavShortcut({ key: 'k' }, fallback), false)
   assert.equal(isQuickNavShortcut({ key: 'j', ctrlKey: true }), false)
   assert.equal(isQuickNavShortcut({ key: 'k', ctrlKey: true, shiftKey: true }), false)
-  assert.equal(isQuickNavShortcut({ key: 'k', altKey: true, shiftKey: true }), false)
+  assert.equal(isQuickNavShortcut({ key: 'k', altKey: true, shiftKey: true }, fallback), false)
   assert.equal(isQuickNavShortcut({ key: 'k', ctrlKey: true, repeat: true }), false)
+  assert.equal(isQuickNavShortcut({ key: 'k', altKey: true, repeat: true }, fallback), false)
 })
 
 test('non-Latin keyboard layouts keep the shortcut through the physical key', () => {
   // A Russian layout maps the K key to "л", but the event still reports KeyK.
   assert.equal(isQuickNavShortcut({ key: 'л', code: 'KeyK', ctrlKey: true }), true)
   assert.equal(isQuickNavShortcut({ key: 'л', code: 'KeyK', metaKey: true }), true)
-  assert.equal(isQuickNavShortcut({ key: 'л', code: 'KeyK', altKey: true }), true)
+  assert.equal(isQuickNavShortcut({ key: 'л', code: 'KeyK', altKey: true }), false)
+  assert.equal(isQuickNavShortcut({ key: 'л', code: 'KeyK', altKey: true }, { allowAltFallback: true }), true)
   assert.equal(isQuickNavShortcut({ key: 'л', code: 'KeyJ', ctrlKey: true }), false)
   assert.equal(isQuickNavShortcut({ key: 'л', code: 'KeyK' }), false)
   assert.equal(isQuickNavShortcut({ key: 'л', code: 'KeyK', ctrlKey: true, shiftKey: true }), false)
