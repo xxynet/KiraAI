@@ -14,6 +14,8 @@ export default {
   header: {
     collapse_menu: 'Collapse sidebar',
     expand_menu: 'Expand sidebar',
+    quick_search: 'Search pages',
+    quick_search_placeholder: 'Search…',
     logout: 'Logout',
     more_actions: 'More actions',
     theme_toggle: 'Toggle theme',
@@ -65,6 +67,17 @@ export default {
     update_stage_done: 'Done',
     update_stage_running: 'In progress',
     update_stage_pending: 'Pending',
+  },
+  quickNav: {
+    title: 'Quick navigation',
+    aria_label: 'Search sidebar entries',
+    placeholder: 'Search pages, groups or routes…',
+    no_results: 'No entries match "{query}"',
+    no_entries: 'This sidebar has no visible entries',
+    results_count: '{count} found',
+    hint_navigate: 'Navigate',
+    hint_open: 'Open',
+    hint_close: 'Close',
   },
   nav: {
     more_features: 'More Features',

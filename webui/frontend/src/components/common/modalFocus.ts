@@ -71,6 +71,11 @@ function onKeyDown(event: KeyboardEvent) {
   }
 }
 
+/** True while at least one registered modal layer is open. */
+export function hasOpenModal(): boolean {
+  return layers.length > 0
+}
+
 export function registerModal(root: HTMLElement, panel: HTMLElement, close: () => void): () => void {
   const layer: ModalLayer = {
     root, panel, close,
