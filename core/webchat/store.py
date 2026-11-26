@@ -12,6 +12,9 @@ from pathlib import Path
 import aiosqlite
 
 from core.chat.message_history import serialize_message_chain
+from core.logging_manager import get_logger
+
+logger = get_logger("webchat", "cyan")
 
 
 class WebChatStore:
@@ -20,6 +23,7 @@ class WebChatStore:
         self.path = root / "webchat.db"
         self.media_dir = root / "media"
         self.lock = asyncio.Lock()
+        self._pending_media_cleanup: set[Path] = set()
 
     async def initialize(self):
         await asyncio.to_thread(self.root.mkdir, parents=True, exist_ok=True)
@@ -124,7 +128,37 @@ class WebChatStore:
             return message_id
 
     async def delete_message(self, message_id: str):
-        def remove_unused_media(body: str, remaining: list):
+        staged: list[tuple[Path, Path]] = []
+        staging_dir: Path | None = None
+
+        def restore_media():
+            failures = []
+            for original, backup in reversed(staged):
+                try:
+                    backup.rename(original)
+                except OSError as exc:
+                    logger.exception(f"Failed to restore WebChat attachment {backup} to {original}")
+                    failures.append(exc)
+            if failures:
+                raise failures[0]
+            if staging_dir is not None:
+                staging_dir.rmdir()
+
+        def cleanup_media():
+            media = self.media_dir.resolve()
+            for directory in tuple(self._pending_media_cleanup):
+                try:
+                    if (media != self.root.resolve() / "media" or self.media_dir.is_symlink()
+                            or directory.is_symlink() or directory.resolve().parent != media):
+                        raise ValueError("Invalid WebChat media cleanup directory")
+                    if directory.exists():
+                        shutil.rmtree(directory)
+                    self._pending_media_cleanup.discard(directory)
+                except (OSError, ValueError):
+                    logger.exception(f"Failed to clean up deleted WebChat attachments in {directory}")
+
+        def stage_unused_media(body: str, remaining: list):
+            nonlocal staging_dir
             def media_refs(chain: list[dict]) -> set[str]:
                 refs = set()
                 for element in chain:
@@ -147,23 +181,51 @@ class WebChatStore:
             media = self.media_dir.resolve()
             if media != root / "media" or self.media_dir.is_symlink():
                 raise ValueError("Invalid WebChat media directory")
-            targets = [(media / file).resolve() for file in unused]
+            targets = [(media / file).resolve() for file in sorted(unused)]
             if any(target.parent != media for target in targets):
                 raise ValueError("Invalid WebChat media path")
             for target in targets:
-                target.unlink(missing_ok=True)
+                if not target.exists():
+                    continue
+                if staging_dir is None:
+                    staging_dir = media / f".delete-{uuid.uuid4().hex}"
+                    staging_dir.mkdir()
+                backup = staging_dir / target.name
+                target.rename(backup)
+                staged.append((target, backup))
 
-        async with self.lock, aiosqlite.connect(self.path) as db:
-            await db.execute("BEGIN IMMEDIATE")
-            async with db.execute("SELECT body FROM messages WHERE id = ?", (message_id,)) as cursor:
-                row = await cursor.fetchone()
-            if row is None:
-                return
-            async with db.execute("SELECT body FROM messages WHERE id != ?", (message_id,)) as cursor:
-                remaining = await cursor.fetchall()
-            await asyncio.to_thread(remove_unused_media, row[0], remaining)
-            await db.execute("DELETE FROM messages WHERE id = ?", (message_id,))
-            await db.commit()
+        async def delete():
+            await asyncio.to_thread(cleanup_media)
+            async with aiosqlite.connect(self.path) as db:
+                try:
+                    await db.execute("BEGIN IMMEDIATE")
+                    async with db.execute("SELECT body FROM messages WHERE id = ?", (message_id,)) as cursor:
+                        row = await cursor.fetchone()
+                    if row is None:
+                        return
+                    async with db.execute("SELECT body FROM messages WHERE id != ?", (message_id,)) as cursor:
+                        remaining = await cursor.fetchall()
+                    await asyncio.to_thread(stage_unused_media, row[0], remaining)
+                    await db.execute("DELETE FROM messages WHERE id = ?", (message_id,))
+                    await db.commit()
+                except BaseException:
+                    try:
+                        await db.rollback()
+                    finally:
+                        await asyncio.to_thread(restore_media)
+                    raise
+                if staging_dir is not None:
+                    self._pending_media_cleanup.add(staging_dir)
+                await asyncio.to_thread(cleanup_media)
+
+        async with self.lock:
+            # Finish the transaction before releasing the lock, even if the caller disconnects.
+            task = asyncio.create_task(delete())
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                await task
+                raise
 
     async def clear_messages(self):
         def remove_media():

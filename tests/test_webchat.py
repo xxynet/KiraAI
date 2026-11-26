@@ -1079,14 +1079,14 @@ async def test_single_delete_reports_media_failure_and_keeps_message(store, monk
     ]), "Kira")
     original = await store.get_message(message_id)
     media = store.media_dir / original["chain"][0]["file"]
-    unlink = Path.unlink
+    rename = Path.rename
 
-    def fail_media_unlink(path, *args, **kwargs):
+    def fail_media_rename(path, *args, **kwargs):
         if path == media.resolve():
             raise PermissionError("Media is in use")
-        return unlink(path, *args, **kwargs)
+        return rename(path, *args, **kwargs)
 
-    monkeypatch.setattr(Path, "unlink", fail_media_unlink)
+    monkeypatch.setattr(Path, "rename", fail_media_rename)
     service = WebChatService(make_adapter(store), Sessions())
     app = FastAPI()
     app.dependency_overrides[require_auth] = lambda: True
@@ -1146,3 +1146,123 @@ async def test_accepted_quote_retry_uses_snapshot_after_target_deletion(store, u
         assert new.status_code == 409
         assert new.json()["detail"] == "reply_not_found"
         assert adapter.ctx.event_queue.empty()
+
+
+async def make_message_with_two_attachments(store):
+    from core.chat.message_elements import File
+
+    message_id = await store.append_reply(MessageChain([
+        File("data:application/octet-stream;base64,Zmlyc3Q=", name="first.txt"),
+        File("data:application/octet-stream;base64,c2Vjb25k", name="second.txt"),
+    ]), "Kira")
+    record = await store.get_message(message_id)
+    files = {store.media_dir / element["file"] for element in record["chain"]}
+    return message_id, record, {path: path.read_bytes() for path in files}
+
+
+@pytest.mark.anyio
+async def test_single_delete_restores_first_attachment_when_second_move_fails(store, monkeypatch):
+    from pathlib import Path
+
+    message_id, record, contents = await make_message_with_two_attachments(store)
+    rename = Path.rename
+    moves = []
+
+    def fail_second_move(path, target):
+        if path.parent == store.media_dir:
+            moves.append(path)
+            if len(moves) == 2:
+                raise PermissionError("Second attachment is in use")
+        return rename(path, target)
+
+    monkeypatch.setattr(Path, "rename", fail_second_move)
+    with pytest.raises(PermissionError, match="Second attachment"):
+        await store.delete_message(message_id)
+    assert len(moves) == 2
+    assert await store.get_message(message_id) == record
+    assert all(path.read_bytes() == content for path, content in contents.items())
+    assert not list(store.media_dir.glob(".delete-*"))
+    assert not store._pending_media_cleanup
+
+
+@pytest.mark.anyio
+async def test_single_delete_restores_all_attachments_when_commit_fails(store, monkeypatch):
+    import aiosqlite
+
+    message_id, record, contents = await make_message_with_two_attachments(store)
+
+    async def fail_commit(connection):
+        assert all(not path.exists() for path in contents)
+        raise OSError("Database commit failed")
+
+    monkeypatch.setattr(aiosqlite.Connection, "commit", fail_commit)
+    with pytest.raises(OSError, match="Database commit failed"):
+        await store.delete_message(message_id)
+    assert await store.get_message(message_id) == record
+    assert all(path.read_bytes() == content for path, content in contents.items())
+    assert not list(store.media_dir.glob(".delete-*"))
+
+
+@pytest.mark.anyio
+async def test_single_delete_retries_postcommit_cleanup_in_memory(store, monkeypatch):
+    import core.webchat.store as store_module
+
+    message_id, _, contents = await make_message_with_two_attachments(store)
+    remove = store_module.shutil.rmtree
+    logger = Mock()
+    monkeypatch.setattr(store_module, "logger", logger)
+    fail = True
+
+    def fail_cleanup(path):
+        if fail:
+            next(path.iterdir()).unlink()
+            raise PermissionError("Cleanup temporarily blocked after one deletion")
+        return remove(path)
+
+    monkeypatch.setattr(store_module.shutil, "rmtree", fail_cleanup)
+    await store.delete_message(message_id)
+    assert await store.get_message(message_id) is None
+    assert all(not path.exists() for path in contents)
+    assert len(store._pending_media_cleanup) == 1
+    directory = next(iter(store._pending_media_cleanup))
+    remaining = {path.name for path in directory.iterdir()}
+    assert len(remaining) == 1
+    assert remaining < {path.name for path in contents}
+    logger.exception.assert_called_once()
+    fail = False
+    await store.delete_message(message_id)
+    assert not directory.exists()
+    assert not store._pending_media_cleanup
+
+
+@pytest.mark.anyio
+async def test_single_delete_finishes_staging_before_releasing_lock_on_cancellation(store, monkeypatch):
+    from pathlib import Path
+    from threading import Event
+
+    message_id, _, contents = await make_message_with_two_attachments(store)
+    started, resume = Event(), Event()
+    rename = Path.rename
+
+    def pause_move(path, target):
+        if path.parent == store.media_dir and not started.is_set():
+            started.set()
+            if not resume.wait(5):
+                raise TimeoutError("Test did not resume attachment staging")
+        return rename(path, target)
+
+    monkeypatch.setattr(Path, "rename", pause_move)
+    deletion = asyncio.create_task(store.delete_message(message_id))
+    try:
+        assert await asyncio.to_thread(started.wait, 5)
+        deletion.cancel()
+        await asyncio.sleep(0)
+        assert store.lock.locked()
+    finally:
+        resume.set()
+    with pytest.raises(asyncio.CancelledError):
+        await deletion
+    assert not store.lock.locked()
+    assert await store.get_message(message_id) is None
+    assert all(not path.exists() for path in contents)
+    assert not list(store.media_dir.glob(".delete-*"))
