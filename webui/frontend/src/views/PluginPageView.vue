@@ -6,6 +6,7 @@
       :src="pageUrl"
       class="plugin-page-iframe"
       sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
+      @load="bindFrameShortcut"
     />
     <div v-else class="flex items-center justify-center h-64 text-theme-subtle">
       <p>{{ $t('pluginPage.invalid_config') }}</p>
@@ -17,6 +18,7 @@
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
+import { handleQuickNavKey } from '@/composables/useQuickNav'
 
 const CHANNEL = 'kira-plugin-page'
 
@@ -62,6 +64,32 @@ function onMessage(e: MessageEvent) {
   }
 }
 
+/**
+ * Key events raised inside the plugin iframe never reach the shell's window
+ * listener, which would leave the quick navigation shortcut dead as soon as the
+ * user clicks into a plugin UI. Plugin pages are served from the same origin
+ * (see pageUrl), so the shell can listen on the frame's window directly; cross-origin
+ * frames are skipped and keep the header trigger as their only entry point.
+ */
+let shortcutFrameWindow: Window | null = null
+
+function unbindFrameShortcut() {
+  shortcutFrameWindow?.removeEventListener('keydown', handleQuickNavKey)
+  shortcutFrameWindow = null
+}
+
+function bindFrameShortcut() {
+  unbindFrameShortcut()
+  const frameWindow = iframeRef.value?.contentWindow
+  if (!frameWindow) return
+  try {
+    frameWindow.addEventListener('keydown', handleQuickNavKey)
+    shortcutFrameWindow = frameWindow
+  } catch {
+    shortcutFrameWindow = null
+  }
+}
+
 onMounted(() => {
   window.addEventListener('message', onMessage)
   // Send context immediately in case the iframe's bridge already fired "ready"
@@ -69,7 +97,10 @@ onMounted(() => {
   // it will request context via its own "ready" message when it does.
   sendContext()
 })
-onUnmounted(() => window.removeEventListener('message', onMessage))
+onUnmounted(() => {
+  window.removeEventListener('message', onMessage)
+  unbindFrameShortcut()
+})
 
 // Re-send context when theme or locale changes
 watch(() => appStore.isDark, sendContext)
