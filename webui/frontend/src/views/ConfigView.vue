@@ -353,7 +353,7 @@
       :stay-text="$t('configuration.unsaved_stay')"
       :busy="saving"
       @save="saveThenLeave"
-      @discard="navigateToPendingRoute"
+      @discard="discardAndLeave"
       @stay="stayOnConfigPage"
     />
   </div>
@@ -362,7 +362,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick, reactive, type Component } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, type RouteLocationNormalized } from 'vue-router'
+import { createLeaveGate, needsLeaveDecision } from '@/utils/leaveDecision'
 import { notify } from '@/composables/useNotification'
 import { getConfiguration, saveConfiguration } from '@/api/config'
 import CustomSelect from '@/components/common/CustomSelect.vue'
@@ -400,15 +401,12 @@ const collapsedGroups = reactive(new Set<string>())
 const modifiedFields = reactive(new Set<string>())
 const validationErrors = ref<Record<string, string>>({})
 
-// Leaving this page with pending edits would silently drop them, so
-// onBeforeRouteLeave asks first through the dialog below.
-const router = useRouter()
+// Leaving this page with pending edits would silently drop them, so the route
+// guards below ask first through the dialog.
 const unsavedDialogVisible = ref(false)
-const pendingRoutePath = ref<string | null>(null)
-const skipNextLeaveGuard = ref(false)
-// Bumped whenever the user backs out of the dialog, so an in-flight save
-// continuation cannot act on a navigation decision that no longer applies.
-let navigationEpoch = 0
+const leaveGate = createLeaveGate()
+/** Screens that must stay reachable, e.g. after the session expires. */
+const AUTH_ROUTE_NAMES = ['Login', 'SetupToken'] as const
 
 // Schema
 interface ConfigField {
@@ -1032,58 +1030,49 @@ async function handleSave(): Promise<boolean> {
 }
 
 /**
- * Ask before dropping edits. Auth redirects (expired token, first-run setup) must
- * never be blocked, and a navigation this code requested itself is allowed through.
+ * Ask before dropping edits. Both guard kinds share this decision because the
+ * layout keys its view by full path: a query-only change ("/configuration?tab=models"
+ * to "/configuration") remounts the page and drops the edits even though the route
+ * record is unchanged, so only the update guard can catch it.
+ *
+ * Auth redirects (expired token, first-run setup) must never be blocked.
  */
-onBeforeRouteLeave((to) => {
-  if (skipNextLeaveGuard.value) {
-    skipNextLeaveGuard.value = false
-    return true
-  }
-  if (modifiedFields.size === 0) return true
-  // Re-clicking the configuration entry (or any navigation that stays on this
-  // page) does not drop anything, so it must not prompt.
-  if (to.name === route.name) return true
-  if (to.name === 'Login' || to.name === 'SetupToken') return true
-  pendingRoutePath.value = to.fullPath
+async function requestLeaveDecision(to: RouteLocationNormalized): Promise<boolean> {
+  if (!needsLeaveDecision({
+    targetFullPath: to.fullPath,
+    currentFullPath: route.fullPath,
+    unsavedChanges: modifiedFields.size,
+    targetName: to.name,
+    allowedNames: AUTH_ROUTE_NAMES,
+  })) return true
+  // A prompt is already open: keep that navigation pending and abort this one
+  // instead of stacking dialogs.
+  if (leaveGate.pending) return false
   unsavedDialogVisible.value = true
-  return false
-})
-
-function stayOnConfigPage() {
-  navigationEpoch += 1
-  unsavedDialogVisible.value = false
-  pendingRoutePath.value = null
+  return leaveGate.wait()
 }
 
-async function navigateToPendingRoute() {
-  const target = pendingRoutePath.value
-  // Leaving also supersedes any older save continuation.
-  navigationEpoch += 1
+onBeforeRouteLeave(requestLeaveDecision)
+onBeforeRouteUpdate(requestLeaveDecision)
+
+/** The user chose to stay: abort the pending navigation. */
+function stayOnConfigPage() {
   unsavedDialogVisible.value = false
-  pendingRoutePath.value = null
-  if (!target) return
-  skipNextLeaveGuard.value = true
-  try {
-    await router.push(target)
-  } finally {
-    skipNextLeaveGuard.value = false
-  }
+  leaveGate.settle(false)
+}
+
+/** The user chose to leave without saving: let the original navigation continue. */
+function discardAndLeave() {
+  unsavedDialogVisible.value = false
+  leaveGate.settle(true)
 }
 
 async function saveThenLeave() {
-  const epoch = navigationEpoch
   const saved = await handleSave()
-  // The user dismissed the prompt (or started another departure) while the
-  // request was in flight; that decision supersedes this continuation.
-  if (epoch !== navigationEpoch) return
-  if (!saved) {
-    // Validation, a failed request, or edits made during the request: keep the
-    // edits and stay on the page, the error notification already explained why.
-    stayOnConfigPage()
-    return
-  }
-  await navigateToPendingRoute()
+  unsavedDialogVisible.value = false
+  // Default-disabled until the answer is settled: if the user already chose to
+  // stay while the request was in flight, settle() ignores the stale answer.
+  leaveGate.settle(saved)
 }
 
 async function loadConfig() {
@@ -1191,6 +1180,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
+  // Never leave a navigation guard waiting on a component that no longer exists.
+  leaveGate.settle(false)
 })
 </script>
 
