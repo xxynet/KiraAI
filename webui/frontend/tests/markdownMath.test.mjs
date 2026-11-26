@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { test } from 'node:test'
 import { runInNewContext } from 'node:vm'
-import { Marked, marked } from 'marked'
+import { Marked, Renderer, marked } from 'marked'
 import katex from 'katex'
 import ts from 'typescript'
+
+const requireDependency = createRequire(import.meta.url)
 
 const source = readFileSync(new URL('../src/utils/markdownMath.ts', import.meta.url), 'utf8')
 const compiled = ts.transpileModule(source, {
@@ -17,7 +20,11 @@ function setup() {
   runInNewContext(compiled, {
     exports, console,
     require(id) {
-      if (id === 'marked') return { Marked }
+      if (id === 'marked') return { Marked, Renderer }
+      if (id === 'katex/contrib/mhchem') return requireDependency(id)
+      if (id === 'highlight.js/lib/core' || id.startsWith('highlight.js/lib/languages/')) {
+        return { default: requireDependency(id) }
+      }
       if (id === 'katex') return { default: katex }
       if (id === 'dompurify') return { default: { sanitize(html) {
         sanitized.push(html)
@@ -47,7 +54,13 @@ for (const [name, input] of [
 ]) {
   test(`math markers remain literal in ${name}`, () => {
     const { render } = setup()
-    assert.equal(render(input), marked.parse(input, { async: false }))
+    const html = render(input)
+    const expected = marked.parse(input, { async: false })
+    assert.doesNotMatch(html, /class="katex"/)
+    const codeBodies = value => Array.from(value.matchAll(/<code\b[^>]*>([\s\S]*?)<\/code>/g), match => match[1])
+    // Marked adds a terminal newline to code blocks; the chat renderer omits it.
+    assert.deepEqual(codeBodies(html), codeBodies(expected.replace(/\n<\/code><\/pre>/g, '</code></pre>')))
+    if (!html.includes('md-code-block')) assert.equal(html, expected)
   })
 }
 
@@ -56,7 +69,9 @@ test('math renders outside code while Markdown and code formatting remain intact
   const html = render('**Math** $x^2$ and ``$y$``\n\n~~~js\nconst x = "$z$"\n~~~\n\n$$\n\\frac{1}{2}\n$$')
   assert.match(html, /<strong>Math<\/strong>/)
   assert.match(html, /<code>\$y\$<\/code>/)
-  assert.match(html, /<code class="language-js">const x = &quot;\$z\$&quot;/)
+  assert.match(html, /<code class="hljs">/)
+  assert.match(html, /hljs-keyword">const<\//)
+  assert.match(html, /hljs-string">&quot;\$z\$&quot;<\//)
   assert.equal((html.match(/class="katex"/g) || []).length, 2)
   assert.match(html, /class="md-math-block"/)
   assert.equal(sanitized.length, 1)
@@ -91,7 +106,12 @@ test('unmatched block math stays responsive at the WebChat message limit', () =>
     '$$\nx' + ' '.repeat(15993) + '$$z',
   ]) {
     const html = runInNewContext('render(input)', { render, input }, { timeout: 1500 })
-    assert.equal(html, marked.parse(input, { async: false }))
+    if (input.endsWith('$$z')) {
+      assert.match(html, /class="md-math-inline-block"/)
+      assert.match(html, /<\/span>z<\/p>/)
+    } else {
+      assert.equal(html, marked.parse(input, { async: false }))
+    }
   }
 })
 
@@ -131,4 +151,46 @@ test('unclosed escaped inline math and escaped opening markers remain text', () 
   for (const input of [String.raw`$x\$`, String.raw`\$x$`, '$ x$', '$x $', '$x\ny$']) {
     assert.equal(render(input), marked.parse(input, { async: false }))
   }
+})
+
+test('unclosed display math preserves following Markdown formatting', () => {
+  const { render } = setup()
+  for (const input of [
+    'before $$pending **bold** and `code`',
+    '$$pending **bold** and `code`',
+    'before $$5\\$ **bold** and `code`',
+  ]) {
+    const html = render(input)
+    assert.equal(html, marked.parse(input, { async: false }))
+    assert.match(html, /<strong>bold<\/strong>/)
+    assert.match(html, /<code>code<\/code>/)
+  }
+})
+
+test('unclosed display math preserves a subsequent inline formula', () => {
+  const html = setup().render('before $$pending and $x$')
+  assert.match(html, /before \$\$pending and /)
+  assert.equal((html.match(/class="katex"/g) || []).length, 1)
+  assert.doesNotMatch(html, /katex-display/)
+})
+
+test('display math still renders with ordinary and escaped dollar content', () => {
+  const { render } = setup()
+  for (const [input, tex] of [
+    ['Price: $$5$$ total', '5'],
+    [String.raw`Price: $$5\$$$ total`, String.raw`5\$`],
+  ]) {
+    const expected = katex.renderToString(tex, {
+      displayMode: true, throwOnError: true, strict: 'ignore', trust: false,
+    })
+    assert.equal(render(input), `<p>Price: <span class="md-math-inline-block">${expected}</span> total</p>\n`)
+  }
+})
+
+test('rejected dollar runs remain literal without swallowing valid later math', () => {
+  const { render } = setup()
+  assert.equal(render('Text $$$x$$$ end'), '<p>Text $$$x$$$ end</p>\n')
+  const html = render('Text $$$x$$$ and $$y$$ end')
+  assert.match(html, /Text \$\$\$x\$\$\$ and /)
+  assert.equal((html.match(/class="katex"/g) || []).length, 1)
 })

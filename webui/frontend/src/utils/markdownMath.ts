@@ -110,15 +110,7 @@ export function tokenizeDisplayMath(source: string) {
   // Three or more dollars in a row is ambiguous. Consume the whole run as
   // literal text, otherwise Marked retries at the next character, matches from
   // the second dollar and swallows half of a sequence like `$$$x$$$`.
-  if (source[2] === '$') {
-    let run = 2
-    while (source[run] === '$') run++
-    return {
-      type: 'displayMath',
-      raw: source.slice(0, run),
-      tex: '',
-    }
-  }
+  if (source[2] === '$') return literalDollarRun(source)
   for (let index = 2; index < source.length; index++) {
     if (source[index] === '\\') {
       index++
@@ -134,17 +126,17 @@ export function tokenizeDisplayMath(source: string) {
       tex,
     }
   }
-  // An opening `$$` without a valid partner must still be consumed as one
-  // literal run: returning undefined lets Marked retry one character later,
-  // pair the second `$` with a later one and render half of the text.
+  // Consume only the opening dollar run to prevent retries inside it while
+  // leaving subsequent Markdown and independent math available to the lexer.
   return literalDollarRun(source)
 }
 
 function literalDollarRun(source: string) {
-  const lineEnd = source.indexOf('\n')
+  let end = 2
+  while (source[end] === '$') end++
   return {
     type: 'displayMath',
-    raw: source.slice(0, lineEnd < 0 ? source.length : lineEnd),
+    raw: source.slice(0, end),
     tex: '',
   }
 }

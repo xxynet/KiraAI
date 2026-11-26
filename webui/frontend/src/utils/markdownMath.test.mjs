@@ -17,11 +17,11 @@ test('mid-line $$...$$ is captured as display math', () => {
 
 test('escaped dollar inside display math does not close it', () => {
   // A lone `\$` at the end must not be treated as a closing delimiter, and the
-  // whole run stays literal instead of letting Marked retry from the next `$`.
+  // opening run stays literal instead of letting Marked retry from the next `$`.
   const literal = tokenizeDisplayMath('$$5\\$$')
   assert.ok(literal)
   assert.equal(literal.tex, '')
-  assert.equal(literal.raw, '$$5\\$$')
+  assert.equal(literal.raw, '$$')
 
   const token = tokenizeDisplayMath('$$5\\$ $$')
   assert.ok(token)
@@ -31,7 +31,7 @@ test('escaped dollar inside display math does not close it', () => {
 
 test('unclosed display delimiters stay literal', () => {
   assert.equal(tokenizeDisplayMath('$$$$').raw, '$$$$')
-  assert.equal(tokenizeDisplayMath('$$x').raw, '$$x')
+  assert.equal(tokenizeDisplayMath('$$x').raw, '$$')
   assert.equal(tokenizeDisplayMath('$$$').raw, '$$$')
 })
 
