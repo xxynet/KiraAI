@@ -45,12 +45,17 @@ function flatten(messages, prefix = '', flat = {}) {
  * Placeholders such as {count} must survive translation or vue-i18n renders
  * broken copy. Plural branches ("one | many") and "@:" links are allowed to
  * differ between locales, so they are intentionally not compared here.
+ *
+ * The accepted name grammar follows the installed message compiler: names may
+ * contain letters, digits, "_", "-", "$" and ".", while "$" and "-" cannot
+ * start a name ("{$id}" stays literal text). Anything wider than that (spaces,
+ * colons) is left out on purpose instead of turning the check into a parser.
  */
 function placeholders(message) {
   // Names are collected as a set: plural branches repeat the same placeholder
   // ("{count} item | {count} items"), and only the set of names matters.
   const names = new Set()
-  const pattern = /\{([a-zA-Z0-9_]+)\}/g
+  const pattern = /\{([a-zA-Z0-9_][a-zA-Z0-9_$.-]*)\}/g
   let match
   while ((match = pattern.exec(message)) !== null) names.add(match[1])
   return [...names].sort().join(', ')
@@ -114,4 +119,13 @@ test('repeated placeholders across plural branches compare as a set', () => {
   assert.equal(placeholders('{count} item | {count} items'), placeholders('{count} 项'))
   assert.notEqual(placeholders('{count} items'), placeholders('{total} items'))
   assert.notEqual(placeholders('{count} items'), placeholders('items'))
+})
+
+test('placeholder names may contain - . and $ like Vue I18n', () => {
+  assert.equal(placeholders('{user-id}'), 'user-id')
+  assert.equal(placeholders('{a$b} and {user.name}'), 'a$b, user.name')
+  // A name is only detected if it can be interpolated, so "{$id}" stays text.
+  assert.equal(placeholders('{$id}'), '')
+  // A hyphenated name that only exists in one locale must be reported.
+  assert.notEqual(placeholders('{user-id} items'), placeholders('items'))
 })
