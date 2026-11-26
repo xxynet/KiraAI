@@ -51,6 +51,7 @@ class WebChatRoutes(Routes):
                     ("/messages", "GET", self.messages),
                     ("/messages", "DELETE", self.clear_messages),
                     ("/messages", "POST", self.send),
+                    ("/messages/{message_id}", "DELETE", self.delete_message),
                     ("/messages/upload", "POST", self.send_with_attachments),
                     ("/messages/{message_id}/media", "GET", self.media),
                 ]]
@@ -136,6 +137,15 @@ class WebChatRoutes(Routes):
         if before is not None and after:
             raise HTTPException(400, detail="Invalid cursor")
         return await self.service.store.list_messages(before=before, after=after)
+
+    async def delete_message(self, message_id: str):
+        try:
+            await self.service.delete_message(message_id)
+        except ValueError as exc:
+            raise HTTPException(503, detail="unavailable") from exc
+        except OSError as exc:
+            raise HTTPException(500, detail="delete_failed") from exc
+        return {"ok": True}
 
     async def clear_messages(self):
         try:

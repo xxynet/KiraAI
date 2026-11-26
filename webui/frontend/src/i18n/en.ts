@@ -1005,6 +1005,8 @@ export default {
     },
   },
   webchat: {
+    message_deleted: 'Message deleted',
+    error_delete_message: 'Failed to delete message. Please try again.',
     message_actions: 'Message actions',
     reply: 'Reply',
     copy: 'Copy',

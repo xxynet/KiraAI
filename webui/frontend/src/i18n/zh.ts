@@ -1005,6 +1005,8 @@ export default {
     },
   },
   webchat: {
+    message_deleted: '已删除消息',
+    error_delete_message: '删除消息失败，请重试。',
     message_actions: '消息操作',
     reply: '引用',
     copy: '复制',

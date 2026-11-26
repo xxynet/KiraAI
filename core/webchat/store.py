@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import shutil
 import time
 import uuid
@@ -56,12 +57,12 @@ class WebChatStore:
         async with aiosqlite.connect(self.path) as db:
             async with db.execute(
                 "SELECT requests.text, requests.status, messages.body FROM requests "
-                "JOIN messages ON messages.id = requests.id WHERE requests.id = ?", (request_id,)
+                "LEFT JOIN messages ON messages.id = requests.id WHERE requests.id = ?", (request_id,)
             ) as cursor:
                 row = await cursor.fetchone()
         if row is None:
             return None
-        if row[0] != text or json.loads(row[2])["chain"] != chain:
+        if row[2] is None or row[0] != text or json.loads(row[2])["chain"] != chain:
             raise ValueError("request_conflict")
         return {"id": request_id, "status": row[1]}
 
@@ -72,11 +73,11 @@ class WebChatStore:
             await db.execute("BEGIN IMMEDIATE")
             async with db.execute(
                 "SELECT requests.text, requests.status, messages.body FROM requests "
-                "JOIN messages ON messages.id = requests.id WHERE requests.id = ?", (request_id,)
+                "LEFT JOIN messages ON messages.id = requests.id WHERE requests.id = ?", (request_id,)
             ) as cursor:
                 existing = await cursor.fetchone()
             if existing:
-                if existing[0] != text or json.loads(existing[2])["chain"] != chain:
+                if existing[2] is None or existing[0] != text or json.loads(existing[2])["chain"] != chain:
                     raise ValueError("request_conflict")
                 return {"id": request_id, "status": existing[1]}, False
             await db.execute("INSERT INTO requests (id, text, status) VALUES (?, ?, 'sent')", (request_id, text))
@@ -121,6 +122,48 @@ class WebChatStore:
                                  (message_id, json.dumps(record, ensure_ascii=False)))
                 await db.commit()
             return message_id
+
+    async def delete_message(self, message_id: str):
+        def remove_unused_media(body: str, remaining: list):
+            def media_refs(chain: list[dict]) -> set[str]:
+                refs = set()
+                for element in chain:
+                    file = element.get("file")
+                    if (element.get("file_type") == "archive" and isinstance(file, str)
+                            and re.fullmatch(r"[0-9a-f]{64}", file)):
+                        refs.add(file)
+                    if isinstance(element.get("chain"), list):
+                        refs.update(media_refs(element["chain"]))
+                return refs
+
+            unused = media_refs(json.loads(body)["chain"])
+            for (other_body,) in remaining:
+                unused.difference_update(media_refs(json.loads(other_body)["chain"]))
+                if not unused:
+                    return
+            if not unused:
+                return
+            root = self.root.resolve()
+            media = self.media_dir.resolve()
+            if media != root / "media" or self.media_dir.is_symlink():
+                raise ValueError("Invalid WebChat media directory")
+            targets = [(media / file).resolve() for file in unused]
+            if any(target.parent != media for target in targets):
+                raise ValueError("Invalid WebChat media path")
+            for target in targets:
+                target.unlink(missing_ok=True)
+
+        async with self.lock, aiosqlite.connect(self.path) as db:
+            await db.execute("BEGIN IMMEDIATE")
+            async with db.execute("SELECT body FROM messages WHERE id = ?", (message_id,)) as cursor:
+                row = await cursor.fetchone()
+            if row is None:
+                return
+            async with db.execute("SELECT body FROM messages WHERE id != ?", (message_id,)) as cursor:
+                remaining = await cursor.fetchall()
+            await asyncio.to_thread(remove_unused_media, row[0], remaining)
+            await db.execute("DELETE FROM messages WHERE id = ?", (message_id,))
+            await db.commit()
 
     async def clear_messages(self):
         def remove_media():

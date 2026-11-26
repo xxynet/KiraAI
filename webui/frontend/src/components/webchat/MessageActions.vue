@@ -11,6 +11,7 @@
           @contextmenu.prevent @keydown="onMenuKey" @focusout="onFocusOut">
           <button type="button" role="menuitem" class="action-item hover:bg-gray-100 active:bg-gray-200 focus-visible:bg-gray-100 dark:hover:bg-[#2b2b2e] dark:active:bg-[#3a3a3e] dark:focus-visible:bg-[#2b2b2e]" @click="copy">{{ t('webchat.copy') }}</button>
           <button type="button" role="menuitem" :disabled="disabled" class="action-item hover:bg-gray-100 active:bg-gray-200 focus-visible:bg-gray-100 dark:hover:bg-[#2b2b2e] dark:active:bg-[#3a3a3e] dark:focus-visible:bg-[#2b2b2e]" @click="quote">{{ t('webchat.reply') }}</button>
+          <button type="button" role="menuitem" :disabled="disabled" class="action-item hover:bg-gray-100 active:bg-gray-200 focus-visible:bg-gray-100 dark:hover:bg-[#2b2b2e] dark:active:bg-[#3a3a3e] dark:focus-visible:bg-[#2b2b2e]" @click="remove">{{ t('common.delete') }}</button>
         </div>
       </Transition>
     </Teleport>
@@ -25,7 +26,7 @@ import { notify } from '@/composables/useNotification'
 import { messageText } from './messageText'
 
 const props = defineProps<{ message: WebChatMessage; disabled: boolean }>()
-const emit = defineEmits<{ reply: [message: WebChatMessage] }>()
+const emit = defineEmits<{ reply: [message: WebChatMessage]; delete: [message: WebChatMessage] }>()
 const { t } = useI18n()
 const trigger = ref<HTMLElement | null>(null)
 const menu = ref<HTMLElement | null>(null)
@@ -103,6 +104,11 @@ function quote() {
   if (props.disabled) return
   close()
   emit('reply', props.message)
+}
+function remove() {
+  if (props.disabled) return
+  close()
+  emit('delete', props.message)
 }
 async function copy() {
   const text = messageText(props.message.chain, t)

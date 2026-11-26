@@ -1014,3 +1014,86 @@ async def test_quote_routes_accept_text_and_uploads_and_reject_missing_targets(s
             **data, "request_id": str(uuid.uuid4()), "reply_to": "missing",
         }, files=files)
         assert missing.status_code == 409 and missing.json()["detail"] == "reply_not_found"
+
+
+@pytest.mark.anyio
+async def test_delete_single_message_is_authenticated_durable_and_preserves_quotes(store):
+    from core.chat.message_elements import Reply
+
+    adapter = make_adapter(store)
+    service = WebChatService(adapter, Sessions())
+    await service.save_profile(PROFILE)
+    request_id = str(uuid.uuid4())
+    await service.submit(request_id, "Original content")
+    quoted_id = await store.append_reply(MessageChain([Reply(request_id), Text("Quoted reply")]), "Kira")
+    other_id = await store.append_reply(MessageChain([Text("Other reply")]), "Kira")
+    app = FastAPI()
+    WebChatRoutes(app, SimpleNamespace(webchat=service)).register()
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://test") as client:
+        assert (await client.delete(f"/api/webchat/messages/{request_id}")).status_code == 401
+        assert await store.get_message(request_id) is not None
+        app.dependency_overrides[require_auth] = lambda: True
+        assert (await client.delete(f"/api/webchat/messages/{request_id}")).status_code == 200
+        assert (await client.delete(f"/api/webchat/messages/{request_id}")).status_code == 200
+        assert await store.get_message(request_id) is None
+        assert (await store.get_message(quoted_id))["chain"][0]["chain"][0]["text"] == "Original content"
+        assert {item["id"] for item in (await store.list_messages())["messages"]} == {quoted_id, other_id}
+        with pytest.raises(ValueError, match="request_conflict"):
+            await service.submit(request_id, "Original content")
+        with pytest.raises(ValueError, match="request_conflict"):
+            await store.accept(request_id, "Original content", "Alice")
+        assert (await client.delete(f"/api/webchat/messages/{other_id}")).status_code == 200
+        assert await store.get_message(other_id) is None
+        assert await store.get_setting("profile") == PROFILE
+        await service.stop()
+        assert (await client.delete(f"/api/webchat/messages/{quoted_id}")).status_code == 503
+
+
+@pytest.mark.anyio
+async def test_single_delete_cleans_media_after_last_direct_or_quote_reference(store):
+    from core.chat.message_elements import Reply
+
+    image = Image("data:image/png;base64,iVBORw0KGgo=")
+    original_id = await store.append_reply(MessageChain([image]), "Kira")
+    original = await store.get_message(original_id)
+    media = store.media_dir / original["chain"][0]["file"]
+    duplicate_id = await store.append_reply(MessageChain([image]), "Kira")
+    quote_id = await store.append_reply(MessageChain([Reply(original_id)]), "Kira")
+    assert media.is_file()
+    await store.delete_message(original_id)
+    assert media.is_file()
+    await store.delete_message(duplicate_id)
+    assert media.is_file()
+    await store.delete_message(quote_id)
+    assert not media.exists()
+    await store.delete_message(quote_id)
+    assert (await store.list_messages())["messages"] == []
+
+
+@pytest.mark.anyio
+async def test_single_delete_reports_media_failure_and_keeps_message(store, monkeypatch):
+    from pathlib import Path
+
+    message_id = await store.append_reply(MessageChain([
+        Image("data:image/png;base64,iVBORw0KGgo="),
+    ]), "Kira")
+    original = await store.get_message(message_id)
+    media = store.media_dir / original["chain"][0]["file"]
+    unlink = Path.unlink
+
+    def fail_media_unlink(path, *args, **kwargs):
+        if path == media.resolve():
+            raise PermissionError("Media is in use")
+        return unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", fail_media_unlink)
+    service = WebChatService(make_adapter(store), Sessions())
+    app = FastAPI()
+    app.dependency_overrides[require_auth] = lambda: True
+    WebChatRoutes(app, SimpleNamespace(webchat=service)).register()
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://test") as client:
+        response = await client.delete(f"/api/webchat/messages/{message_id}")
+        assert response.status_code == 500
+        assert response.json()["detail"] == "delete_failed"
+    assert await store.get_message(message_id) == original
+    assert media.is_file()

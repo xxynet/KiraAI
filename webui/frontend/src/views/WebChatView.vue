@@ -59,7 +59,7 @@
             <div class="min-w-0 max-w-[85%] flex flex-col gap-2" :class="message.direction === 'incoming' ? 'items-end' : 'items-start'">
               <p class="max-w-full break-words text-xs font-medium text-theme-body">{{ message.sender_name }}</p>
               <div class="min-w-0 max-w-full flex flex-col" :class="message.direction === 'incoming' ? 'items-end' : 'items-start'">
-                <MessageActions :message="message" :disabled="sending" class="min-w-0 max-w-full" @reply="selectReply">
+                <MessageActions :message="message" :disabled="sending || deleting" class="min-w-0 max-w-full" @reply="selectReply" @delete="deleteMessage">
                   <div class="message-bubble min-w-0 max-w-full rounded-lg break-words" :class="message.chain.length === 1 && ['image', 'sticker', 'record', 'video', 'file'].includes(message.chain[0]?.type || '')
                   ? null
                   : ['chat-bubble px-4 py-3', { 'chat-bubble--accent': message.direction === 'incoming' }]" tabindex="0" :aria-describedby="`webchat-time-${message.id}`">
@@ -149,7 +149,7 @@ import { messageText } from '@/components/webchat/messageText'
 import MessageChain from '@/components/sessions/MessageChain.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
-import { deleteWebChatMessages, getWebChat, getWebChatMessages, saveWebChatProfile, saveWebChatConfig, sendWebChatMessage } from '@/api/webchat'
+import { deleteWebChatMessage, deleteWebChatMessages, getWebChat, getWebChatMessages, saveWebChatProfile, saveWebChatConfig, sendWebChatMessage } from '@/api/webchat'
 import type { WebChatMessage, WebChatProfile, WebChatAttachment, WebChatConfig } from '@/api/webchat'
 
 const { t, locale } = useI18n()
@@ -373,6 +373,25 @@ async function saveProfile() {
   } catch (cause) { showError(cause) }
   finally { saving.value = false }
 }
+async function deleteMessage(message: WebChatMessage) {
+  if (deleting.value || sending.value || saving.value) return
+  deleting.value = true
+  historyVersion++
+  try {
+    await deleteWebChatMessage(message.id)
+    if (controller.signal.aborted) return
+    messages.value = messages.value.filter(item => item.id !== message.id)
+    if (replyTarget.value?.id === message.id) replyTarget.value = null
+    if (pending?.id === message.id || pending?.replyTo === message.id) pending = null
+    notify(t('webchat.message_deleted'), 'success')
+  } catch (cause) {
+    console.error('Failed to delete WebChat message:', cause)
+    if (!controller.signal.aborted) notify(t('webchat.error_delete_message'), 'error')
+  } finally {
+    deleting.value = false
+    if (!controller.signal.aborted) await refresh()
+  }
+}
 async function deleteHistory() {
   if (!profile.value || deleting.value || saving.value || sending.value) return
   deleting.value = true
@@ -466,7 +485,7 @@ function requestId() {
 }
 async function send() {
   const text = draft.value.trim()
-  if (!profile.value || (!text && !attachments.value.length) || sending.value) return
+  if (!profile.value || (!text && !attachments.value.length) || sending.value || deleting.value) return
   sending.value = true
   error.value = ''
   closeAttachmentMenu()

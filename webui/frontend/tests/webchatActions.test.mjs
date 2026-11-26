@@ -155,3 +155,38 @@ test('copy and Escape restore focus without scrolling the bottom message', async
   assert.equal(focused.length, 2)
   assert.ok(focused.every(options => options.preventScroll === true))
 })
+
+
+test('delete menu emits the selected message and respects disabled state', () => {
+  for (const disabled of [false, true]) {
+    const { state, events } = setup(compiled, { message, disabled })
+    state.opened.value = true
+    state.remove()
+    assert.equal(events.length, disabled ? 0 : 1)
+    if (!disabled) {
+      assert.deepEqual(events[0], ['delete', message])
+      assert.equal(state.opened.value, false)
+    }
+  }
+})
+
+test('deleting a message updates the list and quote only on success', async () => {
+  for (const fail of [true, false]) {
+    const calls = []
+    const cause = new Error('Delete failed')
+    const { state, notifications, errors } = setup(viewCompiled, {}, {
+      deleteWebChatMessage: async id => { calls.push(id); if (fail) throw cause },
+      getWebChat: async () => ({ data: { profile: null, config: {} } }),
+    })
+    const other = { ...message, id: 'other' }
+    state.messages.value = [message, other]
+    state.replyTarget.value = message
+    await state.deleteMessage(message)
+    assert.deepEqual(calls, [message.id])
+    assert.equal(state.messages.value.length, fail ? 2 : 1)
+    assert.equal(state.replyTarget.value?.id ?? null, fail ? message.id : null)
+    assert.equal(state.deleting.value, false)
+    assert.equal(notifications[0][0], fail ? 'webchat.error_delete_message' : 'webchat.message_deleted')
+    if (fail) assert.equal(errors[0][1], cause)
+  }
+})
