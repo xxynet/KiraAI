@@ -23,7 +23,7 @@
         :title="t('header.quick_search')"
         @click="openQuickNav"
       >
-        <IconSearch class="w-4 h-4 shrink-0" aria-hidden="true" />
+        <IconSearch class="quick-search-trigger-icon w-4 h-4 shrink-0" aria-hidden="true" />
         <span class="quick-search-trigger-label">{{ t('header.quick_search_placeholder') }}</span>
         <kbd class="quick-search-trigger-kbd">{{ quickSearchShortcut }}</kbd>
       </button>
@@ -309,6 +309,11 @@ async function handleLogout() {
   transform: translateY(-0.5rem) scale(0.96);
 }
 
+.quick-search-trigger {
+  height: 2.25rem;
+  flex-shrink: 0;
+}
+
 .quick-search-trigger-label {
   max-width: 6rem;
   overflow: hidden;
@@ -332,6 +337,18 @@ async function handleLogout() {
 
 /* Narrow desktops keep only the icon so the header still fits the page title. */
 @media (max-width: 1279px) {
+  .quick-search-trigger {
+    width: 2.25rem;
+    padding: 0;
+    gap: 0;
+    justify-content: center;
+  }
+
+  .quick-search-trigger-icon {
+    width: 1.5rem;
+    height: 1.5rem;
+  }
+
   .quick-search-trigger-label,
   .quick-search-trigger-kbd {
     display: none;

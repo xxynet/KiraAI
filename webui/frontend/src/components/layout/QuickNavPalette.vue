@@ -1,6 +1,6 @@
 <template>
   <Modal :model-value="open" content-class="max-w-xl self-start mt-[10vh]" @update:model-value="onVisibleChange">
-    <div class="quick-nav bg-white dark:bg-[#1b1b1f] border border-gray-200 dark:border-gray-700">
+    <div class="quick-nav text-theme-body bg-white dark:bg-[#1b1b1f] border border-gray-200 dark:border-gray-700">
       <div class="quick-nav-search border-gray-200 dark:border-gray-700">
         <IconSearch class="w-4 h-4 shrink-0 opacity-70" aria-hidden="true" />
         <input
