@@ -18,7 +18,7 @@
         </div>
         <slot></slot>
       </div>
-      <div class="px-6 pb-6 flex flex-wrap justify-end gap-3">
+      <div class="px-6 pb-6 flex flex-col sm:flex-row sm:flex-wrap justify-end gap-3">
         <button
           type="button"
           class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-theme-body hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
