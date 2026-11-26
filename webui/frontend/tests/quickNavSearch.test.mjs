@@ -90,6 +90,11 @@ test('the shortcut is Ctrl+K or Cmd+K, with Alt+K as an opt-in fallback', () => 
   assert.equal(isQuickNavShortcut({ key: 'k', altKey: true, shiftKey: true }, fallback), false)
   assert.equal(isQuickNavShortcut({ key: 'k', ctrlKey: true, repeat: true }), false)
   assert.equal(isQuickNavShortcut({ key: 'k', altKey: true, repeat: true }, fallback), false)
+  // AltGr arrives as Ctrl+Alt and types characters, so it is never the shortcut.
+  assert.equal(isQuickNavShortcut({ key: 'ł', code: 'KeyK', ctrlKey: true, altKey: true }), false)
+  assert.equal(isQuickNavShortcut({ key: 'ł', code: 'KeyK', ctrlKey: true, altKey: true }, fallback), false)
+  assert.equal(isQuickNavShortcut({ key: 'k', ctrlKey: true, altKey: true }, fallback), false)
+  assert.equal(isQuickNavShortcut({ key: 'k', metaKey: true, altKey: true }, fallback), false)
 })
 
 test('non-Latin keyboard layouts keep the shortcut through the physical key', () => {

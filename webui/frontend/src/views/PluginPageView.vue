@@ -74,8 +74,14 @@ function onMessage(e: MessageEvent) {
 let shortcutFrameWindow: Window | null = null
 
 function unbindFrameShortcut() {
-  shortcutFrameWindow?.removeEventListener('keydown', handleQuickNavKey)
+  const frameWindow = shortcutFrameWindow
   shortcutFrameWindow = null
+  if (!frameWindow) return
+  try {
+    frameWindow.removeEventListener('keydown', handleQuickNavKey)
+  } catch {
+    // The frame navigated cross-origin, so its window is no longer reachable.
+  }
 }
 
 function bindFrameShortcut() {

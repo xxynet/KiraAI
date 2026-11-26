@@ -101,8 +101,12 @@ export function isQuickNavShortcut(
   // the K key, so the layout-independent physical code is accepted as well.
   const isK = event.code === 'KeyK' || (event.key.length === 1 && event.key.toLowerCase() === 'k')
   if (!isK) return false
-  if (event.ctrlKey || event.metaKey) return true
-  return Boolean(options.allowAltFallback && event.altKey)
+  if (event.altKey) {
+    // AltGr arrives as Ctrl+Alt, and Option+letter types characters on macOS:
+    // Alt+K is only the explicit, caller-gated fallback.
+    return Boolean(options.allowAltFallback && !event.ctrlKey && !event.metaKey)
+  }
+  return Boolean(event.ctrlKey || event.metaKey)
 }
 
 export function detectMacPlatform(platform: string): boolean {
