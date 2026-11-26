@@ -144,6 +144,7 @@ async def test_plugin_preset_private_tools_execute_and_rebind_on_restored_follow
     ctx = SimpleNamespace(
         session_mgr=sessions, subagent_mgr=manager, config=config,
         tool_mgr=Mock(build_tool_set=Mock(return_value=ToolSet())), mcp_mgr=None,
+        get_plugin_inst=lambda _: None,
     )
     spawn = SpawnAgentTool(ctx=ctx, source=parent, parent_tools=ToolSet())
 
@@ -996,6 +997,7 @@ async def test_native_custom_tools_can_select_outside_the_parent_tool_list(agent
         subagent_mgr=manager,
         tool_mgr=SimpleNamespace(build_tool_set=lambda: ToolSet([tool])),
         mcp_mgr=None,
+        get_plugin_inst=lambda _: None,
         config=config,
     )
     request = LLMRequest(tool_set=ToolSet())
@@ -1061,6 +1063,7 @@ async def test_custom_preset_skips_unavailable_tools_and_restores_them_when_regi
         subagent_mgr=manager,
         tool_mgr=registry,
         mcp_mgr=None,
+        get_plugin_inst=lambda _: None,
     )
     plugin = SubAgentsPlugin(ctx, {})
     event = SimpleNamespace(session=parent)
@@ -1100,6 +1103,57 @@ async def test_custom_preset_skips_unavailable_tools_and_restores_them_when_regi
 
     assert manager.presets.get(preset["id"]).tools == names
     assert model.chat.await_count == 3
+
+
+@pytest.mark.anyio
+async def test_custom_tools_respect_agent_plugin_enabled_tools(agents, tmp_path):
+    from core.agent.func_tool_manager import FuncToolManager
+    from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
+    from core.config import KiraConfig
+    from core.plugin.builtin_plugins.agent.main import AgentPlugin
+    from core.plugin.builtin_plugins.subagents.main import SubAgentsPlugin
+    from core.provider import LLMRequest
+
+    def make_tool(name):
+        return type(f"Tool_{name}", (RecordingTool,), {"name": name})()
+    manager, sessions, parent, model = agents
+    registry = FuncToolManager()
+    agent_names = ("exec", "manage_background_exec", "read_file")
+    registry.tool_set.add(*(make_tool(n) for n in agent_names), RecordingTool())
+    manager.presets = SubAgentPresetStore(tmp_path / "presets.json")
+    preset = await manager.presets.save(SubAgentPreset(
+        name="CustomAgent", instruction_source="custom", tool_mode="custom", tools=[*agent_names, "record"],
+    ))
+    agent_plugin = AgentPlugin(SimpleNamespace(), {"tools": {"enabled_tools": ["read_file"]}})
+    agent_plugin.exec_sessions = [parent.sid]
+    assert agent_plugin._is_exec_session_allowed(parent.sid)
+    ctx = SimpleNamespace(
+        config=dict.__new__(KiraConfig), session_mgr=sessions, subagent_mgr=manager, tool_mgr=registry,
+        mcp_mgr=None, get_plugin_inst=Mock(return_value=agent_plugin),
+    )
+    plugin, event = SubAgentsPlugin(ctx, {}), SimpleNamespace(session=parent)
+
+    async def run_turn(control, **kwargs):
+        req = LLMRequest(tool_set=ToolSet([make_tool(n) for n in agent_names]))
+        await agent_plugin.filter_tools(event, req)
+        await plugin.inject_tools(event, req)
+        info = agent_fields(await req.tool_set.get(control).execute(event, **kwargs))
+        assert (await manager.wait(info["id"], timeout=2))["status"] == "done"
+        return info, {t["function"]["name"] for t in model.chat.await_args.args[0].tools}
+
+    info, tools = await run_turn("spawn_agent", task="run", preset_name=preset["name"])
+    assert tools == {"read_file", "record"}
+    agent_plugin.plugin_cfg["tools"]["enabled_tools"] = ["read_file", "exec"]
+    manager._agents.clear()
+    _, tools = await run_turn("followup_task", agent_id=info["id"], message="enabled")
+    assert tools == {*agent_names, "record"}
+    agent_plugin.plugin_cfg["tools"]["enabled_tools"] = ["read_file"]
+    _, tools = await run_turn("send_message", agent_id=info["id"], message="disabled")
+    assert tools == {"read_file", "record"}
+    req = LLMRequest(tool_set=registry.build_tool_set())
+    await plugin.inject_tools(event, req)
+    assert [t.name for t in req.tool_set.get("spawn_agent")._custom_tools(["exec", "read_file"]).tools] == ["read_file"]
+    ctx.get_plugin_inst.assert_called_with("agent")
 
 
 @pytest.mark.anyio
@@ -1419,6 +1473,7 @@ async def test_excluding_preset_tools_keeps_them_available_on_spawn_and_followup
         subagent_mgr=manager,
         tool_mgr=SimpleNamespace(build_tool_set=ToolSet),
         mcp_mgr=None,
+        get_plugin_inst=lambda _: None,
     ), {})
 
     async def build_main_request():
@@ -1462,6 +1517,7 @@ async def test_native_preset_cannot_bypass_disabled_state_or_custom_tool_permiss
         session_mgr=sessions,
         subagent_mgr=manager,
         tool_mgr=SimpleNamespace(build_tool_set=lambda: ToolSet([RecordingTool()])),
+        get_plugin_inst=lambda _: None,
         mcp_mgr=SimpleNamespace(
             get_tool_server_map=lambda: {"record": "blocked"},
             is_server_allowed=lambda *_: False,
