@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { runInNewContext } from 'node:vm'
+import { createParser } from '@intlify/message-compiler'
 import ts from 'typescript'
 
 /**
@@ -46,18 +47,24 @@ function flatten(messages, prefix = '', flat = {}) {
  * broken copy. Plural branches ("one | many") and "@:" links are allowed to
  * differ between locales, so they are intentionally not compared here.
  *
- * The accepted name grammar follows the installed message compiler: names may
- * contain letters, digits, "_", "-", "$" and ".", while "$" and "-" cannot
- * start a name ("{$id}" stays literal text). Anything wider than that (spaces,
- * colons) is left out on purpose instead of turning the check into a parser.
+ * Use Vue I18n's parser so whitespace, literal interpolation and invalid
+ * message syntax follow the same rules as the runtime.
  */
 function placeholders(message) {
   // Names are collected as a set: plural branches repeat the same placeholder
   // ("{count} item | {count} items"), and only the set of names matters.
   const names = new Set()
-  const pattern = /\{([a-zA-Z0-9_][a-zA-Z0-9_$.-]*)\}/g
-  let match
-  while ((match = pattern.exec(message)) !== null) names.add(match[1])
+  // NodeTypes is a const enum, so its values are not exported at runtime.
+  const nodeTypes = { Plural: 1, Named: 4, List: 5, Linked: 6 }
+  const { body } = createParser({ onError(error) { throw error } }).parse(message)
+  const branches = body.type === nodeTypes.Plural ? body.cases : [body]
+  for (const branch of branches) {
+    for (const item of branch.items) {
+      const node = item.type === nodeTypes.Linked ? item.key : item
+      if (node.type === nodeTypes.Named) names.add(node.key)
+      if (node.type === nodeTypes.List) names.add(String(node.index))
+    }
+  }
   return [...names].sort().join(', ')
 }
 
@@ -121,11 +128,36 @@ test('repeated placeholders across plural branches compare as a set', () => {
   assert.notEqual(placeholders('{count} items'), placeholders('items'))
 })
 
-test('placeholder names may contain - . and $ like Vue I18n', () => {
+test('placeholder names follow Vue I18n compiler semantics', () => {
   assert.equal(placeholders('{user-id}'), 'user-id')
-  assert.equal(placeholders('{a$b} and {user.name}'), 'a$b, user.name')
-  // A name is only detected if it can be interpolated, so "{$id}" stays text.
-  assert.equal(placeholders('{$id}'), '')
+  assert.equal(placeholders('{a$b}'), 'a$b')
+  assert.throws(() => placeholders('{user.name}'), /Unterminated closing brace/)
+  assert.throws(() => placeholders('{$id}'), /Invalid token in placeholder/)
   // A hyphenated name that only exists in one locale must be reported.
   assert.notEqual(placeholders('{user-id} items'), placeholders('items'))
+})
+
+test('whitespace around interpolation names does not hide placeholder drift', () => {
+  assert.equal(placeholders('{ count } selected'), placeholders('{count} selected'))
+  assert.equal(placeholders('{\ncount\n} selected'), 'count')
+  assert.notEqual(placeholders('{ count } selected'), placeholders('selected'))
+  assert.notEqual(placeholders('{ count } selected'), placeholders('{ total } selected'))
+})
+
+test('literal interpolation is not counted as a runtime placeholder', () => {
+  assert.equal(placeholders("{'{count}'}"), '')
+  assert.equal(placeholders("{'{count}'} { total }"), 'total')
+  assert.notEqual(placeholders("{'{count}'}"), placeholders('{count}'))
+})
+
+test('list interpolation follows parser whitespace and plural rules', () => {
+  assert.equal(placeholders('{ 0 } item | {0} items'), placeholders('{0} items'))
+  assert.notEqual(placeholders('{ 0 } items'), placeholders('items'))
+  assert.notEqual(placeholders('{0} items'), placeholders('{1} items'))
+})
+
+test('linked messages may differ while dynamic link placeholders must match', () => {
+  assert.equal(placeholders('@:common.en'), placeholders('@.lower:common.zh'))
+  assert.equal(placeholders('@:{ name }'), placeholders('@:{name}'))
+  assert.notEqual(placeholders('@:{name}'), placeholders('@:common.zh'))
 })
