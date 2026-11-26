@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from core.plugin.manager import PluginManager
 
 
-@dataclass
+@dataclass(slots=True)
 class WorkflowContext:
     config: KiraConfig
 

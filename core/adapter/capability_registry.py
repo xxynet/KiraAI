@@ -19,7 +19,7 @@ CAPABILITY_CANCELLATION_GRACE = 1.0
 _active_registry: ContextVar[object | None] = ContextVar("active_capability_registry", default=None)
 
 
-@dataclass(eq=False)
+@dataclass(eq=False, slots=True)
 class _Attachment:
     adapter: BaseAdapter
     kind: type[BaseCapability]
@@ -30,7 +30,7 @@ class _Attachment:
     terminate_task: asyncio.Task | None = None
 
 
-@dataclass
+@dataclass(slots=True)
 class _Binding:
     owner: str
     platform: str

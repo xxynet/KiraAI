@@ -421,7 +421,7 @@ _K_TOKEN_RE = re.compile(
 )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class _ImageSizeLimits:
     """Per-model size constraints (official-friendly defaults)."""
 

@@ -49,7 +49,7 @@ QQ_OFFICIAL_DEDUP_TTL = 180
 QQ_OFFICIAL_MAX_RECEIVED_MESSAGES = 4096
 
 
-@dataclass
+@dataclass(slots=True)
 class _ReceivedMessage:
     """Keep deduplication and forced mention state without retaining message content."""
 

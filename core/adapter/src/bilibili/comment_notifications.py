@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from .bilibili import BiliBiliAdapter
 
 
-@dataclass
+@dataclass(slots=True)
 class _NotificationCursor:
     last_time: int
     last_id: int = 0
