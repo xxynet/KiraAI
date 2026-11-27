@@ -33,6 +33,7 @@ OBJECT_URL = register.page("/object-url", auth=False)(PluginPage.from_url("/obje
 OBJECT_ESCAPE = register.page("/object-escape", auth=False)(PluginPage.from_folder("../outside"))
 OBJECT_SECURE = register.page("/object-secure", auth=True)(PluginPage.from_folder("web"))
 OBJECT_FOLDER_SLASH = register.page("/object-folder-slash/", auth=False)(PluginPage.from_folder("web"))
+OBJECT_PARAM_FOLDER = register.page("/object-param/{version:int}", auth=False)(PluginPage.from_folder("web"))
 
 
 class WebPlugin(BasePlugin):
@@ -226,6 +227,17 @@ def test_folder_page_slash_redirect_stays_on_request_origin(load_plugin, page_ro
 
     manager.plugin_enabled[PLUGIN_ID] = False
     assert client.get(path, follow_redirects=False).status_code == 404
+
+
+def test_folder_page_redirect_keeps_path_parameter_values(load_plugin):
+    _, client = load_plugin()
+    path = f"/page/plugin/{PLUGIN_ID}/object-param/7"
+    response = client.get(path + "?theme=dark", follow_redirects=False)
+    assert response.status_code == 307
+    # The declared template must not leak into the Location; the concrete
+    # parameter value is what the mounted route can match.
+    assert response.headers["location"] == f"{path}/?theme=dark"
+    assert client.get(path + "/").text == "folder content"
 
 
 def test_auth_dependencies_and_folder_auth_survive_extraction(load_plugin, monkeypatch):

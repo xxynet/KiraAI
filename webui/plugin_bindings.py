@@ -373,14 +373,16 @@ class PluginWebBindings:
         from.
 
         ``page_path`` is the mounted folder URL and must end in "/" so the
-        redirect route never collides with the mount itself.
+        redirect route never collides with the mount itself. The target comes
+        from the concrete request path so declared path parameters (e.g.
+        ``/{version:int}``) keep their values instead of the template.
         """
         redirect_path = page_path.rstrip("/")
 
         async def folder_page_redirect(request: Request):
             if not self.manager.is_plugin_enabled(plugin_id):
                 raise HTTPException(status_code=404, detail="Plugin disabled")
-            target = quote(page_path, safe="/")
+            target = quote(request.scope["path"], safe="/") + "/"
             if request.url.query:
                 target += "?" + request.url.query
             return RedirectResponse(url=target, status_code=307)
