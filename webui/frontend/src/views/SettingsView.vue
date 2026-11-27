@@ -12,7 +12,7 @@
         :key="tab.key"
         type="button"
         class="px-3 py-2 text-sm font-medium border-b-2 focus:outline-none transition-colors duration-150"
-        :class="activeTab === tab.key ? 'border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500' : 'border-transparent text-theme-subtle text-theme-subtle-hover hover:border-gray-300 dark:hover:border-gray-600'"
+        :class="activeTab === tab.key ? 'border-blue-600 dark:border-blue-500 text-status-info dark:text-blue-500' : 'border-transparent text-theme-subtle text-theme-subtle-hover hover:border-gray-300 dark:hover:border-gray-600'"
         @click="activeTab = tab.key"
       >
         {{ tab.label }}
@@ -83,7 +83,7 @@
                 <p v-else class="text-xs text-theme-subtle mt-2">{{ $t('settings.storage_unavailable') }}</p>
               </div>
               <button type="button"
-                class="shrink-0 px-4 py-2 text-sm font-medium border border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                class="shrink-0 px-4 py-2 text-sm font-medium border border-red-200 dark:border-red-900 text-status-danger dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
                 :disabled="!category.available || (category.id === 'message_archives' ? category.item_count === 0 : category.cleanable_count === 0) || cleaningCategory !== null"
                 @click="requestStorageCleanup(category)">
                 {{ $t(cleaningCategory === category.id ? 'settings.storage_cleaning' : 'settings.storage_clean') }}
@@ -221,7 +221,7 @@
               <div class="flex items-center gap-2 ml-4">
                 <button
                   type="button"
-                  class="px-2.5 py-1 text-xs font-medium text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  class="px-2.5 py-1 text-xs font-medium text-status-success dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   :disabled="restoreLoading"
                   @click="openListConfirm('restore', backup.filename)"
                 >
@@ -229,14 +229,14 @@
                 </button>
                 <button
                   type="button"
-                  class="px-2.5 py-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
+                  class="px-2.5 py-1 text-xs font-medium text-status-info dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
                   @click="handleDownloadBackup(backup.filename)"
                 >
                   {{ $t('settings.backup_download') }}
                 </button>
                 <button
                   type="button"
-                  class="px-2.5 py-1 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                  class="px-2.5 py-1 text-xs font-medium text-status-danger dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
                   @click="openListConfirm('delete', backup.filename)"
                 >
                   {{ $t('settings.backup_delete') }}
@@ -413,7 +413,7 @@
             <a
               href="https://github.com/KiraAI-Dev/KiraAI"
               target="_blank"
-              class="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
+              class="text-sm font-medium text-status-info dark:text-blue-400 hover:underline"
             >
               GitHub
             </a>
@@ -423,7 +423,7 @@
             <a
               :href="$t('header.docs_url')"
               target="_blank"
-              class="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
+              class="text-sm font-medium text-status-info dark:text-blue-400 hover:underline"
             >
               {{ $t('header.docs_url') }}
             </a>
@@ -441,7 +441,7 @@
             <a
               href="https://discord.gg/mRNmVmFHn3"
               target="_blank"
-              class="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
+              class="text-sm font-medium text-status-info dark:text-blue-400 hover:underline"
             >
               KiraAI
             </a>
@@ -479,8 +479,8 @@
           {{ $t('settings.storage_preview_loading') }}
         </p>
         <div v-else-if="archivePreviewFailed" class="flex items-center gap-3 text-sm">
-          <span class="text-red-600 dark:text-red-400">{{ $t('settings.storage_load_failed') }}</span>
-          <button type="button" class="text-blue-600 dark:text-blue-400" @click="refreshArchivePreview">{{ $t('settings.storage_refresh') }}</button>
+          <span class="text-status-danger dark:text-red-400">{{ $t('settings.storage_load_failed') }}</span>
+          <button type="button" class="text-status-info dark:text-blue-400" @click="refreshArchivePreview">{{ $t('settings.storage_refresh') }}</button>
         </div>
         <p v-else class="text-sm text-theme-supporting" aria-live="polite">
           {{ $t('settings.storage_cleanable', { size: formatBytes(selectedStorageCategory.cleanable_bytes), count: selectedStorageCategory.cleanable_count }) }}

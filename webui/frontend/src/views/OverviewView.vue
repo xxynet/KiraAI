@@ -8,8 +8,8 @@
             <p class="text-sm text-theme-supporting">{{ $t('overview.runtime_duration') }}</p>
             <p class="text-2xl font-bold text-theme-high mt-2">{{ formattedUptime }}</p>
           </div>
-          <div class="bg-blue-100 rounded-full p-3">
-            <IconClock class="w-6 h-6 text-blue-600" />
+          <div class="bg-status-info-soft rounded-full p-3">
+            <IconClock class="w-6 h-6 text-status-info" />
           </div>
         </div>
       </div>
@@ -21,8 +21,8 @@
             <p class="text-sm text-theme-supporting">{{ $t('overview.total_messages') }}</p>
             <p class="text-2xl font-bold text-theme-high mt-2">{{ overview?.total_messages ?? 0 }}</p>
           </div>
-          <div class="bg-green-100 rounded-full p-3">
-            <IconChat class="w-6 h-6 text-green-600" />
+          <div class="bg-status-success-soft rounded-full p-3">
+            <IconChat class="w-6 h-6 text-status-success" />
           </div>
         </div>
       </div>
@@ -36,8 +36,8 @@
               {{ overview?.active_adapters ?? 0 }} / {{ overview?.total_adapters ?? 0 }}
             </p>
           </div>
-          <div class="bg-purple-100 rounded-full p-3">
-            <IconTerminal class="w-6 h-6 text-purple-600" />
+          <div class="bg-status-violet-soft rounded-full p-3">
+            <IconTerminal class="w-6 h-6 text-status-violet" />
           </div>
         </div>
       </div>
@@ -51,8 +51,8 @@
               {{ overview?.memory_usage ?? 0 }} MB
             </p>
           </div>
-          <div class="bg-yellow-100 rounded-full p-3">
-            <IconCpu class="w-6 h-6 text-yellow-600" />
+          <div class="bg-status-warning-soft rounded-full p-3">
+            <IconCpu class="w-6 h-6 text-status-warning" />
           </div>
         </div>
       </div>
@@ -222,19 +222,19 @@ function resolveWidgetIcon(iconName: string) {
 }
 
 const widgetBgClasses: Record<string, string> = {
-  blue:   'bg-blue-100',
-  green:  'bg-green-100',
-  purple: 'bg-purple-100',
-  yellow: 'bg-yellow-100',
+  blue:   'bg-status-info-soft',
+  green:  'bg-status-success-soft',
+  purple: 'bg-status-violet-soft',
+  yellow: 'bg-status-warning-soft',
   red:    'bg-red-100',
   gray:   'bg-gray-100',
 }
 const widgetFgClasses: Record<string, string> = {
-  blue:   'text-blue-600',
-  green:  'text-green-600',
-  purple: 'text-purple-600',
-  yellow: 'text-yellow-600',
-  red:    'text-red-600',
+  blue:   'text-status-info',
+  green:  'text-status-success',
+  purple: 'text-status-violet',
+  yellow: 'text-status-warning',
+  red:    'text-status-danger',
   gray:   'text-theme-supporting',
 }
 

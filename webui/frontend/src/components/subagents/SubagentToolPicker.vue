@@ -32,7 +32,7 @@
             <button type="button" class="text-theme-subtle hover:text-gray-900 dark:hover:text-gray-100 disabled:opacity-50" :disabled="!draft.length" @click="draft = []">{{ $t('plugin.subagents.tools_clear') }}</button>
           </div>
         </div>
-        <p v-if="loadError" role="alert" class="whitespace-pre-wrap break-words text-sm text-red-600 dark:text-red-400">{{ loadError }}</p>
+        <p v-if="loadError" role="alert" class="whitespace-pre-wrap break-words text-sm text-status-danger dark:text-red-400">{{ loadError }}</p>
         <p v-if="loading" role="status" class="flex items-center justify-center gap-2 py-6 text-sm text-theme-subtle"><IconSpinner class="h-5 w-5 animate-spin" />{{ $t('plugin.status_loading') }}</p>
         <p v-else-if="!filteredGroups.length" class="py-6 text-center text-sm text-theme-subtle">{{ $t(query.trim() ? 'plugin.no_search_results' : 'plugin.subagents.tools_empty') }}</p>
         <CollapsibleSection

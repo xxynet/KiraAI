@@ -7,9 +7,9 @@
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl">
       <div class="px-6 pt-6 pb-4">
         <div class="flex items-center mb-2">
-          <div :class="variant === 'info' ? 'bg-blue-100 dark:bg-blue-900/30' : 'bg-red-100 dark:bg-red-900/30'" class="rounded-full p-3 mr-4">
-            <IconInfo v-if="variant === 'info'" class="w-6 h-6 text-blue-600 dark:text-blue-400" />
-            <IconWarning v-else class="w-6 h-6 text-red-600 dark:text-red-400" />
+          <div :class="variant === 'info' ? 'bg-status-info-soft dark:bg-blue-900/30' : 'bg-red-100 dark:bg-red-900/30'" class="rounded-full p-3 mr-4">
+            <IconInfo v-if="variant === 'info'" class="w-6 h-6 text-status-info dark:text-blue-400" />
+            <IconWarning v-else class="w-6 h-6 text-status-danger dark:text-red-400" />
           </div>
           <div>
             <h3 class="text-lg font-semibold text-theme-strong">

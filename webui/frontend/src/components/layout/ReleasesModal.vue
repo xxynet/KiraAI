@@ -7,7 +7,7 @@
           <h3 class="text-lg font-semibold text-theme-strong">
             {{ t('header.releases_title') }}
           </h3>
-          <span class="px-2 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+          <span class="px-2 py-0.5 text-xs font-medium rounded-full bg-status-info-soft text-blue-700 dark:bg-blue-900 dark:text-blue-300">
             {{ t('header.current_version') }}: {{ currentVersion }}
           </span>
         </div>
@@ -28,9 +28,9 @@
               <p class="font-medium text-theme-strong">{{ t('header.update_progress_title') }}</p>
               <p class="mt-1 text-sm text-theme-supporting">{{ updateProgress.message }}</p>
             </div>
-            <span class="shrink-0 text-sm font-semibold text-blue-600 dark:text-blue-300">{{ updateProgress.overall_percent }}%</span>
+            <span class="shrink-0 text-sm font-semibold text-status-info dark:text-blue-300">{{ updateProgress.overall_percent }}%</span>
           </div>
-          <div class="mt-3 h-2 overflow-hidden rounded-full bg-blue-100 dark:bg-blue-950">
+          <div class="mt-3 h-2 overflow-hidden rounded-full bg-status-info-soft dark:bg-blue-950">
             <div class="h-full rounded-full bg-blue-500 transition-all duration-300" :style="{ width: `${updateProgress.overall_percent}%` }" />
           </div>
           <div class="mt-4 space-y-2">
@@ -39,7 +39,7 @@
               <span :class="stageClass(stage.status)">{{ stageText(stage.status) }}</span>
             </div>
           </div>
-          <p v-if="updateProgress.status === 'failed'" class="mt-4 text-sm text-red-600 dark:text-red-400">
+          <p v-if="updateProgress.status === 'failed'" class="mt-4 text-sm text-status-danger dark:text-red-400">
             {{ t('header.update_rollback_notice') }}
           </p>
         </div>
@@ -85,7 +85,7 @@
                   </span>
                   <span
                     v-if="index === 0"
-                    class="px-1.5 py-0.5 text-xs font-medium rounded bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
+                    class="px-1.5 py-0.5 text-xs font-medium rounded bg-status-success-soft text-green-700 dark:bg-green-900 dark:text-green-300"
                   >
                     {{ t('header.latest') }}
                   </span>
@@ -97,7 +97,7 @@
                   </span>
                   <span
                     v-if="release.prerelease"
-                    class="px-1.5 py-0.5 text-xs font-medium rounded bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300"
+                    class="px-1.5 py-0.5 text-xs font-medium rounded bg-status-violet-soft text-purple-700 dark:bg-purple-900 dark:text-purple-300"
                   >
                     {{ t('header.prerelease') }}
                   </span>
@@ -351,8 +351,8 @@ function stageText(status: string): string {
 }
 
 function stageClass(status: string): string {
-  if (status === 'done') return 'text-green-600 dark:text-green-400'
-  if (status === 'running') return 'text-blue-600 dark:text-blue-300'
+  if (status === 'done') return 'text-status-success dark:text-green-400'
+  if (status === 'running') return 'text-status-info dark:text-blue-300'
   return 'text-theme-subtle'
 }
 

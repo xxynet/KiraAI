@@ -40,7 +40,7 @@
               <div class="text-sm font-medium text-theme-high truncate">{{ provider.name }}</div>
               <div class="text-xs text-theme-subtle">{{ localizeProviderType(provider) }}</div>
             </div>
-            <span class="px-2 py-1 text-xs rounded-full" :class="provider.status === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-gray-100 text-theme-strong dark:bg-gray-700'">
+            <span class="px-2 py-1 text-xs rounded-full" :class="provider.status === 'active' ? 'bg-status-success-soft text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-gray-100 text-theme-strong dark:bg-gray-700'">
               {{ $t(`provider.${provider.status}`) }}
             </span>
           </div>
@@ -54,7 +54,7 @@
           <IconCpu class="w-16 h-16 text-theme-faint mx-auto mb-4" />
           <p class="text-theme-subtle">{{ $t('provider.select_provider') }}</p>
           <button
-            class="mt-4 text-sm text-blue-600 dark:text-blue-400 hover:underline"
+            class="mt-4 text-sm text-status-info dark:text-blue-400 hover:underline"
             @click="goToModelConfig"
           >
             {{ $t('provider.go_to_model_config') }}
@@ -121,10 +121,10 @@
                 <span class="font-medium text-theme-body">{{ $t(`provider.model_group_${modelType}`) }}</span>
               </div>
               <div class="flex items-center gap-1">
-                <button class="p-1 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors" @click.stop="openAddModelDialog(modelType)">
+                <button class="p-1 text-status-info dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors" @click.stop="openAddModelDialog(modelType)">
                   <IconPlus class="w-5 h-5" />
                 </button>
-                <button class="p-1 text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 transition-colors disabled:opacity-50" :disabled="selectedProvider.status !== 'active'" :title="$t('provider.fetch_remote_models')" @click.stop="openFetchRemoteModels(modelType)">
+                <button class="p-1 text-status-success dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 transition-colors disabled:opacity-50" :disabled="selectedProvider.status !== 'active'" :title="$t('provider.fetch_remote_models')" @click.stop="openFetchRemoteModels(modelType)">
                   <IconRefresh class="w-5 h-5" />
                 </button>
               </div>
@@ -147,10 +147,10 @@
                       <IconSpinner v-if="healthCheckingKey === `${modelType}:${String(modelId)}`" class="w-5 h-5 animate-spin" />
                       <IconPulse v-else class="w-5 h-5" />
                     </button>
-                    <button class="p-1 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors disabled:opacity-50" :disabled="!providerSchema" @click="editModel(modelType, String(modelId), modelConfig)">
+                    <button class="p-1 text-status-info dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors disabled:opacity-50" :disabled="!providerSchema" @click="editModel(modelType, String(modelId), modelConfig)">
                       <IconSliders class="w-5 h-5" />
                     </button>
-                    <button class="p-1 text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 transition-colors disabled:opacity-50" :disabled="!providerSchema" @click="removeModel(modelType, String(modelId))">
+                    <button class="p-1 text-status-danger dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 transition-colors disabled:opacity-50" :disabled="!providerSchema" @click="removeModel(modelType, String(modelId))">
                       <IconClose class="w-5 h-5" />
                     </button>
                   </div>
@@ -284,7 +284,7 @@
         <div class="px-6 py-4 flex-1 overflow-hidden flex flex-col">
           <!-- Loading -->
           <div v-if="remoteModelsLoading" class="flex justify-center items-center py-12">
-            <IconSpinner class="animate-spin h-8 w-8 text-blue-600" />
+            <IconSpinner class="animate-spin h-8 w-8 text-status-info" />
             <span class="ml-3 text-theme-supporting">{{ $t('provider.fetch_remote_loading') }}</span>
           </div>
           <!-- Empty -->

@@ -34,7 +34,7 @@
             <div class="flex items-center min-w-0">
               <h4 class="text-base font-semibold text-theme-high mr-2 truncate">{{ persona.name }}</h4>
               <span
-                class="px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 flex-shrink-0"
+                class="px-2 py-0.5 text-xs rounded-full bg-status-info-soft text-blue-800 dark:bg-blue-900 dark:text-blue-200 flex-shrink-0"
               >
                 {{ formatLabel(persona.format) }}
               </span>
@@ -53,20 +53,20 @@
           </button>
           <button
             v-if="!persona.is_active"
-            class="px-3 py-1.5 text-xs font-medium rounded-md border border-green-300 text-green-600 hover:bg-green-50 dark:border-green-600 dark:text-green-400 dark:hover:bg-green-900/30 transition-colors"
+            class="px-3 py-1.5 text-xs font-medium rounded-md border border-green-300 text-status-success hover:bg-green-50 dark:border-green-600 dark:text-green-400 dark:hover:bg-green-900/30 transition-colors"
             @click="handleSetActive(persona.id)"
           >
             {{ $t('persona.set_active') }}
           </button>
           <span
             v-else
-            class="px-3 py-1.5 text-xs font-medium rounded-md border border-green-300 bg-green-100 text-green-700 dark:border-green-600 dark:bg-green-900/30 dark:text-green-300"
+            class="px-3 py-1.5 text-xs font-medium rounded-md border border-green-300 bg-status-success-soft text-green-700 dark:border-green-600 dark:bg-green-900/30 dark:text-green-300"
           >
             {{ $t('persona.active') }}
           </span>
           <button
             v-if="!persona.is_active"
-            class="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors"
+            class="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 text-status-danger hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors"
             @click="handleDelete(persona.id)"
           >
             {{ $t('common.delete') }}
@@ -157,7 +157,7 @@
           <div class="mt-3 flex justify-between gap-3">
             <button
               type="button"
-              class="px-4 py-2 text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 disabled:opacity-50"
+              class="px-4 py-2 text-sm text-status-info hover:text-blue-700 dark:text-blue-400 disabled:opacity-50"
               :disabled="generating || generatorMessages.length === 0"
               @click="handleGeneratorAnswer(t('persona.generator_generate_request'))"
             >

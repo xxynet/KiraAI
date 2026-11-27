@@ -37,7 +37,7 @@
       </div>
     </div>
     <div v-else-if="loading" role="status" class="flex justify-center items-center gap-2 py-12 text-sm text-theme-subtle">
-      <IconSpinner class="animate-spin h-6 w-6 text-blue-600 dark:text-blue-400" />
+      <IconSpinner class="animate-spin h-6 w-6 text-status-info dark:text-blue-400" />
       {{ $t('plugin.status_loading') }}
     </div>
     <div v-else-if="!presets.length" class="flex justify-center items-center py-12">
@@ -91,7 +91,7 @@
             <button
               v-if="!preset.plugin_id"
               type="button"
-              class="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors disabled:opacity-50"
+              class="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 text-status-danger hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors disabled:opacity-50"
               :disabled="operationsBusy"
               @click.stop="confirmDelete(preset)"
             >{{ $t('common.delete') }}</button>
@@ -150,9 +150,9 @@
               :disabled="saving || readOnly || modelsLoading"
               @update:model-value="form.model = $event || null"
             />
-            <div v-if="modelsError" role="alert" class="mt-1 text-xs text-red-600 dark:text-red-400">
+            <div v-if="modelsError" role="alert" class="mt-1 text-xs text-status-danger dark:text-red-400">
               <p class="whitespace-pre-wrap break-words">{{ modelsError }}</p>
-              <button type="button" class="mt-1 text-blue-600 hover:underline dark:text-blue-400" :disabled="saving || modelsLoading" @click="loadModelOptions">{{ $t('common.refresh') }}</button>
+              <button type="button" class="mt-1 text-status-info hover:underline dark:text-blue-400" :disabled="saving || modelsLoading" @click="loadModelOptions">{{ $t('common.refresh') }}</button>
             </div>
           </div>
           <div>
@@ -169,9 +169,9 @@
               @update:model-value="form.persona_id = $event || null"
             />
             <p class="mt-1 text-xs text-theme-subtle">{{ $t('plugin.subagents.persona_hint') }}</p>
-            <div v-if="personasError" role="alert" class="mt-1 text-xs text-red-600 dark:text-red-400">
+            <div v-if="personasError" role="alert" class="mt-1 text-xs text-status-danger dark:text-red-400">
               <p class="whitespace-pre-wrap break-words">{{ personasError }}</p>
-              <button type="button" class="mt-1 text-blue-600 hover:underline dark:text-blue-400" :disabled="saving || personasLoading" @click="loadPersonaOptions">{{ $t('common.refresh') }}</button>
+              <button type="button" class="mt-1 text-status-info hover:underline dark:text-blue-400" :disabled="saving || personasLoading" @click="loadPersonaOptions">{{ $t('common.refresh') }}</button>
             </div>
           </div>
           <div v-if="form.instruction_source !== 'persona'">
@@ -217,11 +217,11 @@
               :placeholder="$t(skillsLoading ? 'plugin.status_loading' : 'plugin.subagents.choose_skills')"
               :disabled="saving || skillsLoading"
             />
-            <p v-if="skillsError" role="alert" class="mt-1 text-xs text-red-600 dark:text-red-400">{{ skillsError }}</p>
+            <p v-if="skillsError" role="alert" class="mt-1 text-xs text-status-danger dark:text-red-400">{{ skillsError }}</p>
             <p v-else-if="!skillsLoading && !skillOptions.length" class="mt-1 text-xs text-theme-subtle">{{ $t('plugin.no_skills') }}</p>
             <p class="mt-1 text-xs text-theme-subtle">{{ $t('plugin.subagents.skills_hint') }}</p>
           </div>
-          <p v-if="saveError" role="alert" class="whitespace-pre-wrap break-words text-sm text-red-600 dark:text-red-400">{{ saveError }}</p>
+          <p v-if="saveError" role="alert" class="whitespace-pre-wrap break-words text-sm text-status-danger dark:text-red-400">{{ saveError }}</p>
         </fieldset>
       </div>
       <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">

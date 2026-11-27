@@ -29,13 +29,13 @@
               </div>
             </div>
             <template v-else-if="filesError">
-              <p role="alert" class="text-sm text-red-600 dark:text-red-400 whitespace-pre-wrap">{{ filesError }}</p>
-              <button type="button" class="mt-2 text-sm text-blue-600 dark:text-blue-400 hover:underline" @click="loadFiles">{{ $t('plugin.skills_retry') }}</button>
+              <p role="alert" class="text-sm text-status-danger dark:text-red-400 whitespace-pre-wrap">{{ filesError }}</p>
+              <button type="button" class="mt-2 text-sm text-status-info dark:text-blue-400 hover:underline" @click="loadFiles">{{ $t('plugin.skills_retry') }}</button>
             </template>
             <p v-else-if="!files.length" class="text-sm text-theme-subtle">{{ $t('plugin.skills_no_files') }}</p>
             <ul v-else class="max-h-48 md:min-h-0 md:max-h-[50vh] overflow-y-auto overflow-x-hidden space-y-1">
               <li v-for="item in visibleFileNodes" :key="item.path">
-                <button type="button" class="flex items-start gap-2 w-full rounded-md px-3 py-2 text-left text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed" :class="activePath === item.path ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'text-theme-body enabled:hover:bg-gray-100 dark:enabled:hover:bg-gray-800'" :style="{ paddingInlineStart: `${0.75 + item.depth * 0.75}rem` }" :title="item.path" :aria-expanded="item.children ? expandedDirectories.has(item.path) : undefined" :aria-current="activePath === item.path ? 'true' : undefined" :disabled="saving" @click="item.children ? toggleDirectory(item.path) : selectFile(item.path)">
+                <button type="button" class="flex items-start gap-2 w-full rounded-md px-3 py-2 text-left text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed" :class="activePath === item.path ? 'bg-blue-50 dark:bg-blue-900/30 text-status-info dark:text-blue-400' : 'text-theme-body enabled:hover:bg-gray-100 dark:enabled:hover:bg-gray-800'" :style="{ paddingInlineStart: `${0.75 + item.depth * 0.75}rem` }" :title="item.path" :aria-expanded="item.children ? expandedDirectories.has(item.path) : undefined" :aria-current="activePath === item.path ? 'true' : undefined" :disabled="saving" @click="item.children ? toggleDirectory(item.path) : selectFile(item.path)">
                   <IconChevronDown v-if="item.children" class="w-4 h-4 mt-0.5 shrink-0 transition-transform" :class="expandedDirectories.has(item.path) ? '' : '-rotate-90'" />
                   <IconFileText v-else class="w-4 h-4 mt-0.5 shrink-0" />
                   <span class="min-w-0 break-all">{{ item.name }}</span>
@@ -47,11 +47,11 @@
             <div v-if="activePath" class="flex min-h-8 flex-wrap items-center justify-between gap-3 mb-3">
               <h4 class="font-medium text-theme-high break-all">{{ activePath }}</h4>
               <div v-if="file && !loading" class="flex items-center gap-3">
-                <button v-if="file.kind === 'text' && !editing" type="button" class="text-sm text-blue-600 dark:text-blue-400 hover:underline" @click="editing = true">{{ $t('plugin.skills_edit') }}</button>
-                <button type="button" class="text-sm text-blue-600 dark:text-blue-400 enabled:hover:underline disabled:opacity-50 disabled:cursor-not-allowed" :disabled="downloading" @click="downloadFile">{{ $t('plugin.skills_download_file') }}</button>
+                <button v-if="file.kind === 'text' && !editing" type="button" class="text-sm text-status-info dark:text-blue-400 hover:underline" @click="editing = true">{{ $t('plugin.skills_edit') }}</button>
+                <button type="button" class="text-sm text-status-info dark:text-blue-400 enabled:hover:underline disabled:opacity-50 disabled:cursor-not-allowed" :disabled="downloading" @click="downloadFile">{{ $t('plugin.skills_download_file') }}</button>
               </div>
             </div>
-            <p v-if="error" role="alert" class="mb-4 text-sm text-red-600 dark:text-red-400 whitespace-pre-wrap">{{ error }}</p>
+            <p v-if="error" role="alert" class="mb-4 text-sm text-status-danger dark:text-red-400 whitespace-pre-wrap">{{ error }}</p>
             <div v-if="loading" class="min-h-[50vh]">
               <MarkdownPreview :readme="null" :loading="true" :repo-url="null" repo-ref="HEAD" />
             </div>
@@ -64,7 +64,7 @@
               <img v-else-if="file.kind === 'image' && imageUrl" :src="imageUrl" :alt="activePath" class="max-w-full h-auto rounded-md" />
               <p v-else class="text-sm text-theme-subtle">{{ $t(file.reason === 'too_large' ? 'plugin.skills_file_too_large' : 'plugin.skills_file_binary') }}</p>
             </template>
-            <button v-else-if="activePath && !loading" type="button" class="text-sm text-blue-600 dark:text-blue-400 hover:underline" @click="loadContent(activePath)">{{ $t('plugin.skills_retry') }}</button>
+            <button v-else-if="activePath && !loading" type="button" class="text-sm text-status-info dark:text-blue-400 hover:underline" @click="loadContent(activePath)">{{ $t('plugin.skills_retry') }}</button>
           </div>
         </div>
       </div>

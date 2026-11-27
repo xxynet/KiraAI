@@ -18,14 +18,14 @@
             <RouterLink
               :to="pagePath(component.name, true)"
               :title="$t('plugin.page_open_in_webui')"
-              class="break-all font-mono text-blue-600 hover:underline dark:text-blue-400"
+              class="break-all font-mono text-status-info hover:underline dark:text-blue-400"
             >{{ component.name }}</RouterLink>
             <a
               :href="pagePath(component.name)"
               :title="$t('plugin.page_open_new_tab_hint')"
               target="_blank"
               rel="noopener noreferrer"
-              class="inline-flex shrink-0 items-center gap-1 text-blue-600 hover:underline dark:text-blue-400"
+              class="inline-flex shrink-0 items-center gap-1 text-status-info hover:underline dark:text-blue-400"
             >
               {{ $t('plugin.page_open_new_tab') }}
               <IconExternalLink class="h-4 w-4" />
