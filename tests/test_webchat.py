@@ -115,10 +115,12 @@ async def test_cross_session_notice_generates_and_delivers_webchat_reply(store, 
     assert await SessionPlugin(ctx, {}).session_send(source, adapter.SID, description) == "message sent"
     notice = adapter.ctx.event_queue.get_nowait()
     assert notice.session.sid == adapter.SID and notice.is_notice
+    handoff = notice.message.extra["session_handoff"]
     assert source.sid in notice.message.chain[0].text and description in notice.message.chain[0].text
     await services.message_router.handle_event(notice)
     batch = adapter.ctx.event_queue.get_nowait()
     assert isinstance(batch, KiraMessageBatchEvent) and batch.sid == adapter.SID
+    assert batch.messages[0].extra["session_handoff"] is handoff
     await services.message_router.handle_event(batch)
     model.chat.assert_awaited_once()
     rows = (await store.list_messages())["messages"]

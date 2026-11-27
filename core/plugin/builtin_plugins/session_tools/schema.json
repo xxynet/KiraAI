@@ -23,6 +23,45 @@
       }
     }
   },
+  "cross_session_send": {
+    "type": "section",
+    "name": "Cross-session Sending",
+    "hint": "Transfers carry an internal chain shared by all branches. Each attempt is recorded in project logs as session_handoff, including its full description and outcome. Real user input starts a new chain; returning to a previous session is allowed.",
+    "locales": {
+      "zh": {
+        "name": "跨会话发送",
+        "hint": "跨会话传递携带内部调用链，所有分支共享额度。每次尝试以 session_handoff 记录到项目日志，包含完整交接内容及结果。真实用户的新消息开启新链，允许返回之前的会话。"
+      }
+    },
+    "fields": {
+      "max_transfers": {
+        "type": "integer",
+        "name": "Maximum Transfers per Chain",
+        "default": 8,
+        "minimum": 1,
+        "hint": "Maximum total send attempts admitted per chain, including parallel branches and failed or cancelled deliveries. Further automatic transfers are blocked.",
+        "locales": {
+          "zh": {
+            "name": "每条链的最大传递次数",
+            "hint": "每条链最多允许发起的发送次数，包含并行分支以及失败或取消的投递。达到上限后阻止继续自动传递。"
+          }
+        }
+      },
+      "repeat_window_seconds": {
+        "type": "integer",
+        "name": "Duplicate Detection Window (seconds)",
+        "default": 300,
+        "minimum": 1,
+        "hint": "Block the same source, target and description within this window in one chain. Whitespace is normalized. Failed deliveries may be retried within the chain budget.",
+        "locales": {
+          "zh": {
+            "name": "重复检测时间窗口（秒）",
+            "hint": "同一条链在此时间内重复发送相同来源、目标和交接内容时拦截；比较时统一空白字符。投递失败后可在链额度内重试。"
+          }
+        }
+      }
+    }
+  },
   "cross_session_read": {
     "type": "section",
     "name": "Cross-session Reading",

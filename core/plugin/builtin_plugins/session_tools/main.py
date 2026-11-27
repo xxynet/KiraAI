@@ -7,10 +7,11 @@ from core.adapter.capabilities import IMCapability
 from core.chat import MessageChain
 from core.chat.message_elements import Text
 from core.chat.message_utils import KiraMessageBatchEvent
-from core.plugin import BasePlugin, Priority, on, register
+from core.plugin import BasePlugin, Priority, logger, on, register
 from core.provider import LLMRequest
 from core.utils.time_utils import format_timestamp
 
+from .handoff import HANDOFF_KEY, SessionHandoff
 from .tools import ReadMessagesTool, SearchMessagesTool, SessionViewTool
 
 SESSION_VIEW_PROMPT = """
@@ -42,6 +43,12 @@ SESSION_SEND_PROMPT = """
 即 当前会话 ≠ 发消息目标会话时，需要调用 `session_send` 工具进行**跨会话发送**。
 向已有子代理交付后续任务时，使用 `followup_task`。
 
+跨会话是在目标会话中唤起你，由那里的你结合当地上下文继续交流或行动。
+`description` 是写给目标会话中的自己的内部交接说明，不是直接面向目标用户的聊天正文。
+说明来源会话发生了什么、涉及谁、为什么前往目标会话以及希望在那里做什么；需要原样转达的内容应明确标注为引文。
+到达目标会话后仍可根据交流需要继续前往其他会话，也可回到来源会话；每次调用都应有具体目的，避免无意义地来回转发。
+程序会记录跨会话调用链，并限制每条链的调用总数和短时间内的重复传递。被拦截后请停止自动转发，等待用户的新消息。
+
 `target` 使用完整的会话标识（SID），可以来自「当前存在的会话」列表中逐字复制的完整会话标识、记忆中的记录或用户告知等来源。
 只要能确定 SID 对应目标，即使目标未出现在会话列表中，也可直接调用 `session_send`。
 `adapter_name` 是用户配置的适配器实例名，可能是任意名称，和 QQ、Telegram 等
@@ -56,23 +63,27 @@ SESSION_SEND_PROMPT = """
 """
 
 CROSS_SESSION_PROMPT = """\
-你接收到来自会话{session_id}转发到本会话的跨会话消息。
+你已从来源会话 {session_id} 来到当前会话。
+下面的 description 是来源会话中的你留给自己的内部交接说明，提供背景、来意和待办事项；
+它不是当前会话用户刚刚说的话，也不是已经发送给当前会话用户的消息，不要直接把整段说明当作聊天正文复述。
 
-下面是跨会话消息的内容说明：
+--- 内部交接说明开始 ---
 {description}
+--- 内部交接说明结束 ---
 
-请你根据描述，直接生成要发送给最终用户的自然语言消息。
-⚠注意：
-1. 你当前已经在目标会话中，不需要再次调用跨会话工具。
-2. 不要再次尝试发送跨会话消息。
-3. 只需要输出最终要发给用户的xml格式消息"""
+结合当前会话的上下文和交接意图，自然地继续交流或采取行动；对来源会话的称呼、人物和事件要明确区分。
+向当前会话用户说话时，按本会话要求输出 XML 格式消息；需要原样转达时，仅转达明确指定的内容。
+需要前往其他会话或回到来源会话时，可以继续调用 session_send，并给下一会话中的自己留下完整的交接说明。
+每次跨会话都应服务于具体的交流或行动目的，不要仅因收到交接说明就机械地回传或循环转发。"""
 
 
 DESC_PROMPT = """\
-对当前会话发生了什么的总结以及为什么需要发送跨会话消息
-NOTE that the target session doesn't know anything about the current session
-You need to precisely describe  what happened and the reason why you need to send cross session messages
-DO NOT use pronouns to refer to anything in the current session, e.g. `这段对话`"""
+写给目标会话中的自己的内部交接说明，不是直接对目标会话用户说的话，也不是待发送的聊天正文。
+目标会话不知道来源会话的上下文：请明确说明来源会话发生了什么、相关人物及身份、前往目标会话的原因、
+希望在那里交流的内容或执行的行动，以及必要的消息 ID 等信息。
+使用明确的人名、会话标识和事件描述，不用“这里”“刚才”“这段对话”等依赖来源上下文的指代。
+若需原样转达某句话，请将原文单独标注为引文，并说明是谁对谁说的；其他内容由目标会话中的你结合当地上下文自然表达。
+"""
 
 
 class SessionPlugin(BasePlugin):
@@ -336,6 +347,7 @@ class SessionPlugin(BasePlugin):
         name="session_send",
         description=(
             "向指定会话发送跨会话消息（私聊消息和群聊消息），仅当目标会话和当前会话不同时使用。"
+            "description 是给目标会话中的自己的内部交接说明，由那里的你结合上下文继续交流或行动；到达后仍可继续跨会话。"
         ),
         params={
             "type": "object",
@@ -352,8 +364,29 @@ class SessionPlugin(BasePlugin):
         }
     )
     async def session_send(self, event: KiraMessageBatchEvent, target: str, description: str):
+        handoff = SessionHandoff.for_event(event)
+        record = handoff.new_record(event.sid, target, description)
+        try:
+            result = await self._send_session_handoff(event, target, description, handoff, record)
+            if result == "message sent":
+                record["status"] = "sent"
+            elif result.startswith("Cross-session transfer blocked:"):
+                record["status"] = "blocked"
+            elif result.startswith("failed to send:"):
+                record["status"] = "failed"
+            record["result"] = result
+            return result
+        except asyncio.CancelledError:
+            record["status"] = "cancelled"
+            record["result"] = "Cross-session transfer cancelled"
+            raise
+        finally:
+            logger.info("session_handoff %s", json.dumps(record, ensure_ascii=False))
+
+    async def _send_session_handoff(self, event, target, description, handoff, record):
         try:
             session = await self.ctx.session_mgr.resolve_session(target)
+            record["target"] = session.sid
             if event.sid == session.sid:
                 return "Do not send messages to current session using this tool, output directly to send messages"
             if session.kind == "subagent":
@@ -377,9 +410,21 @@ class SessionPlugin(BasePlugin):
                 )
             if not is_allowed:
                 return f"Permission denied: target session is not allowed by adapter {session.adapter_name}"
+            policy = self.plugin_cfg.get("cross_session_send", {})
+            max_transfers = policy.get("max_transfers", 8)
+            repeat_window = policy.get("repeat_window_seconds", 300)
+            for name, value in (("max_transfers", max_transfers), ("repeat_window_seconds", repeat_window)):
+                if type(value) is not int or value < 1:
+                    raise ValueError(f"cross_session_send.{name} must be a positive integer")
+            blocked = handoff.reserve(record, max_transfers, repeat_window)
+            if blocked:
+                return blocked
             cross_session_prompt = CROSS_SESSION_PROMPT.format(session_id=event.sid, description=description)
 
-            await self.ctx.publish_notice(session, MessageChain([Text(cross_session_prompt)]))
+            await self.ctx.publish_notice(
+                session, MessageChain([Text(cross_session_prompt)]),
+                extra={HANDOFF_KEY: handoff.next(record)},
+            )
             return "message sent"
         except Exception as e:
             return f"failed to send: {e}"
