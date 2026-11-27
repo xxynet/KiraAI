@@ -1,0 +1,27 @@
+name: Ruff
+
+on:
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install ruff
+        run: python -m pip install ruff==0.17.3
+
+      - name: Ruff check (core and main.py only; tests and webui excluded)
+        run: >
+          ruff check core main.py
+          --select F,E,W,UP,B,SIM,C4,PERF,I
+          --ignore BLE001,B024,B027,E501,PERF203,W291
+          --output-format=github
