@@ -12,14 +12,17 @@ English | [简体中文](docs/README.zh.md)
 
 </div>
 
-KiraAI, a modular, multi-platform AI digital life that connects various AI models (LLM, TTS, STT, image/video generation, etc.) and chat platforms (QQ, Telegram, WeChat, Discord, Bilibili, etc.) with a digital life centered architecture.
+KiraAI is a modular, multi-platform project for bringing AI characters to life. It connects various AI services (LLM, TTS, STT, image/video generation, etc.) and chat platforms (QQ, Telegram, WeChat, Discord, Bilibili, etc.).
 
 ## 🚀 Features
-- Optimized for anthropomorphic scenarios
-- Easy-to-use WebUI
-- Customizable LLM providers and models
-- Flexible message sending mechanism, various message elements
-- Add-ons, expand the boundarieds of AI digital life
+
+- **Characters and memory**: Customize character personas and use the memory plugin to save and retrieve past interactions.
+- **Visual management**: Manage personas, models, platform connections, plugins, and sessions through the WebUI, with access to runtime logs and statistics.
+- **Rich chat expression**: Support text, images, voice messages, stickers, and more, with AI deciding how to compose messages.
+- **Multi-platform connectivity**: Connect to QQ, Telegram, WeChat, Discord, Bilibili, and more.
+- **Flexible AI service configuration**: Configure models and service providers for conversation, speech recognition and synthesis, image and video generation, and more.
+- **Tools and skills**: Connect tools, external services, and skills through plugins, MCP, and Skills to expand what characters can do.
+- **Subagent collaboration**: The main agent delegates tasks as needed to subagents with different personas, tools, and skills, coordinating their work to handle complex tasks.
 
 ## 📷 ScreenShots
 
