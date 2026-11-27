@@ -1,5 +1,7 @@
 from datetime import timedelta
+from math import ceil
 from pathlib import Path
+from time import monotonic
 
 from fastapi import (
     Depends,
@@ -30,9 +32,23 @@ from webui.utils import (
     _access_token_fingerprint,
     _create_jwt_token,
     _load_webui_config,
+    _tokens_match,
     _update_webui_config,
     verify_session_token,
 )
+
+# Login-attempt protection: per-client failure budget in a sliding window.
+# The client address comes from request.client: uvicorn's proxy-header handling
+# (enabled by default, trusting 127.0.0.1) supplies the forwarded address for a
+# local reverse proxy. A proxy on another host is not trusted by default, so its
+# clients then share one budget.
+# A per-client budget alone is bypassed by spreading guesses over many
+# addresses, so failures also feed a global budget in the same window. The
+# limiter lives in process memory, which matches the single-worker WebUI.
+LOGIN_FAILURE_LIMIT = 5
+LOGIN_GLOBAL_FAILURE_LIMIT = 30
+LOGIN_FAILURE_WINDOW_SECONDS = 60
+LOGIN_MAX_TRACKED_CLIENTS = 1024
 
 
 async def require_auth(
@@ -107,6 +123,8 @@ class AuthRoutes(Routes):
         self.access_token = access_token
         self.dist_dir = dist_dir
         self.disable_auth = disable_auth
+        self._login_failures: dict[str, list[float]] = {}
+        self._login_global_failures: list[float] = []
 
     def get_routes(self):
         return [
@@ -389,13 +407,66 @@ class AuthRoutes(Routes):
     async def get_version(self):
         return VersionResponse(version=VERSION)
 
+    @staticmethod
+    def _login_client_key(request: Request) -> str:
+        client = getattr(request, "client", None)
+        return getattr(client, "host", None) or "unknown"
+
+    @staticmethod
+    def _within_login_window(times: list[float], now: float) -> list[float]:
+        cutoff = now - LOGIN_FAILURE_WINDOW_SECONDS
+        return [at for at in times if at > cutoff]
+
+    def _recent_login_failures(self, client_key: str, now: float) -> list[float]:
+        failures = self._within_login_window(self._login_failures.get(client_key, []), now)
+        if failures:
+            self._login_failures[client_key] = failures
+        else:
+            self._login_failures.pop(client_key, None)
+        return failures
+
+    def _recent_global_failures(self, now: float) -> list[float]:
+        self._login_global_failures = self._within_login_window(self._login_global_failures, now)
+        return self._login_global_failures
+
+    def _record_login_failure(self, client_key: str, now: float) -> None:
+        failures = self._recent_login_failures(client_key, now)
+        failures.append(now)
+        self._login_failures[client_key] = failures
+        self._recent_global_failures(now).append(now)
+        while len(self._login_failures) > LOGIN_MAX_TRACKED_CLIENTS:
+            self._login_failures.pop(next(iter(self._login_failures)))
+
     async def token_login(self, payload: TokenLoginRequest, request: Request):
         current_token = request.app.state.access_token
-        if current_token is None or payload.access_token != current_token:
+        client_key = self._login_client_key(request)
+        now = monotonic()
+        tokens_match = _tokens_match(payload.access_token, current_token)
+        failures = self._recent_login_failures(client_key, now)
+        global_failures = self._recent_global_failures(now)
+        blocked_since = None
+        if len(failures) >= LOGIN_FAILURE_LIMIT:
+            blocked_since = failures[0]
+        if len(global_failures) >= LOGIN_GLOBAL_FAILURE_LIMIT:
+            blocked_since = (
+                global_failures[0] if blocked_since is None else max(blocked_since, global_failures[0])
+            )
+        # Only wrong attempts are throttled: a valid token must still get in while
+        # an attack is running, otherwise the limiter itself locks the owner out.
+        if blocked_since is not None and not tokens_match:
+            retry_after = max(1, ceil(blocked_since + LOGIN_FAILURE_WINDOW_SECONDS - now))
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many failed login attempts",
+                headers={"Retry-After": str(retry_after)},
+            )
+        if not tokens_match:
+            self._record_login_failure(client_key, now)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid access token",
             )
+        self._login_failures.pop(client_key, None)
         # auth_mode claim lets require_auth reject JWTs issued under the opposite
         # mode after a restart (e.g. a sentinel JWT cached in localStorage from a
         # prior --disable-webui-auth run, when auth is now back on).

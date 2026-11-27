@@ -149,6 +149,17 @@ def _update_webui_config(**changes) -> None:
     _save_webui_config(config)
 
 
+def _tokens_match(submitted: object, current: object) -> bool:
+    """Compare access tokens without leaking the length of the matching prefix."""
+    if not isinstance(submitted, str) or not isinstance(current, str):
+        return False
+    # surrogatepass keeps the encoding injective for any JSON-decodable string.
+    return secrets.compare_digest(
+        submitted.encode("utf-8", "surrogatepass"),
+        current.encode("utf-8", "surrogatepass"),
+    )
+
+
 def _access_token_fingerprint(token: str) -> str:
     """Derive a short, stable fingerprint of the current access token.
 

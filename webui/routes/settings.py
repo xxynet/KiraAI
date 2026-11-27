@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import re
 import shutil
@@ -19,6 +20,7 @@ from fastapi import Depends, File, HTTPException, Query, Request, UploadFile
 from core.logging_manager import get_logger, inspect_rotated_logs
 from core.utils.path_utils import get_data_path
 from core.utils.storage import inspect_files
+from webui import utils as webui_utils
 from webui.models import (
     BackupCreateResponse,
     BackupProgressResponse,
@@ -34,7 +36,7 @@ from webui.models import (
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
 from webui.routes.releases import update_package_maintenance
-from webui.utils import _update_webui_config
+from webui.utils import _is_usable_access_token, _tokens_match, _update_webui_config
 
 # Backup directory lives inside the data directory
 BACKUP_DIR_NAME = "backups"
@@ -46,6 +48,128 @@ logger = get_logger("webui", "blue")
 
 def _get_backup_dir() -> Path:
     return get_data_path() / BACKUP_DIR_NAME
+
+
+def _read_live_credentials(
+    data_path: Path, app_state, onboarding_completed: bool = False
+) -> tuple[str | None, bool, dict | None, bytes | None, bool]:
+    """Snapshot the credentials a restart would load from the live data directory."""
+    config = None
+    try:
+        with (data_path / "webui.json").open(encoding="utf-8") as source:
+            loaded = json.load(source)
+        if isinstance(loaded, dict):
+            config = loaded
+    except (OSError, ValueError, RecursionError):
+        pass
+    token = config.get("access_token") if config else None
+    if not _is_usable_access_token(token):
+        token = getattr(app_state, "access_token", None)
+    if not _is_usable_access_token(token):
+        token = None
+    # Completed onboarding means the one-shot token setup is not offered again,
+    # even on installs that predate the explicit token_setup_done flag.
+    token_setup_done = bool(onboarding_completed or (config and config.get("token_setup_done")))
+    try:
+        secret = (data_path / ".jwt_secret").read_bytes()
+    except OSError:
+        secret = None
+    secret_from_env = False
+    if not secret:
+        # Without a file the running module-level key is authoritative. When an
+        # env var supplies it, the key must not be persisted (backups include
+        # data/.jwt_secret), so only the deletion guard is needed later.
+        secret_from_env = bool(os.environ.get("JWT_SECRET"))
+        running_secret = getattr(webui_utils, "_JWT_SECRET", None)
+        if secret_from_env:
+            secret = os.environ["JWT_SECRET"].encode("utf-8")
+        elif running_secret:
+            secret = running_secret.encode("utf-8")
+    return token, token_setup_done, config, secret, secret_from_env
+
+
+def _restore_live_credentials(
+    data_path: Path,
+    token: str | None,
+    token_setup_done: bool,
+    live_config: dict | None,
+    secret: bytes | None,
+    secret_from_env: bool = False,
+    app_state=None,
+) -> None:
+    """Put the live credentials back after an archive was applied.
+
+    The archive may have written them through any path the platform treats as
+    the same file (case-insensitive names, stream suffixes, etc.), so the guard
+    works on the final live files instead of filtering archive entry names.
+    An env-supplied signing key is never written to disk; a file the archive
+    created is removed so the key cannot leak into later backups.
+    Raises OSError listing every credential that could not be re-applied.
+    """
+    errors: list[str] = []
+    if secret_from_env:
+        try:
+            (data_path / ".jwt_secret").unlink(missing_ok=True)
+        except OSError as exc:
+            errors.append(f"signing key file: {exc}")
+    elif secret is not None:
+        try:
+            try:
+                current_secret = (data_path / ".jwt_secret").read_bytes()
+            except OSError:
+                current_secret = None
+            if current_secret != secret:
+                _write_bytes_atomic(data_path / ".jwt_secret", secret)
+                logger.warning("Restore attempted to replace the JWT signing key; kept the active one")
+        except OSError as exc:
+            errors.append(f"signing key: {exc}")
+    # The running process is authoritative; the snapshot covers restarts where
+    # auth is disabled and app.state only holds the sentinel.
+    running_token = getattr(app_state, "access_token", None) if app_state is not None else None
+    if _is_usable_access_token(running_token):
+        token = running_token
+    if token is not None:
+        try:
+            config_path = data_path / "webui.json"
+            applied_config = None
+            try:
+                with config_path.open(encoding="utf-8") as source:
+                    loaded = json.load(source)
+                if isinstance(loaded, dict):
+                    applied_config = loaded
+            except (OSError, ValueError, RecursionError):
+                pass
+            config = applied_config if applied_config is not None else dict(live_config or {})
+            if (
+                applied_config is not None
+                and config.get("access_token") == token
+                and (not token_setup_done or config.get("token_setup_done"))
+            ):
+                pass
+            else:
+                config["access_token"] = token
+                if token_setup_done:
+                    # Restoring must not re-open the first-run token setup without the old token.
+                    config["token_setup_done"] = True
+                _write_bytes_atomic(config_path, json.dumps(config, indent=2, ensure_ascii=False).encode("utf-8"))
+                logger.warning("Restore replaced webui.json credentials; restored the active access token")
+        except (OSError, ValueError, RecursionError) as exc:
+            errors.append(f"access token: {exc}")
+    if errors:
+        raise OSError("; ".join(errors))
+
+
+def _write_bytes_atomic(path: Path, data: bytes) -> None:
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "wb") as target:
+            target.write(data)
+        os.replace(tmp_name, path)
+    finally:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
 
 
 def _has_sqlite_header(path: Path) -> bool:
@@ -673,10 +797,21 @@ class SettingsRoutes(Routes):
     # ── Restore ──────────────────────────────────────────────────────────────
 
     def _do_restore(self, zip_source) -> RestoreResponse:
-        """Extract a zip into a staging dir, validate, then copy to data directory."""
+        """Extract a zip into a staging dir, validate, then copy to data directory.
+
+        The running instance's access token, token-setup flag and JWT signing
+        key are re-applied afterwards, so an archive can never replace them.
+        """
         data_path = get_data_path().resolve()
         exclude_dirs = {BACKUP_DIR_NAME, "__pycache__", "updates", "temp"}
+        lifecycle_config = getattr(self.lifecycle, "kira_config", None)
+        onboarding = lifecycle_config.get("onboarding", {}) if isinstance(lifecycle_config, dict) else {}
+        onboarding_completed = isinstance(onboarding, dict) and bool(onboarding.get("completed", False))
+        live_credentials = _read_live_credentials(data_path, self.app.state, onboarding_completed)
 
+        result: RestoreResponse | None = None
+        pending_error: HTTPException | None = None
+        apply_started = False
         try:
             with tempfile.TemporaryDirectory() as staging_dir:
                 staging_path = Path(staging_dir).resolve()
@@ -742,6 +877,9 @@ class SettingsRoutes(Routes):
                     if not is_link:
                         entries.append((src_file, dst_file, is_directory))
 
+                # From here on live files change, so credentials must be re-asserted.
+                if entries or links:
+                    apply_started = True
                 for src_file, dst_file, is_directory in entries:
                     if is_directory:
                         dst_file.mkdir(parents=True, exist_ok=True)
@@ -767,13 +905,33 @@ class SettingsRoutes(Routes):
                         pending.symlink_to(target, target_is_directory=is_directory)
                         pending.replace(dst_file)
 
-            return RestoreResponse(success=True, message="Restore completed successfully")
+            result = RestoreResponse(success=True, message="Restore completed successfully")
         except zipfile.BadZipFile:
-            raise HTTPException(status_code=400, detail="Invalid zip file")
-        except HTTPException:
-            raise
+            pending_error = HTTPException(status_code=400, detail="Invalid zip file")
+        except HTTPException as exc:
+            pending_error = exc
         except Exception as e:
-            return RestoreResponse(success=False, message=f"Restore failed: {e}")
+            result = RestoreResponse(success=False, message=f"Restore failed: {e}")
+
+        # A rejected archive never touched live files, and rewriting credentials
+        # then would clobber edits made after startup.
+        if apply_started:
+            try:
+                _restore_live_credentials(
+                    data_path, *live_credentials, app_state=self.app.state
+                )
+            except Exception as exc:
+                logger.exception("Could not keep the active credentials after restore")
+                credential_note = (
+                    "the active credentials could not be preserved: "
+                    f"{exc}. Check data/webui.json and data/.jwt_secret."
+                )
+                if result is not None:
+                    prefix = "Restore finished, but " if result.success else f"{result.message} Additionally, "
+                    result = RestoreResponse(success=False, message=prefix + credential_note)
+        if pending_error is not None:
+            raise pending_error
+        return result
 
     async def restore_backup(self, file: UploadFile = File(...)):
         if not file.filename or not file.filename.endswith(".zip"):
@@ -788,17 +946,29 @@ class SettingsRoutes(Routes):
     async def change_access_token(self, body: ChangeTokenRequest, request: Request):
         if request.app.state.disable_auth:
             raise HTTPException(status_code=400, detail="Cannot change token when auth is disabled")
-        current_token = request.app.state.access_token
-        # Strip like the first-run setup endpoint does, so pasted tokens with
-        # stray whitespace compare and persist identically in both flows.
-        old_token = body.old_token.strip()
-        new_token = body.new_token.strip()
-        if old_token != current_token:
-            raise HTTPException(status_code=400, detail="Old token is incorrect")
-        if not new_token or len(new_token) < 6:
-            raise HTTPException(status_code=400, detail="New token must be at least 6 characters")
-        if new_token == "disabled":
-            raise HTTPException(status_code=400, detail="The token 'disabled' is reserved and cannot be used")
-        _update_webui_config(access_token=new_token)
-        request.app.state.access_token = new_token
+        # Share the maintenance lock so a concurrent restore cannot re-apply the
+        # previous token between the config write and the in-memory update.
+        # A restore may hold it for minutes; fail fast instead of hanging.
+        try:
+            await asyncio.wait_for(self._maintenance_lock.acquire(), timeout=5)
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=409, detail="Backup or restore is in progress"
+            ) from None
+        try:
+            current_token = request.app.state.access_token
+            # Strip like the first-run setup endpoint does, so pasted tokens with
+            # stray whitespace compare and persist identically in both flows.
+            old_token = body.old_token.strip()
+            new_token = body.new_token.strip()
+            if not _tokens_match(old_token, current_token):
+                raise HTTPException(status_code=400, detail="Old token is incorrect")
+            if not new_token or len(new_token) < 6:
+                raise HTTPException(status_code=400, detail="New token must be at least 6 characters")
+            if new_token == "disabled":
+                raise HTTPException(status_code=400, detail="The token 'disabled' is reserved and cannot be used")
+            _update_webui_config(access_token=new_token)
+            request.app.state.access_token = new_token
+        finally:
+            self._maintenance_lock.release()
         return {"success": True}
