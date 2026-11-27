@@ -25,6 +25,8 @@ from webui.routes.auth import require_auth
 def backup_routes(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "get_data_path", lambda: tmp_path)
     monkeypatch.setattr(settings.SettingsRoutes, "_maintenance_lock", asyncio.Lock())
+    # File-backed assertions assume no env-supplied key; dedicated tests set it.
+    monkeypatch.delenv("JWT_SECRET", raising=False)
     return settings.SettingsRoutes(FastAPI()), tmp_path
 
 
@@ -952,6 +954,55 @@ def test_restore_keeps_credentials_when_copy_fails_midway(backup_routes, monkeyp
 
     assert result.success is False
     assert json.loads((data_path / "webui.json").read_text(encoding="utf-8"))["access_token"] == "current-token"
+
+
+def test_restore_keeps_setup_flag_without_live_token(backup_routes):
+    routes, data_path = backup_routes
+    routes.lifecycle = SimpleNamespace(kira_config={"onboarding": {"completed": True}})
+    (data_path / "webui.json").write_text(json.dumps({"port": 5267}), encoding="utf-8")
+    archive_path = data_path / "restore.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr(
+            "webui.json",
+            json.dumps({"access_token": "archived-token", "token_setup_done": False, "port": 6000}),
+        )
+
+    assert routes._do_restore(archive_path).success
+
+    restored_config = json.loads((data_path / "webui.json").read_text(encoding="utf-8"))
+    assert restored_config["access_token"] == "archived-token"
+    assert restored_config["token_setup_done"] is True
+    assert restored_config["port"] == 6000
+
+
+@pytest.mark.anyio
+async def test_restore_holds_lock_until_worker_finishes(backup_routes, monkeypatch):
+    routes, data_path = backup_routes
+    backup_dir = data_path / "backups"
+    backup_dir.mkdir()
+    (backup_dir / "sample.zip").write_bytes(b"zip")
+    started = threading.Event()
+    release = threading.Event()
+
+    def fake_restore(_source):
+        started.set()
+        release.wait(timeout=10)
+        return settings.RestoreResponse(success=True, message="ok")
+
+    monkeypatch.setattr(routes, "_do_restore", fake_restore)
+    task = asyncio.create_task(routes.restore_from_backup("sample.zip"))
+    while not started.is_set():
+        await asyncio.sleep(0.01)
+    task.cancel()
+    await asyncio.sleep(0.05)
+
+    # Cancelling the request must not release the maintenance gate while the
+    # restore thread still runs, or a token change could be overwritten.
+    assert routes._maintenance_lock.locked()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert not routes._maintenance_lock.locked()
 
 
 def test_restore_forces_token_setup_done_after_completed_onboarding(tmp_path, monkeypatch):

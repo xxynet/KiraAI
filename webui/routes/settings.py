@@ -128,7 +128,7 @@ def _restore_live_credentials(
     running_token = getattr(app_state, "access_token", None) if app_state is not None else None
     if _is_usable_access_token(running_token):
         token = running_token
-    if token is not None:
+    if token is not None or token_setup_done:
         try:
             config_path = data_path / "webui.json"
             applied_config = None
@@ -139,20 +139,19 @@ def _restore_live_credentials(
                     applied_config = loaded
             except (OSError, ValueError, RecursionError):
                 pass
-            config = applied_config if applied_config is not None else dict(live_config or {})
-            if (
-                applied_config is not None
-                and config.get("access_token") == token
-                and (not token_setup_done or config.get("token_setup_done"))
-            ):
-                pass
-            else:
+            base_config = applied_config if applied_config is not None else live_config
+            config = dict(base_config or {})
+            changed = applied_config is None
+            if token is not None and config.get("access_token") != token:
                 config["access_token"] = token
-                if token_setup_done:
-                    # Restoring must not re-open the first-run token setup without the old token.
-                    config["token_setup_done"] = True
+                changed = True
+            if token_setup_done and not config.get("token_setup_done"):
+                # Restoring must not re-open the first-run token setup without the old token.
+                config["token_setup_done"] = True
+                changed = True
+            if changed:
                 _write_bytes_atomic(config_path, json.dumps(config, indent=2, ensure_ascii=False).encode("utf-8"))
-                logger.warning("Restore replaced webui.json credentials; restored the active access token")
+                logger.warning("Restore replaced webui.json credentials; restored the active ones")
         except (OSError, ValueError, RecursionError) as exc:
             errors.append(f"access token: {exc}")
     if errors:
@@ -792,7 +791,7 @@ class SettingsRoutes(Routes):
             raise HTTPException(status_code=409, detail="Backup is still being created")
 
         async with self._maintenance_lock:
-            return await asyncio.to_thread(self._do_restore, backup_path)
+            return await self._run_storage_worker(self._do_restore, backup_path)
 
     # ── Restore ──────────────────────────────────────────────────────────────
 
@@ -939,7 +938,7 @@ class SettingsRoutes(Routes):
 
         file.file.seek(0)
         async with self._maintenance_lock:
-            return await asyncio.to_thread(self._do_restore, file.file)
+            return await self._run_storage_worker(self._do_restore, file.file)
 
     # ── Access Token ────────────────────────────────────────────────────────
 
