@@ -1,16 +1,16 @@
 {
-    "display_name": "Default Sticker",
-    "plugin_id": "default-sticker",
-    "uninstallable": false,
-    "version": "1.2.0",
-    "author": "KiraAI",
-    "description": "Default implementation of sticker functionality, manually disable it before using third-party sticker plugins",
-    "repo": null,
-    "tags": ["sticker"],
-    "locales": {
-        "zh": {
-            "display_name": "默认表情包",
-            "description": "表情包功能的默认实现，使用第三方表情包插件前请先手动禁用此插件"
-        }
+  "display_name": "Default Sticker",
+  "plugin_id": "default-sticker",
+  "uninstallable": false,
+  "version": "1.2.0",
+  "author": "KiraAI",
+  "description": "Default implementation of sticker functionality, manually disable it before using third-party sticker plugins",
+  "repo": null,
+  "tags": ["sticker"],
+  "locales": {
+    "zh": {
+      "display_name": "默认表情包",
+      "description": "表情包功能的默认实现，使用第三方表情包插件前请先手动禁用此插件"
     }
+  }
 }

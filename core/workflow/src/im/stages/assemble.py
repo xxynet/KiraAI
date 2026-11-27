@@ -20,7 +20,9 @@ class AssembleRequestStage(BaseStage[IMBatchContext]):
             raise RuntimeError("BuildRequestStage must run before this stage")
         image_mode, incoming_record_ids = ctx.image_mode, ctx.incoming_record_ids
         # EventType.ON_LLM_REQUEST
-        llm_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_LLM_REQUEST)
+        llm_handlers = event_handler_reg.get_handlers(
+            event_type=EventType.ON_LLM_REQUEST
+        )
         for handler in llm_handlers:
             await handler.exec_handler(event, request, tag_set)
             if event.is_stopped:
@@ -38,7 +40,8 @@ class AssembleRequestStage(BaseStage[IMBatchContext]):
                 sp.kwargs["message_types"] = tag_set.to_prompt()
                 sp.kwargs["root_tags"] = (
                     f"此外，你可以在<msg>标签外使用以下控制标签（与<msg>同级）：\n{root_prompt}"
-                    if root_prompt else ""
+                    if root_prompt
+                    else ""
                 )
                 break
         request.assemble_prompt(
@@ -52,7 +55,9 @@ class AssembleRequestStage(BaseStage[IMBatchContext]):
 
         if image_mode == "native":
             for message in event.messages:
-                message.native_content = await services.message_media.build_native_content(message, sid)
+                message.native_content = (
+                    await services.message_media.build_native_content(message, sid)
+                )
 
         native_parts = [
             part
@@ -72,11 +77,19 @@ class AssembleRequestStage(BaseStage[IMBatchContext]):
             request.tool_choice = "auto" if request.tools else "none"
 
         # Print user message info (skip persist=False prompts to avoid log spam)
-        user_message = "".join(p.to_string() for p in request.user_prompt if isinstance(p, Prompt) and p.persist)
+        user_message = "".join(
+            p.to_string()
+            for p in request.user_prompt
+            if isinstance(p, Prompt) and p.persist
+        )
         logger.info(f"processing message(s) from {sid}:\n{user_message}")
 
         # 把收到的消息放到新收到的消息内容中（仅持久化 persist=True 的 Prompt）
-        persist_message = "".join(p.to_string() for p in request.user_prompt if isinstance(p, Prompt) and p.persist)
+        persist_message = "".join(
+            p.to_string()
+            for p in request.user_prompt
+            if isinstance(p, Prompt) and p.persist
+        )
         persisted_native_parts = [
             part
             for message in event.messages
@@ -94,11 +107,18 @@ class AssembleRequestStage(BaseStage[IMBatchContext]):
         history = services.message_history
         if history is not None:
             try:
-                await history.link_incoming_messages(sid, user_memory.extra["llm_message_id"], [
-                    record_id for message in event.messages
-                    if (record_id := incoming_record_ids.get(id(message)))
-                ])
+                await history.link_incoming_messages(
+                    sid,
+                    user_memory.extra["llm_message_id"],
+                    [
+                        record_id
+                        for message in event.messages
+                        if (record_id := incoming_record_ids.get(id(message)))
+                    ],
+                )
             except Exception as exc:
-                logger.error("Unable to link incoming messages (%s)", type(exc).__name__)
+                logger.error(
+                    "Unable to link incoming messages (%s)", type(exc).__name__
+                )
         new_messages.append(user_memory)
         return True

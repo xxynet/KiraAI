@@ -40,9 +40,15 @@ from .subagent_presets import SubAgentPresetStore
 from .tool import ToolSet
 
 logger = get_logger("subagent", "cyan")
-SUBAGENT_TOOL_NAMES = frozenset({
-    "spawn_agent", "list_agents", "send_message", "followup_task", "interrupt_agent",
-})
+SUBAGENT_TOOL_NAMES = frozenset(
+    {
+        "spawn_agent",
+        "list_agents",
+        "send_message",
+        "followup_task",
+        "interrupt_agent",
+    }
+)
 SUBAGENT_COMPLETED_EVENT = "subagent_completed"
 
 
@@ -75,9 +81,14 @@ class SubAgentManager:
         skills_manager: SkillsManager | None = None,
         max_concurrent: int | None = None,
         max_agents: int = 128,
-    ):
-        limits = (max_agents,) if max_concurrent is None else (max_agents, max_concurrent)
-        if any(not isinstance(value, int) or isinstance(value, bool) or value < 1 for value in limits):
+    ) -> None:
+        limits = (
+            (max_agents,) if max_concurrent is None else (max_agents, max_concurrent)
+        )
+        if any(
+            not isinstance(value, int) or isinstance(value, bool) or value < 1
+            for value in limits
+        ):
             raise ValueError("Subagent limits must be positive")
         self.session_manager = session_manager
         self.provider_manager = provider_manager
@@ -88,7 +99,9 @@ class SubAgentManager:
         self.presets = SubAgentPresetStore()
         self._max_concurrent_override = max_concurrent
         self._standalone_semaphore = SubAgentConcurrency(self._get_max_concurrent)
-        self._parent_semaphores: WeakValueDictionary[str, SubAgentConcurrency] = WeakValueDictionary()
+        self._parent_semaphores: WeakValueDictionary[str, SubAgentConcurrency] = (
+            WeakValueDictionary()
+        )
         self.max_agents = max_agents
         self._agents: dict[str, _Agent] = {}
         self._closing = False
@@ -100,8 +113,12 @@ class SubAgentManager:
         for session in await self.session_manager.get_sessions(include_content=False):
             if session.kind != "subagent":
                 continue
-            if not isinstance(session.data, dict) or not isinstance(session.data.get("subagent", {}), dict):
-                logger.error("Malformed subagent session %s data: %r", session.sid, session.data)
+            if not isinstance(session.data, dict) or not isinstance(
+                session.data.get("subagent", {}), dict
+            ):
+                logger.error(
+                    "Malformed subagent session %s data: %r", session.sid, session.data
+                )
                 continue
             state = session.data.get("subagent", {})
             if state.get("status") in {"queued", "running", "stopping"}:
@@ -124,11 +141,19 @@ class SubAgentManager:
         """Delete idle subagent sessions that have reached their retention limit."""
         if self._closing:
             return
-        for session in await self.session_manager.get_sessions(include_content=False, kind="subagent"):
+        for session in await self.session_manager.get_sessions(
+            include_content=False, kind="subagent"
+        ):
             if session.updated_at is None:
                 continue
-            metadata = session.data.get("subagent") if isinstance(session.data, dict) else None
-            override = metadata.get("session_retention_hours") if isinstance(metadata, dict) else None
+            metadata = (
+                session.data.get("subagent") if isinstance(session.data, dict) else None
+            )
+            override = (
+                metadata.get("session_retention_hours")
+                if isinstance(metadata, dict)
+                else None
+            )
             async with self._creation_lock:
                 if self._closing:
                     return
@@ -137,15 +162,25 @@ class SubAgentManager:
                     subagent_config = config.get("bot_config", {}).get("subagent", {})
                     hours = subagent_config.get(
                         "session_retention_hours",
-                        DEFAULT_CONFIG["bot_config"]["subagent"]["session_retention_hours"],
+                        DEFAULT_CONFIG["bot_config"]["subagent"][
+                            "session_retention_hours"
+                        ],
                     )
                 if type(hours) is not int or hours < 0:
-                    logger.warning("Invalid retention hours for subagent session %s: %r", session.sid, hours)
+                    logger.warning(
+                        "Invalid retention hours for subagent session %s: %r",
+                        session.sid,
+                        hours,
+                    )
                     continue
                 if not hours or session.updated_at > int(time.time()) - hours * 3600:
                     continue
                 agent = self._agents.get(session.internal_id)
-                if agent is not None and agent.task is not None and not agent.task.done():
+                if (
+                    agent is not None
+                    and agent.task is not None
+                    and not agent.task.done()
+                ):
                     continue
                 await self.session_manager.delete_session(session.sid)
 
@@ -168,7 +203,9 @@ class SubAgentManager:
     def _restore_settings(settings: dict) -> SubAgentConfig:
         return SubAgentConfig(
             execution=AgentExecutionConfig(
-                max_steps=settings.get("max_steps", SubAgentConfig().execution.max_steps),
+                max_steps=settings.get(
+                    "max_steps", SubAgentConfig().execution.max_steps
+                ),
                 tool_config=ToolExecutionConfig(**settings.get("tool_config", {})),
                 final_step_hint=settings.get("final_step_hint"),
             ),
@@ -183,19 +220,28 @@ class SubAgentManager:
 
     @staticmethod
     def _copy_tools(tools: ToolSet | None) -> ToolSet:
-        return ToolSet([
-            tool for tool in tools.tools if tool.name not in SUBAGENT_TOOL_NAMES
-        ]) if tools is not None else ToolSet()
+        return (
+            ToolSet(
+                [tool for tool in tools.tools if tool.name not in SUBAGENT_TOOL_NAMES]
+            )
+            if tools is not None
+            else ToolSet()
+        )
 
     def _tools(
-        self, config: SubAgentConfig, parent_tools: ToolSet, custom_tools: ToolSet,
+        self,
+        config: SubAgentConfig,
+        parent_tools: ToolSet,
+        custom_tools: ToolSet,
         preset_id: str | None = None,
     ) -> ToolSet:
         pool = custom_tools if config.tool_mode == "custom" else parent_tools
         merged = ToolSet(list(pool.tools))
         merged.add(*self.presets.get_plugin_tools(preset_id))
         tools = merged.tools
-        if config.tool_mode == "custom" and (config.tool_names or preset_id is not None):
+        if config.tool_mode == "custom" and (
+            config.tool_names or preset_id is not None
+        ):
             tools = [tool for tool in tools if tool.name in config.tool_names]
         blocked = SUBAGENT_TOOL_NAMES | set(config.excluded_tools)
         return ToolSet([tool for tool in tools if tool.name not in blocked])
@@ -203,13 +249,17 @@ class SubAgentManager:
     def _get_max_concurrent(self) -> int:
         if self._max_concurrent_override is not None:
             return self._max_concurrent_override
-        subagent_config = self.session_manager.kira_config.get("bot_config", {}).get("subagent", {})
+        subagent_config = self.session_manager.kira_config.get("bot_config", {}).get(
+            "subagent", {}
+        )
         limit = subagent_config.get(
             "max_concurrent_per_session",
             DEFAULT_CONFIG["bot_config"]["subagent"]["max_concurrent_per_session"],
         )
         if type(limit) is not int or limit < 1:
-            raise ValueError("subagent.max_concurrent_per_session must be a positive integer")
+            raise ValueError(
+                "subagent.max_concurrent_per_session must be a positive integer"
+            )
         return limit
 
     def _semaphore_for(self, parent_id: str | None) -> SubAgentConcurrency:
@@ -284,21 +334,31 @@ class SubAgentManager:
         self._reserve()
         if permission_session is None and parent_id is not None:
             permission_session = parent_id
-        scope = await self.session_manager.resolve_session(permission_session) if permission_session is not None else None
+        scope = (
+            await self.session_manager.resolve_session(permission_session)
+            if permission_session is not None
+            else None
+        )
         if scope is not None and scope.internal_id is None:
             raise ValueError("Permission session must already be stored")
         if preset_id is not None and not self.presets.is_preset_allowed(
             preset_id,
             scope.sid if scope else None,
         ):
-            raise PermissionError("Subagent preset is not allowed for the calling session")
+            raise PermissionError(
+                "Subagent preset is not allowed for the calling session"
+            )
         config = config or SubAgentConfig()
         parent_tools = self._copy_tools(parent_tools)
         custom_tools = self._copy_tools(tools if tools is not None else parent_tools)
         selected = self._tools(config, parent_tools, custom_tools, preset_id)
         if preset_id is not None and model_group is not None:
             raise ValueError("A subagent preset supplies its own model configuration")
-        models = self._preset_models(preset_id) if preset_id is not None else self._models(model_group)
+        models = (
+            self._preset_models(preset_id)
+            if preset_id is not None
+            else self._models(model_group)
+        )
         metadata = {
             "status": "queued",
             "scope_id": scope.internal_id if scope else None,
@@ -337,7 +397,7 @@ class SubAgentManager:
             return
         agent.task = task
 
-        def finished(completed):
+        def finished(completed) -> None:
             if completed.cancelled():
                 agent.status = "interrupted"
                 agent.error = "CancelledError"
@@ -376,18 +436,24 @@ class SubAgentManager:
             raise ValueError(f"Subagent preset model is unavailable: {preset.model}")
         return [model]
 
-    def _build_executor(self, agent: _Agent, scope: Session, models: list[LLMModelClient]) -> None:
+    def _build_executor(
+        self, agent: _Agent, scope: Session, models: list[LLMModelClient]
+    ) -> None:
         event = SubAgentEvent(
             session=scope,
             agent_session=agent.session,
-            source_session=scope if scope.internal_id != agent.session.internal_id else None,
+            source_session=scope
+            if scope.internal_id != agent.session.internal_id
+            else None,
             content="",
         )
         ctx = SubAgentExecutionContext(event=event)
 
         def selected_tools() -> ToolSet:
             preset_id = agent.session.data.get("subagent", {}).get("preset_id")
-            return self._tools(agent.config, agent.parent_tools, agent.custom_tools, preset_id)
+            return self._tools(
+                agent.config, agent.parent_tools, agent.custom_tools, preset_id
+            )
 
         request = LLMRequest(tool_set=selected_tools())
         instruction = None
@@ -398,11 +464,20 @@ class SubAgentManager:
             )
 
         async def begin() -> list[LLMModelClient] | None:
-            current_scope = await self.session_manager.get_session(ctx.event.session.sid, include_content=False)
+            current_scope = await self.session_manager.get_session(
+                ctx.event.session.sid, include_content=False
+            )
             if current_scope is None:
-                raise PermissionError("The subagent permission session no longer exists")
-            stored_session = await self.session_manager.get_session(agent.session.sid, include_content=False)
-            if stored_session is None or stored_session.internal_id != agent.session.internal_id:
+                raise PermissionError(
+                    "The subagent permission session no longer exists"
+                )
+            stored_session = await self.session_manager.get_session(
+                agent.session.sid, include_content=False
+            )
+            if (
+                stored_session is None
+                or stored_session.internal_id != agent.session.internal_id
+            ):
                 raise ValueError("The subagent session no longer exists")
             ctx.event.session = current_scope
             if ctx.event.source_session is not None:
@@ -429,17 +504,21 @@ class SubAgentManager:
             )
             if not saved:
                 raise ValueError("The subagent session no longer exists")
-            agent.session = await self.session_manager.resolve_session(agent.session.internal_id)
+            agent.session = await self.session_manager.resolve_session(
+                agent.session.internal_id
+            )
             ctx.event.agent_session = agent.session
             request.tool_set = selected_tools()
             request.tool_choice = "auto" if request.tool_set.tools else "none"
-            ctx.messages[:] = [OpenAIMessage(**message) for message in agent.session.flatten_content()]
+            ctx.messages[:] = [
+                OpenAIMessage(**message) for message in agent.session.flatten_content()
+            ]
             if instruction is not None:
                 ctx.messages.insert(0, instruction)
             preset_id = metadata.get("preset_id")
             return self._preset_models(preset_id) if preset_id is not None else None
 
-        async def result(step: AgentStepResult):
+        async def result(step: AgentStepResult) -> None:
             agent.step = step
             if step.assistant_message is not None and step.assistant_message.content:
                 agent.result = step.assistant_message.content
@@ -459,13 +538,24 @@ class SubAgentManager:
                         success=step.state != "error",
                     )
                 except Exception:
-                    logger.exception("Unable to record subagent usage for %s", agent.session.internal_id)
+                    logger.exception(
+                        "Unable to record subagent usage for %s",
+                        agent.session.internal_id,
+                    )
 
-        async def finish(context: SubAgentExecutionContext, error: BaseException | None):
+        async def finish(
+            context: SubAgentExecutionContext, error: BaseException | None
+        ) -> None:
             if error is not None:
-                agent.status = "interrupted" if isinstance(error, asyncio.CancelledError) else "error"
+                agent.status = (
+                    "interrupted"
+                    if isinstance(error, asyncio.CancelledError)
+                    else "error"
+                )
                 agent.error = str(error) or type(error).__name__
-            elif agent.executor.state == "stopping" or (agent.step and agent.step.state == "stopped"):
+            elif agent.executor.state == "stopping" or (
+                agent.step and agent.step.state == "stopped"
+            ):
                 agent.status = "stopped"
             elif agent.step and agent.step.state == "error":
                 agent.status = "error"
@@ -497,17 +587,24 @@ class SubAgentManager:
                     exc_info=(type(error), error, error.__traceback__),
                 )
             if saved and not self._closing and agent.status != "interrupted":
-                current = await self.session_manager.get_session(agent.session.sid, include_content=False)
+                current = await self.session_manager.get_session(
+                    agent.session.sid, include_content=False
+                )
                 if current is not None and current.parent_id is not None:
                     try:
-                        await self.event_bus.publish(KiraCustomEvent(
-                            event_name=SUBAGENT_COMPLETED_EVENT,
-                            source_plugin="subagents",
-                            payload=self._info(current, agent),
-                            timestamp=int(time.time()),
-                        ))
+                        await self.event_bus.publish(
+                            KiraCustomEvent(
+                                event_name=SUBAGENT_COMPLETED_EVENT,
+                                source_plugin="subagents",
+                                payload=self._info(current, agent),
+                                timestamp=int(time.time()),
+                            )
+                        )
                     except Exception:
-                        logger.exception("Unable to publish subagent completion for %s", agent.session.internal_id)
+                        logger.exception(
+                            "Unable to publish subagent completion for %s",
+                            agent.session.internal_id,
+                        )
 
         agent.executor = SubAgentExecutor(
             models,
@@ -543,7 +640,9 @@ class SubAgentManager:
                         elif part.get("type") == "image_url":
                             elements.append(Image(image=part["image_url"]["url"]))
                         elif part.get("type") == MEDIA_REF_TYPE:
-                            elements.append(Image(image=str(get_data_path() / part["path"])))
+                            elements.append(
+                                Image(image=str(get_data_path() / part["path"]))
+                            )
                         else:
                             elements.append(Text(json.dumps(part, ensure_ascii=False)))
                 chain = MessageChain(elements)
@@ -555,12 +654,17 @@ class SubAgentManager:
                             self_id=agent.session.internal_id,
                             chain=chain,
                             timestamp=int(time.time()),
-                            sender=User(context.event.session.internal_id or "system", "Delegating agent"),
+                            sender=User(
+                                context.event.session.internal_id or "system",
+                                "Delegating agent",
+                            ),
                         ),
                         agent.session.sid,
                         "subagent",
                     )
-                    await self.message_history.link_incoming_messages(agent.session.sid, identity, [record])
+                    await self.message_history.link_incoming_messages(
+                        agent.session.sid, identity, [record]
+                    )
                 else:
                     record = await self.message_history.record_outgoing(
                         agent.session.sid,
@@ -572,9 +676,14 @@ class SubAgentManager:
                     )
                     await self.message_history.finish_outgoing(record, status="sent")
             except Exception:
-                logger.exception("Unable to archive subagent message for %s", agent.session.internal_id)
+                logger.exception(
+                    "Unable to archive subagent message for %s",
+                    agent.session.internal_id,
+                )
 
-    async def _session(self, target: str | Session, caller_id: str | None = None) -> Session:
+    async def _session(
+        self, target: str | Session, caller_id: str | None = None
+    ) -> Session:
         if isinstance(target, Session):
             target = target.internal_id or target.sid
         session = await self.session_manager.resolve_session(target)
@@ -589,7 +698,8 @@ class SubAgentManager:
     @staticmethod
     def _can_manage(session: Session, caller_id: str | None) -> bool:
         return caller_id is None or caller_id in {
-            session.parent_id, session.data.get("subagent", {}).get("scope_id"),
+            session.parent_id,
+            session.data.get("subagent", {}).get("scope_id"),
         }
 
     @staticmethod
@@ -603,7 +713,9 @@ class SubAgentManager:
             "title": session.session_title,
             "permission_sid": state.get("scope_sid"),
             "status": agent.status if agent else state.get("status", "done"),
-            "step_index": (agent.step.step_index if agent.step else 0) if agent else state.get("step_index", 0),
+            "step_index": (agent.step.step_index if agent.step else 0)
+            if agent
+            else state.get("step_index", 0),
             "turn": agent.turn if agent else state.get("turn", 0),
             "result": agent.result if agent else state.get("result", ""),
             "error": agent.error if agent else state.get("error", ""),
@@ -614,9 +726,12 @@ class SubAgentManager:
         return self._info(session, self._agents.get(session.internal_id))
 
     async def _manageable_sessions(self, caller_id: str | None) -> Iterator[Session]:
-        sessions = await self.session_manager.get_sessions(kind="subagent", include_content=False)
+        sessions = await self.session_manager.get_sessions(
+            kind="subagent", include_content=False
+        )
         return (
-            session for session in sessions
+            session
+            for session in sessions
             if isinstance(session.data, dict)
             and isinstance(session.data.get("subagent", {}), dict)
             and self._can_manage(session, caller_id)
@@ -628,7 +743,10 @@ class SubAgentManager:
 
     async def list_agents(self, *, caller_id: str | None = None) -> list[dict]:
         sessions = await self._manageable_sessions(caller_id)
-        return [self._info(session, self._agents.get(session.internal_id)) for session in sessions]
+        return [
+            self._info(session, self._agents.get(session.internal_id))
+            for session in sessions
+        ]
 
     async def followup(
         self,
@@ -652,7 +770,9 @@ class SubAgentManager:
                 source_event=source_event,
             )
 
-    async def _followup(self, target, message, *, caller_id, parent_tools, tools, steer, source_event) -> dict:
+    async def _followup(
+        self, target, message, *, caller_id, parent_tools, tools, steer, source_event
+    ) -> dict:
         SubAgentExecutor._copy_user_message(message)
         if self._closing:
             raise RuntimeError("Subagent manager is shutting down")
@@ -665,12 +785,18 @@ class SubAgentManager:
             if state.get("resolved_tools") and parent_tools is None and tools is None:
                 raise ValueError("Resuming this agent requires an explicit tool set")
             scope_id = state.get("scope_id") or state.get("scope_sid")
-            scope = await self.session_manager.resolve_session(scope_id) if scope_id else session
+            scope = (
+                await self.session_manager.resolve_session(scope_id)
+                if scope_id
+                else session
+            )
             agent = _Agent(
                 session=session,
                 config=config,
                 parent_tools=self._copy_tools(parent_tools),
-                custom_tools=self._copy_tools(tools if tools is not None else parent_tools),
+                custom_tools=self._copy_tools(
+                    tools if tools is not None else parent_tools
+                ),
                 turn=state.get("turn", 0),
             )
             models = [] if state.get("preset_id") is not None else self._models(None)
@@ -678,11 +804,17 @@ class SubAgentManager:
             self._agents[session.internal_id] = agent
         selection = replace(
             agent,
-            parent_tools=self._copy_tools(parent_tools) if parent_tools is not None else agent.parent_tools,
-            custom_tools=self._copy_tools(tools) if tools is not None else agent.custom_tools,
+            parent_tools=self._copy_tools(parent_tools)
+            if parent_tools is not None
+            else agent.parent_tools,
+            custom_tools=self._copy_tools(tools)
+            if tools is not None
+            else agent.custom_tools,
         )
         selected = self._tools(
-            selection.config, selection.parent_tools, selection.custom_tools,
+            selection.config,
+            selection.parent_tools,
+            selection.custom_tools,
             session.data.get("subagent", {}).get("preset_id"),
         )
         agent.parent_tools = selection.parent_tools
@@ -696,11 +828,18 @@ class SubAgentManager:
         agent.error = ""
         task = agent.executor.queue(message)
         self._track(agent, task)
-        if agent.executor.state != "running" or agent.status in {"done", "stopped", "error", "interrupted"}:
+        if agent.executor.state != "running" or agent.status in {
+            "done",
+            "stopped",
+            "error",
+            "interrupted",
+        }:
             agent.status = "queued"
         return self._info(session, agent)
 
-    async def interrupt(self, target: str | Session, *, caller_id: str | None = None) -> dict:
+    async def interrupt(
+        self, target: str | Session, *, caller_id: str | None = None
+    ) -> dict:
         session = await self._session(target, caller_id)
         agent = self._agents.get(session.internal_id)
         if agent is not None and agent.executor.abort():
@@ -714,7 +853,11 @@ class SubAgentManager:
         timeout: float = 0,
         caller_id: str | None = None,
     ) -> dict:
-        if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or not 0 <= timeout <= 30:
+        if (
+            not isinstance(timeout, (int, float))
+            or isinstance(timeout, bool)
+            or not 0 <= timeout <= 30
+        ):
             raise ValueError("Wait timeout must be between 0 and 30 seconds")
         session = await self._session(target, caller_id)
         agent = self._agents.get(session.internal_id)
@@ -725,7 +868,9 @@ class SubAgentManager:
     async def on_session_deleted(self, event) -> None:
         sid = event.payload["session"]
         async with self._creation_lock:
-            agents = [agent for agent in self._agents.values() if agent.session.sid == sid]
+            agents = [
+                agent for agent in self._agents.values() if agent.session.sid == sid
+            ]
             for agent in agents:
                 del self._agents[agent.session.internal_id]
         for agent in agents:

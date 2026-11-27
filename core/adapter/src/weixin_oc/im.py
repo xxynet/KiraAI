@@ -59,12 +59,13 @@ class WeixinOCIMCapability(IMCapability["WeixinOCAdapter"]):
         file_name: str,
         fallback_suffix: str,
     ) -> Path:
-        normalized_name = self._normalize_filename(file_name, f"{prefix}{fallback_suffix}")
+        normalized_name = self._normalize_filename(
+            file_name, f"{prefix}{fallback_suffix}"
+        )
         stem = Path(normalized_name).stem or prefix
         suffix = Path(normalized_name).suffix or fallback_suffix
         target = (
-            self._resolve_temp_dir()
-            / f"{prefix}_{uuid.uuid4().hex[:8]}_{stem}{suffix}"
+            self._resolve_temp_dir() / f"{prefix}_{uuid.uuid4().hex[:8]}_{stem}{suffix}"
         )
         target.write_bytes(content)
         return target
@@ -170,14 +171,16 @@ class WeixinOCIMCapability(IMCapability["WeixinOCAdapter"]):
         item_type = int(item.get("type") or 0)
 
         if item_type == self.IMAGE_ITEM_TYPE:
-            image_item = cast(dict[str, Any], item.get("image_item", {}) or {})
-            media = cast(dict[str, Any], image_item.get("media", {}) or {})
+            image_item = cast("dict[str, Any]", item.get("image_item", {}) or {})
+            media = cast("dict[str, Any]", image_item.get("media", {}) or {})
             encrypted_query_param = str(media.get("encrypt_query_param", "")).strip()
             if not encrypted_query_param:
                 return None
             image_aes_key = str(image_item.get("aeskey", "")).strip()
             if image_aes_key:
-                aes_key_value = base64.b64encode(bytes.fromhex(image_aes_key)).decode("utf-8")
+                aes_key_value = base64.b64encode(bytes.fromhex(image_aes_key)).decode(
+                    "utf-8"
+                )
             else:
                 aes_key_value = str(media.get("aes_key", "")).strip()
             if aes_key_value:
@@ -185,7 +188,9 @@ class WeixinOCIMCapability(IMCapability["WeixinOCAdapter"]):
                     encrypted_query_param, aes_key_value
                 )
             else:
-                content = await self.adapter.client.download_cdn_bytes(encrypted_query_param)
+                content = await self.adapter.client.download_cdn_bytes(
+                    encrypted_query_param
+                )
             image_path = await asyncio.to_thread(
                 self._save_temp_media,
                 content,
@@ -196,8 +201,8 @@ class WeixinOCIMCapability(IMCapability["WeixinOCAdapter"]):
             return Image(image=str(image_path))
 
         if item_type == self.VIDEO_ITEM_TYPE:
-            video_item = cast(dict[str, Any], item.get("video_item", {}) or {})
-            media = cast(dict[str, Any], video_item.get("media", {}) or {})
+            video_item = cast("dict[str, Any]", item.get("video_item", {}) or {})
+            media = cast("dict[str, Any]", video_item.get("media", {}) or {})
             encrypted_query_param = str(media.get("encrypt_query_param", "")).strip()
             aes_key_value = str(media.get("aes_key", "")).strip()
             if not encrypted_query_param or not aes_key_value:
@@ -215,8 +220,8 @@ class WeixinOCIMCapability(IMCapability["WeixinOCAdapter"]):
             return Video(file=str(video_path))
 
         if item_type == self.FILE_ITEM_TYPE:
-            file_item = cast(dict[str, Any], item.get("file_item", {}) or {})
-            media = cast(dict[str, Any], file_item.get("media", {}) or {})
+            file_item = cast("dict[str, Any]", item.get("file_item", {}) or {})
+            media = cast("dict[str, Any]", file_item.get("media", {}) or {})
             encrypted_query_param = str(media.get("encrypt_query_param", "")).strip()
             aes_key_value = str(media.get("aes_key", "")).strip()
             if not encrypted_query_param or not aes_key_value:
@@ -237,8 +242,8 @@ class WeixinOCIMCapability(IMCapability["WeixinOCAdapter"]):
             return File(file=str(file_path), name=file_name)
 
         if item_type == self.VOICE_ITEM_TYPE:
-            voice_item = cast(dict[str, Any], item.get("voice_item", {}) or {})
-            media = cast(dict[str, Any], voice_item.get("media", {}) or {})
+            voice_item = cast("dict[str, Any]", item.get("voice_item", {}) or {})
+            media = cast("dict[str, Any]", voice_item.get("media", {}) or {})
             encrypted_query_param = str(media.get("encrypt_query_param", "")).strip()
             aes_key_value = str(media.get("aes_key", "")).strip()
             if not encrypted_query_param or not aes_key_value:
@@ -323,7 +328,7 @@ class WeixinOCIMCapability(IMCapability["WeixinOCAdapter"]):
         if context_token:
             self.adapter._context_tokens[from_user_id] = context_token
 
-        item_list = cast(list[dict[str, Any]], msg.get("item_list", []))
+        item_list = cast("list[dict[str, Any]]", msg.get("item_list", []))
         components = await self._item_list_to_components(item_list)
         self._message_text_from_item_list(item_list)
         message_id = str(msg.get("message_id") or msg.get("msg_id") or uuid.uuid4().hex)
@@ -337,7 +342,9 @@ class WeixinOCIMCapability(IMCapability["WeixinOCAdapter"]):
 
         message_obj = KiraMessageEvent(
             adapter=self.adapter.info,
-            supported_elements=list((await self.get_message_metadata()).supported_elements),
+            supported_elements=list(
+                (await self.get_message_metadata()).supported_elements
+            ),
             message=KiraIMMessage(
                 timestamp=ts,
                 message_id=message_id,
@@ -358,10 +365,14 @@ class WeixinOCIMCapability(IMCapability["WeixinOCAdapter"]):
         item_list: list[dict[str, Any]],
     ) -> bool:
         if not self.adapter.token:
-            self.adapter.logger.warning("weixin_oc(%s): missing token, skip send", self.adapter.info.name)
+            self.adapter.logger.warning(
+                "weixin_oc(%s): missing token, skip send", self.adapter.info.name
+            )
             return False
         if not item_list:
-            self.adapter.logger.warning("weixin_oc(%s): empty message payload ignored", self.adapter.info.name)
+            self.adapter.logger.warning(
+                "weixin_oc(%s): empty message payload ignored", self.adapter.info.name
+            )
             return False
         context_token = self.adapter._context_tokens.get(user_id)
         if not context_token:
@@ -422,8 +433,7 @@ class WeixinOCIMCapability(IMCapability["WeixinOCAdapter"]):
         """Return (text_sent, media_sent) as independent send outcomes."""
         if not self.adapter.token:
             self.adapter.logger.warning(
-                "weixin_oc(%s): missing token, skip media send",
-                self.adapter.info.name
+                "weixin_oc(%s): missing token, skip media send", self.adapter.info.name
             )
             return False, False
         media_path = await self._resolve_media_file_path(segment)
@@ -473,9 +483,7 @@ class WeixinOCIMCapability(IMCapability["WeixinOCAdapter"]):
         media_sent = await self._send_items_to_session(user_id, [media_item])
         return text_sent, media_sent
 
-    async def _send_text_message(
-        self, user_id: str, text: str
-    ) -> bool:
+    async def _send_text_message(self, user_id: str, text: str) -> bool:
         if not text:
             self.adapter.logger.warning(
                 "weixin_oc(%s): empty text message ignored",
@@ -551,7 +559,9 @@ class WeixinOCIMCapability(IMCapability["WeixinOCAdapter"]):
 
         if pending_text.strip():
             try:
-                success = await self._send_text_message(str(user_id), pending_text.strip())
+                success = await self._send_text_message(
+                    str(user_id), pending_text.strip()
+                )
                 if success:
                     has_sent = True
             except Exception as e:

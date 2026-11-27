@@ -45,9 +45,17 @@ class LLMRequest:
 
     def __post_init__(self):
         if self.tools is not None:
-            warn("LLMRequest.tools is deprecated as an input; use tool_set instead", DeprecationWarning, stacklevel=3)
+            warn(
+                "LLMRequest.tools is deprecated as an input; use tool_set instead",
+                DeprecationWarning,
+                stacklevel=3,
+            )
         if self.tool_funcs is not None:
-            warn("LLMRequest.tool_funcs is deprecated; use tool_set instead", DeprecationWarning, stacklevel=3)
+            warn(
+                "LLMRequest.tool_funcs is deprecated; use tool_set instead",
+                DeprecationWarning,
+                stacklevel=3,
+            )
         self.messages = [
             m if isinstance(m, OpenAIMessage) else OpenAIMessage(**m)
             for m in self.messages
@@ -87,8 +95,14 @@ class LLMRequest:
             relocated: list[Prompt] = []
             for p in self.system_prompt:
                 should_relocate = isinstance(p, Prompt) and (
-                    (p.name in DYNAMIC_PROMPT_NAMES and dynamic_position == "latest_user")
-                    or (p.name == MEMORY_PROMPT_NAME and memory_position == "latest_user")
+                    (
+                        p.name in DYNAMIC_PROMPT_NAMES
+                        and dynamic_position == "latest_user"
+                    )
+                    or (
+                        p.name == MEMORY_PROMPT_NAME
+                        and memory_position == "latest_user"
+                    )
                 )
                 if should_relocate:
                     # Relocated blocks are request-only and must never be
@@ -103,28 +117,43 @@ class LLMRequest:
                 # The markers are separate Prompt objects rather than one merged
                 # block so each relocated block is still formatted exactly once.
                 self.user_prompt[:0] = [
-                    Prompt("<system_reminder>", name="dynamic_context_start",
-                           source="system", persist=False),
+                    Prompt(
+                        "<system_reminder>",
+                        name="dynamic_context_start",
+                        source="system",
+                        persist=False,
+                    ),
                     *relocated,
-                    Prompt("</system_reminder>", name="dynamic_context_end",
-                           source="system", persist=False),
+                    Prompt(
+                        "</system_reminder>",
+                        name="dynamic_context_end",
+                        source="system",
+                        persist=False,
+                    ),
                 ]
 
         if self.system_prompt:
             if self.messages and self.messages[0].role == "system":
                 self.messages.pop(0)
             if static_prompt:
-                system_prompt = "".join(p.to_string() for p in static_prompt if isinstance(p, Prompt))
-                self.messages.insert(0, OpenAIMessage(role="system", content=system_prompt))
+                system_prompt = "".join(
+                    p.to_string() for p in static_prompt if isinstance(p, Prompt)
+                )
+                self.messages.insert(
+                    0, OpenAIMessage(role="system", content=system_prompt)
+                )
 
         if self.user_prompt:
-            user_prompt = "".join(p.to_string() for p in self.user_prompt if isinstance(p, Prompt))
+            user_prompt = "".join(
+                p.to_string() for p in self.user_prompt if isinstance(p, Prompt)
+            )
             self.messages.append(OpenAIMessage(role="user", content=user_prompt))
 
 
 @dataclass
 class LLMResponse:
     """Content field in chat completion response"""
+
     text_response: str
 
     """

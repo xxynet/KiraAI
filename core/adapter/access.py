@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeAlias
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from .base import BaseCapability
 
 
@@ -35,9 +37,7 @@ class ListAccessPolicy:
         deny_list: Iterable[int | str] | None = None,
     ) -> ListAccessPolicy:
         normalized_mode: PermissionMode = (
-            "deny_list"
-            if str(mode).strip().lower() == "deny_list"
-            else "allow_list"
+            "deny_list" if str(mode).strip().lower() == "deny_list" else "allow_list"
         )
         source = deny_list if normalized_mode == "deny_list" else allow_list
         entries = frozenset(str(entry) for entry in source or () if entry is not None)
@@ -51,14 +51,17 @@ class ListAccessPolicy:
 
 
 _active_policy_changes: ContextVar[tuple[PolicyChanges, ...]] = ContextVar(
-    "active_adapter_policy_changes", default=(),
+    "active_adapter_policy_changes",
+    default=(),
 )
 
 
 class PolicyChanges:
     """Record exact scoped writes owned by one capability lifecycle."""
 
-    def __init__(self, controller: AccessController, kind: type[BaseCapability[Any]]):
+    def __init__(
+        self, controller: AccessController, kind: type[BaseCapability[Any]]
+    ) -> None:
         self._controller = controller
         self._kind = kind
         self._original: dict[str, tuple[AccessPolicy | None, object | None]] = {}
@@ -66,20 +69,23 @@ class PolicyChanges:
         self._closed = False
 
     @contextmanager
-    def record(self):
+    def record(self) -> Generator[None, Any, None]:
         token = _active_policy_changes.set((*_active_policy_changes.get(), self))
         try:
             yield
         finally:
             _active_policy_changes.reset(token)
 
-    def _record_write(self, permission, previous, previous_version, version):
-        if permission not in self._applied or self._applied[permission] is not previous_version:
+    def _record_write(self, permission, previous, previous_version, version) -> None:
+        if (
+            permission not in self._applied
+            or self._applied[permission] is not previous_version
+        ):
             # An intervening external write becomes the baseline for a later owned write.
             self._original[permission] = previous, previous_version
         self._applied[permission] = version
 
-    def restore(self):
+    def restore(self) -> None:
         """Restore only keys whose latest write still belongs to this lifecycle."""
         controller = self._controller
         for permission, (previous, previous_version) in self._original.items():
@@ -94,7 +100,7 @@ class PolicyChanges:
                 controller._policy_versions[key] = previous_version
         self.close()
 
-    def close(self):
+    def close(self) -> None:
         self._closed = True
         self._original.clear()
         self._applied.clear()
@@ -103,7 +109,7 @@ class PolicyChanges:
 class AccessController:
     """Resolve access policies by registered capability type and permission."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._policies: dict[tuple[type[BaseCapability[Any]], str], AccessPolicy] = {}
         self._policy_versions: dict[tuple[type[BaseCapability[Any]], str], object] = {}
 
@@ -118,10 +124,15 @@ class AccessController:
         version = object()
         for changes in reversed(_active_policy_changes.get()):
             if (
-                not changes._closed and changes._controller is self and changes._kind is key[0]
+                not changes._closed
+                and changes._controller is self
+                and changes._kind is key[0]
             ):
                 changes._record_write(
-                    key[1], self._policies.get(key), self._policy_versions.get(key), version,
+                    key[1],
+                    self._policies.get(key),
+                    self._policy_versions.get(key),
+                    version,
                 )
                 break
         self._policies[key] = policy
@@ -137,26 +148,34 @@ class AccessController:
         policy = self._policies.get(self._key(capability_type, permission))
         return policy.allows(target_id) if policy is not None else False
 
-    def get_policies(self, capability_type: type[BaseCapability[Any]]) -> dict[str, AccessPolicy]:
+    def get_policies(
+        self, capability_type: type[BaseCapability[Any]]
+    ) -> dict[str, AccessPolicy]:
         """Snapshot one capability scope without exposing the mutable registry."""
         self._key(capability_type, "snapshot")
         return {
-            permission: policy for (kind, permission), policy in self._policies.items()
+            permission: policy
+            for (kind, permission), policy in self._policies.items()
             if kind is capability_type
         }
 
-    def track_policies(self, capability_type: type[BaseCapability[Any]]) -> PolicyChanges:
+    def track_policies(
+        self, capability_type: type[BaseCapability[Any]]
+    ) -> PolicyChanges:
         """Create a reusable, task-local write journal for one capability scope."""
         self._key(capability_type, "tracking")
         return PolicyChanges(self, capability_type)
 
     @staticmethod
     def _key(
-        capability_type: type[BaseCapability[Any]], permission: str,
+        capability_type: type[BaseCapability[Any]],
+        permission: str,
     ) -> tuple[type[BaseCapability[Any]], str]:
         from .base import BaseCapability
 
-        if not isinstance(capability_type, type) or not issubclass(capability_type, BaseCapability):
+        if not isinstance(capability_type, type) or not issubclass(
+            capability_type, BaseCapability
+        ):
             raise TypeError("capability_type must be a BaseCapability subclass")
         normalized_permission = permission.strip()
         if not normalized_permission:
@@ -164,4 +183,10 @@ class AccessController:
         return capability_type, normalized_permission
 
 
-__all__ = ["AccessController", "AccessPolicy", "ListAccessPolicy", "PermissionMode", "PolicyChanges"]
+__all__ = [
+    "AccessController",
+    "AccessPolicy",
+    "ListAccessPolicy",
+    "PermissionMode",
+    "PolicyChanges",
+]

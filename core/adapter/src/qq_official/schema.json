@@ -17,7 +17,10 @@
     "default": "",
     "hint": "AppID from QQ Bot Open Platform; filled automatically after QR-code login or entered manually",
     "locales": {
-      "zh": { "name": "AppID", "hint": "QQ 机器人开放平台的 AppID；扫码登录后自动填写，也可手动输入" }
+      "zh": {
+        "name": "AppID",
+        "hint": "QQ 机器人开放平台的 AppID；扫码登录后自动填写，也可手动输入"
+      }
     }
   },
   "app_secret": {
@@ -26,7 +29,10 @@
     "default": "",
     "hint": "AppSecret from QQ Bot Open Platform; filled automatically after QR-code login or entered manually",
     "locales": {
-      "zh": { "name": "AppSecret", "hint": "QQ 机器人开放平台的 AppSecret；扫码登录后自动填写，也可手动输入" }
+      "zh": {
+        "name": "AppSecret",
+        "hint": "QQ 机器人开放平台的 AppSecret；扫码登录后自动填写，也可手动输入"
+      }
     }
   },
   "sandbox": {
@@ -44,7 +50,10 @@
     "default": true,
     "hint": "Allow sending without a valid passive reply ID, including one retry after the reply expires. QQ must also allow proactive messages; platform quotas still apply.",
     "locales": {
-      "zh": { "name": "允许主动消息", "hint": "允许在没有有效被动回复 ID 时发送消息，回复过期后也会尝试一次主动发送。QQ 侧需允许主动消息，且仍受平台配额限制。" }
+      "zh": {
+        "name": "允许主动消息",
+        "hint": "允许在没有有效被动回复 ID 时发送消息，回复过期后也会尝试一次主动发送。QQ 侧需允许主动消息，且仍受平台配额限制。"
+      }
     }
   },
   "permission_mode": {

@@ -13,10 +13,17 @@ class TypeSafeProvider(BaseProvider):
             raise ProviderAPIError("TypeSafe API returned an invalid model list")
         models = []
         for item in data["models"]:
-            if not isinstance(item, dict) or not isinstance(item.get("name"), str) or not item["name"]:
+            if (
+                not isinstance(item, dict)
+                or not isinstance(item.get("name"), str)
+                or not item["name"]
+            ):
                 raise ProviderAPIError("TypeSafe API returned an invalid model list")
-            models.append({
-                "id": item["name"], "name": item["name"],
-                "description": item.get("description", ""),
-            })
+            models.append(
+                {
+                    "id": item["name"],
+                    "name": item["name"],
+                    "description": item.get("description", ""),
+                }
+            )
         return models

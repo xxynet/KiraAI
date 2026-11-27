@@ -23,16 +23,22 @@ class DiscordAdapter(BaseAdapter):
     Install via: pip install py-cord
     """
 
-    def __init__(self, ctx: AdapterContext):
+    def __init__(self, ctx: AdapterContext) -> None:
         super().__init__(ctx)
 
         # config
         self.bot_token: str = self.config.get("bot_token", "")
 
         # intents
-        intent_names = self.config.get("intents", [
-            "guilds", "guild_messages", "message_content", "direct_messages",
-        ])
+        intent_names = self.config.get(
+            "intents",
+            [
+                "guilds",
+                "guild_messages",
+                "message_content",
+                "direct_messages",
+            ],
+        )
         intents = discord.Intents.default()
         for name in intent_names:
             if hasattr(intents, name):
@@ -64,7 +70,7 @@ class DiscordAdapter(BaseAdapter):
         self.debug_mode = self.config.get("debug_mode", False)
         self.debug_mode_list = self.config.get("debug_mode_list", [])
 
-    def _create_bot(self):
+    def _create_bot(self) -> None:
         self.bot = discord.Bot(
             intents=self._intents,
             proxy=self.proxy,
@@ -75,13 +81,13 @@ class DiscordAdapter(BaseAdapter):
 
     # ===== Event Registration =====
 
-    def _register_events(self):
+    def _register_events(self) -> None:
         """Register py-cord event handlers using decorators."""
         adapter = self  # capture reference for closures
         bot = self.bot
 
         @self.bot.event
-        async def on_ready():
+        async def on_ready() -> None:
             if bot is not adapter.bot or not adapter._accepting_messages:
                 return
             adapter.logger.info(
@@ -92,7 +98,7 @@ class DiscordAdapter(BaseAdapter):
             )
 
         @self.bot.event
-        async def on_message(message: discord.Message):
+        async def on_message(message: discord.Message) -> None:
             if bot is not adapter.bot or not adapter._accepting_messages:
                 return
             task = asyncio.current_task()
@@ -120,7 +126,7 @@ class DiscordAdapter(BaseAdapter):
                 if self._bot_task is task and not self._stopping:
                     await self._stop()
 
-    async def _start(self):
+    async def _start(self) -> None:
         """Create the gateway runner while holding the lifecycle lock."""
         if not self.bot_token:
             self.logger.error("Discord bot_token is not set")
@@ -132,15 +138,17 @@ class DiscordAdapter(BaseAdapter):
         self._stopping = False
         self._last_error = None
         self._accepting_messages = True
-        self.logger.info("Starting Discord adapter, proxy configured=%s", bool(self.proxy))
+        self.logger.info(
+            "Starting Discord adapter, proxy configured=%s", bool(self.proxy)
+        )
         self._bot_task = asyncio.create_task(self._run_bot())
         self._bot_task.add_done_callback(self._observe_bot_task)
 
-    def _observe_bot_task(self, task: asyncio.Task):
+    def _observe_bot_task(self, task: asyncio.Task) -> None:
         if not task.cancelled():
             task.exception()
 
-    async def _run_bot(self):
+    async def _run_bot(self) -> None:
         """Run the bot in a background task."""
         try:
             await self.bot.start(self.bot_token)
@@ -154,11 +162,11 @@ class DiscordAdapter(BaseAdapter):
         finally:
             self._accepting_messages = False
 
-    async def stop(self):
+    async def stop(self) -> None:
         async with self._lifecycle_lock:
             await self._stop()
 
-    async def _stop(self):
+    async def _stop(self) -> None:
         """Stop the Discord adapter."""
         self._stopping = True
         self._accepting_messages = False
@@ -178,10 +186,14 @@ class DiscordAdapter(BaseAdapter):
                     await self.bot.close()
 
         if self.bot:
-            self.logger.info(f"Stopped Discord adapter for {self.config.get('bot_pid', 'bot')}")
+            self.logger.info(
+                f"Stopped Discord adapter for {self.config.get('bot_pid', 'bot')}"
+            )
 
     async def _cancel_message_tasks(self):
-        tasks = [task for task in self._message_tasks if task is not asyncio.current_task()]
+        tasks = [
+            task for task in self._message_tasks if task is not asyncio.current_task()
+        ]
         for task in tasks:
             task.cancel()
         if tasks:
@@ -201,19 +213,27 @@ class DiscordAdapter(BaseAdapter):
                 permission=f"im.{scope}.receive",
                 policy=ListAccessPolicy.from_lists(
                     mode if valid_mode else "allow_list",
-                    allow_list=allow_list if valid_mode and isinstance(allow_list, list) else [],
-                    deny_list=deny_list if valid_mode and isinstance(deny_list, list) else [],
+                    allow_list=allow_list
+                    if valid_mode and isinstance(allow_list, list)
+                    else [],
+                    deny_list=deny_list
+                    if valid_mode and isinstance(deny_list, list)
+                    else [],
                 ),
             )
 
-    async def send_group_message(self, group_id: int | str, send_message_obj: MessageChain):
+    async def send_group_message(
+        self, group_id: int | str, send_message_obj: MessageChain
+    ):
         """Deprecated compatibility wrapper; use the IM capability directly.
 
         await adapter.get_capability(IMCapability).send_group_message(group_id, message)
         """
         return await self.im.send_group_message(group_id, send_message_obj)
 
-    async def send_direct_message(self, user_id: int | str, send_message_obj: MessageChain):
+    async def send_direct_message(
+        self, user_id: int | str, send_message_obj: MessageChain
+    ):
         """Deprecated compatibility wrapper; use the IM capability directly.
 
         await adapter.get_capability(IMCapability).send_direct_message(user_id, message)

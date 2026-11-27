@@ -74,7 +74,9 @@ def get_anonymous_machine_id() -> str | None:
         else:
             return None
     except Exception:
-        logger.debug("Failed to obtain an operating-system machine identifier", exc_info=True)
+        logger.debug(
+            "Failed to obtain an operating-system machine identifier", exc_info=True
+        )
         return None
 
     if not source_id:
@@ -86,7 +88,9 @@ def get_anonymous_machine_id() -> str | None:
 def _get_windows_machine_id() -> str | None:
     import winreg
 
-    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography") as key:
+    with winreg.OpenKey(
+        winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography"
+    ) as key:
         value, _ = winreg.QueryValueEx(key, "MachineGuid")
     return str(value).strip() or None
 

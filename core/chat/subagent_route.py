@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 class SubAgentRoute:
     """Deliver child-session input without adapters or platform reply formatting."""
 
-    def __init__(self, manager: SubAgentManager):
+    def __init__(self, manager: SubAgentManager) -> None:
         self.manager = manager
 
     def matches(self, session: Session) -> bool:
@@ -33,7 +33,11 @@ class SubAgentRoute:
         parts = []
         for element in chain:
             if isinstance(element, Image):
-                url = element.file if element.check_file_type() == "url" else await element.to_data_url()
+                url = (
+                    element.file
+                    if element.check_file_type() == "url"
+                    else await element.to_data_url()
+                )
                 parts.append({"type": "image_url", "image_url": {"url": url}})
             else:
                 text = element.text if isinstance(element, Text) else element.repr
@@ -50,12 +54,20 @@ class SubAgentRoute:
     async def receive_message(self, session: Session, message: object) -> None:
         if isinstance(message, SubAgentEvent):
             content = message.content
-            caller_id = message.source_session.internal_id if message.source_session else None
+            caller_id = (
+                message.source_session.internal_id if message.source_session else None
+            )
         elif isinstance(message, (KiraMessageEvent, KiraMessageBatchEvent)):
-            messages = message.messages if isinstance(message, KiraMessageBatchEvent) else [message.message]
-            content = await self._message(MessageChain([
-                element for incoming in messages for element in incoming.chain
-            ]))
+            messages = (
+                message.messages
+                if isinstance(message, KiraMessageBatchEvent)
+                else [message.message]
+            )
+            content = await self._message(
+                MessageChain(
+                    [element for incoming in messages for element in incoming.chain]
+                )
+            )
             caller_id = None
         elif isinstance(message, (str, OpenAIMessage)):
             content = message

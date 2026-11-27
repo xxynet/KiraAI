@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -39,7 +40,7 @@ class SubAgentToolExecutor(IMToolExecutor):
 
     event: SubAgentEvent
 
-    def __init__(self, context: SubAgentExecutionContext):
+    def __init__(self, context: SubAgentExecutionContext) -> None:
         super().__init__(context.event)
         self.context = context
 
@@ -60,22 +61,31 @@ class SubAgentExecutionHooks(AgentExecutionHooks[SubAgentExecutionContext]):
         self._persona_message: OpenAIMessage | None = None
         self._request_system_message: OpenAIMessage | None = None
 
-    async def on_llm_request(self, ctx: SubAgentExecutionContext, request: LLMRequest) -> None:
+    async def on_llm_request(
+        self, ctx: SubAgentExecutionContext, request: LLMRequest
+    ) -> None:
         if self.config.instruction_source in {"persona", "mixed"}:
             original = self._persona_message
             system = await self._refresh_persona(ctx)
         else:
-            system = ctx.messages[0] if ctx.messages and ctx.messages[0].role == "system" else None
+            system = (
+                ctx.messages[0]
+                if ctx.messages and ctx.messages[0].role == "system"
+                else None
+            )
             original = system
         skills_prompt = self._skills_prompt(ctx.event.sid)
         if skills_prompt is not None:
             instruction = system.content if system is not None else None
-            content = f"{instruction}\n\n{skills_prompt}" if instruction else skills_prompt
+            content = (
+                f"{instruction}\n\n{skills_prompt}" if instruction else skills_prompt
+            )
             system = OpenAIMessage(role="system", content=content)
 
         # The Skills listing belongs to the current model request only.
         if request.messages and (
-            request.messages[0] is original or request.messages[0] is self._request_system_message
+            request.messages[0] is original
+            or request.messages[0] is self._request_system_message
         ):
             request.messages.pop(0)
         if system is not None:
@@ -87,7 +97,9 @@ class SubAgentExecutionHooks(AgentExecutionHooks[SubAgentExecutionContext]):
             raise ValueError("Persona manager unavailable")
         persona = await self.persona_manager.get_persona(self.config.persona_id)
         if persona is None:
-            raise ValueError(f"Subagent persona is unavailable: {self.config.persona_id or 'active'}")
+            raise ValueError(
+                f"Subagent persona is unavailable: {self.config.persona_id or 'active'}"
+            )
         content = persona.content or ""
         if self.config.instruction_source == "mixed" and self.config.instruction:
             content = "\n\n".join(filter(None, (content, self.config.instruction)))
@@ -95,7 +107,9 @@ class SubAgentExecutionHooks(AgentExecutionHooks[SubAgentExecutionContext]):
             role="system",
             content=content,
         )
-        ctx.messages[:] = [item for item in ctx.messages if item is not self._persona_message]
+        ctx.messages[:] = [
+            item for item in ctx.messages if item is not self._persona_message
+        ]
         ctx.messages.insert(0, message)
         self._persona_message = message
         return message
@@ -108,7 +122,8 @@ class SubAgentExecutionHooks(AgentExecutionHooks[SubAgentExecutionContext]):
         names = set(self.config.skill_names)
         mode = self.config.tool_mode
         skills = [
-            skill for skill in manager.skills_info
+            skill
+            for skill in manager.skills_info
             if skill.enabled
             and manager.is_skill_allowed(skill.name, session_id)
             and (mode != "exclude" or skill.name not in names)
@@ -126,7 +141,7 @@ class SubAgentExecutionHooks(AgentExecutionHooks[SubAgentExecutionContext]):
 class SubAgentConcurrency:
     """Admit turns in arrival order using the current concurrency limit."""
 
-    def __init__(self, get_limit: Callable[[], int]):
+    def __init__(self, get_limit: Callable[[], int]) -> None:
         self._get_limit = get_limit
         self._running = 0
         self._admission = asyncio.Lock()
@@ -136,11 +151,9 @@ class SubAgentConcurrency:
         async with self._admission:
             while self._running >= self._get_limit():
                 self._released.clear()
-                try:
+                with contextlib.suppress(asyncio.TimeoutError):
                     # Only the first waiter needs to check for a higher limit.
                     await asyncio.wait_for(self._released.wait(), timeout=1)
-                except asyncio.TimeoutError:
-                    pass
             self._running += 1
         return True
 
@@ -158,7 +171,9 @@ class SubAgentExecutor(BaseAgentExecutor[SubAgentExecutionContext]):
         *,
         context: SubAgentExecutionContext,
         semaphore: asyncio.Semaphore | SubAgentConcurrency,
-        on_turn_end: Callable[[SubAgentExecutionContext, BaseException | None], Awaitable[None]],
+        on_turn_end: Callable[
+            [SubAgentExecutionContext, BaseException | None], Awaitable[None]
+        ],
         on_turn_start: Callable[[], Awaitable[list[LLMModelClient] | None]],
         **kwargs,
     ):
@@ -166,7 +181,8 @@ class SubAgentExecutor(BaseAgentExecutor[SubAgentExecutionContext]):
             model_group,
             context=context,
             hooks=kwargs.pop("hooks", None) or SubAgentExecutionHooks(),
-            tool_executor=kwargs.pop("tool_executor", None) or SubAgentToolExecutor(context),
+            tool_executor=kwargs.pop("tool_executor", None)
+            or SubAgentToolExecutor(context),
             **kwargs,
         )
         self.semaphore = semaphore
@@ -176,7 +192,9 @@ class SubAgentExecutor(BaseAgentExecutor[SubAgentExecutionContext]):
 
     @staticmethod
     def _append_messages(
-        ctx: SubAgentExecutionContext, run_state: _AgentRunState, *messages: OpenAIMessage,
+        ctx: SubAgentExecutionContext,
+        run_state: _AgentRunState,
+        *messages: OpenAIMessage,
     ) -> None:
         BaseAgentExecutor._append_messages(ctx, run_state, *messages)
         for message in messages:
@@ -195,7 +213,9 @@ class SubAgentExecutor(BaseAgentExecutor[SubAgentExecutionContext]):
             slot = asyncio.create_task(semaphore.acquire())
             stopped = asyncio.create_task(run_state.abort_requested.wait())
             try:
-                done, _ = await asyncio.wait({slot, stopped}, return_when=asyncio.FIRST_COMPLETED)
+                done, _ = await asyncio.wait(
+                    {slot, stopped}, return_when=asyncio.FIRST_COMPLETED
+                )
                 if slot not in done:
                     return
                 slot.result()

@@ -18,11 +18,15 @@ class FinalizeStage(BaseStage[IMBatchContext]):
         # Fired once per turn, after the agent loop finished. Calling event.stop() here
         # cannot unsend already-delivered messages; it only suppresses the remaining handlers.
         final_result = KiraFinalResult(step_results=turn_steps)
-        final_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_FINAL_RESULT)
+        final_handlers = event_handler_reg.get_handlers(
+            event_type=EventType.ON_FINAL_RESULT
+        )
         for handler in final_handlers:
             await handler.exec_handler(event, final_result)
             if event.is_stopped:
-                logger.info(f"Event {event.event_id} stopped while ON_FINAL_RESULT stage")
+                logger.info(
+                    f"Event {event.event_id} stopped while ON_FINAL_RESULT stage"
+                )
                 break
 
         # Save new memory

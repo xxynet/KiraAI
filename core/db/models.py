@@ -5,6 +5,7 @@ from .db_mgr import Base
 
 class Sticker(Base):
     """Sticker metadata table."""
+
     __tablename__ = "stickers"
 
     id = Column(String, primary_key=True, nullable=False)
@@ -15,6 +16,7 @@ class Sticker(Base):
 
 class ImageDescCache(Base):
     """Image description cache table indexed by MD5."""
+
     __tablename__ = "image_desc_cache"
 
     md5 = Column(String(32), primary_key=True, nullable=False)
@@ -25,6 +27,7 @@ class ImageDescCache(Base):
 
 class Persona(Base):
     """Persona storage table."""
+
     __tablename__ = "personas"
 
     id = Column(String, primary_key=True, nullable=False)
@@ -41,6 +44,7 @@ class Persona(Base):
 
 class TelemetryMessage(Base):
     """Raw message telemetry records for hourly aggregation."""
+
     __tablename__ = "telemetry_messages"
     __table_args__ = (
         Index("ix_telemetry_messages_reported_ts", "reported", "timestamp"),
@@ -54,10 +58,9 @@ class TelemetryMessage(Base):
 
 class TelemetryLLMUsage(Base):
     """Raw LLM call telemetry records for hourly aggregation."""
+
     __tablename__ = "telemetry_llm_usage"
-    __table_args__ = (
-        Index("ix_telemetry_llm_reported_ts", "reported", "timestamp"),
-    )
+    __table_args__ = (Index("ix_telemetry_llm_reported_ts", "reported", "timestamp"),)
 
     id = Column(String(36), primary_key=True, nullable=False)
     timestamp = Column(BigInteger, nullable=False)
@@ -73,6 +76,7 @@ class TelemetryLLMUsage(Base):
 
 class PluginStoreSource(Base):
     """Plugin store source metadata table."""
+
     __tablename__ = "plugin_store_sources"
 
     id = Column(String, primary_key=True, nullable=False)
@@ -86,6 +90,7 @@ class PluginStoreSource(Base):
 
 class MessageRecord(Base):
     """Structured IM history, independent of the bounded LLM context."""
+
     __tablename__ = "messages"
     __table_args__ = (
         Index("ix_messages_session_created", "session_id", "created_at", "id"),
@@ -114,6 +119,7 @@ class MessageRecord(Base):
 
 class ChatSessionRecord(Base):
     """One persistent LLM session, independent of its platform routing key."""
+
     __tablename__ = "chat_sessions"
 
     id = Column(String(37), primary_key=True, nullable=False)
@@ -130,6 +136,7 @@ class ChatSessionRecord(Base):
 
 class DatabaseMigration(Base):
     """Completed data imports, committed atomically with their imported rows."""
+
     __tablename__ = "database_migrations"
 
     name = Column(String, primary_key=True, nullable=False)

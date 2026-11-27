@@ -29,7 +29,7 @@ class DatabaseManager:
         max_overflow: int | None = None,
         connect_args: dict[str, Any] | None = None,
         **engine_kwargs,
-    ):
+    ) -> None:
         self.database_url = database_url
         self.echo = echo
         self.pool_size = pool_size
@@ -55,8 +55,9 @@ class DatabaseManager:
 
         self.engine = create_async_engine(self.database_url, **kwargs)
         if self.engine.dialect.name == "sqlite":
+
             @event.listens_for(self.engine.sync_engine, "connect")
-            def configure_sqlite(dbapi_connection, _connection_record):
+            def configure_sqlite(dbapi_connection, _connection_record) -> None:
                 # Apply the lock timeout to every connection, including pool replacements.
                 cursor = dbapi_connection.cursor()
                 try:
@@ -67,9 +68,13 @@ class DatabaseManager:
             # WAL persists in the database file; configure it before serving queries.
             try:
                 async with self.engine.connect() as connection:
-                    mode = (await connection.exec_driver_sql("PRAGMA journal_mode")).scalar_one()
+                    mode = (
+                        await connection.exec_driver_sql("PRAGMA journal_mode")
+                    ).scalar_one()
                     if mode not in ("wal", "memory"):
-                        mode = (await connection.exec_driver_sql("PRAGMA journal_mode=WAL")).scalar_one()
+                        mode = (
+                            await connection.exec_driver_sql("PRAGMA journal_mode=WAL")
+                        ).scalar_one()
                         if mode != "wal":
                             raise RuntimeError("Unable to enable SQLite WAL mode")
             except BaseException:

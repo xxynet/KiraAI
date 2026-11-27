@@ -56,20 +56,21 @@ class ToolExecutor:
             if idx >= max_tool_calls:
                 warn_msg = f"Tool call limit exceeded: maximum {max_tool_calls} tool calls per turn, skipping tool '{name}'."
                 tool_logger.warning(warn_msg)
-                resp.tool_results.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call_id,
-                    "name": name,
-                    "content": truncate_tool_output(warn_msg, max_tool_output_tokens)
-                })
+                resp.tool_results.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call_id,
+                        "name": name,
+                        "content": truncate_tool_output(
+                            warn_msg, max_tool_output_tokens
+                        ),
+                    }
+                )
                 continue
 
             raw_args = tool_call.get("function", {}).get("arguments")
             try:
-                if not raw_args.strip():
-                    args = {}
-                else:
-                    args = json.loads(raw_args)
+                args = {} if not raw_args.strip() else json.loads(raw_args)
             except (json.JSONDecodeError, AttributeError) as e:
                 logger.error(f"Failed to parse function calling arguments: {e}")
                 logger.error(f"Raw args: {raw_args}")
@@ -79,13 +80,17 @@ class ToolExecutor:
             # Call corresponding Python function(s)
             if tool_set and name in tool_set:
                 tool_inst = tool_set.get(name)
-                call_ctx = ToolCallContext(tool_call_id=tool_call_id, tool=tool_inst, arguments=args)
+                call_ctx = ToolCallContext(
+                    tool_call_id=tool_call_id, tool=tool_inst, arguments=args
+                )
                 try:
                     if on_tool_call is not None:
                         await on_tool_call(call_ctx)
                 except Exception as e:
                     tool_logger.exception(f"Tool call hook failed for '{name}'")
-                    call_ctx.set_result(ToolResult(text=f"Tool call hook failed for '{name}': {e}"))
+                    call_ctx.set_result(
+                        ToolResult(text=f"Tool call hook failed for '{name}': {e}")
+                    )
 
                 if should_stop is not None and should_stop():
                     return
@@ -94,10 +99,18 @@ class ToolExecutor:
                 else:
                     try:
                         coro = self.invoke_tool(tool_inst, call_ctx.arguments)
-                        result = await (wait_for(coro, tool_call_timeout) if tool_call_timeout else coro)
+                        result = await (
+                            wait_for(coro, tool_call_timeout)
+                            if tool_call_timeout
+                            else coro
+                        )
                     except AsyncTimeoutError:
-                        result = f"Error: Tool '{name}' timed out after {tool_call_timeout}s"
-                        tool_logger.error(f"Tool '{name}' timed out after {tool_call_timeout}s")
+                        result = (
+                            f"Error: Tool '{name}' timed out after {tool_call_timeout}s"
+                        )
+                        tool_logger.error(
+                            f"Tool '{name}' timed out after {tool_call_timeout}s"
+                        )
                     except Exception as e:
                         result = f"Error: Failed to call tool '{name}': {e}"
                         tool_logger.error(f"Failed to call tool '{name}': {e}")
@@ -118,9 +131,11 @@ class ToolExecutor:
             content = truncate_tool_output(content, max_tool_output_tokens)
             content = tool_result_obj.build_content(content)
             tool_logger.info(f"tool_result: {content}")
-            resp.tool_results.append({
-                "role": "tool",
-                "tool_call_id": tool_call_id,
-                "name": name,
-                "content": content
-            })
+            resp.tool_results.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "name": name,
+                    "content": content,
+                }
+            )

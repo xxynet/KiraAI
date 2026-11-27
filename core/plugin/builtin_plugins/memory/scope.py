@@ -27,7 +27,10 @@ class MemoryScope:
         adapter = getattr(event, "adapter", None)
         if not session or not adapter or not persona_id:
             raise MemoryInputError("context_unavailable")
-        if session.session_type not in {"dm", "gm"} or session.adapter_name != adapter.name:
+        if (
+            session.session_type not in {"dm", "gm"}
+            or session.adapter_name != adapter.name
+        ):
             raise MemoryInputError("context_unavailable")
         messages = getattr(event, "messages", ())
         if not messages:
@@ -42,12 +45,15 @@ class MemoryScope:
             if session.session_type == "dm" and user_id != str(session.session_id):
                 raise MemoryInputError("context_unavailable")
             if session.session_type == "gm" and (
-                not message.group or str(message.group.group_id) != str(session.session_id)
+                not message.group
+                or str(message.group.group_id) != str(session.session_id)
             ):
                 raise MemoryInputError("context_unavailable")
             sources.append((str(message.message_id), user_id))
         return cls(
-            str(persona_id), session.sid, adapter.name,
+            str(persona_id),
+            session.sid,
+            adapter.name,
             tuple(sorted({user for _, user in sources})),
             str(session.session_id) if session.session_type == "gm" else None,
             tuple(sources),
@@ -65,7 +71,9 @@ class MemoryScope:
                 return identity(self.adapter, user_id)
         raise MemoryInputError("invalid_owner")
 
-    def source(self, owner_type: str, user_id: str | None, message_id: str | None) -> str:
+    def source(
+        self, owner_type: str, user_id: str | None, message_id: str | None
+    ) -> str:
         candidates = list(self.sources)
         if owner_type == "user":
             self.owner(owner_type, user_id)
@@ -84,9 +92,14 @@ class MemoryScope:
         if self.group_id:
             owners.append(("group", self.owner("group")))
         owners.extend(("user", self.owner("user", uid)) for uid in self.users)
-        clause = " OR ".join(f"({alias}.owner_type = ? AND {alias}.owner_id = ?)" for _ in owners)
+        clause = " OR ".join(
+            f"({alias}.owner_type = ? AND {alias}.owner_id = ?)" for _ in owners
+        )
         return (
-            (f"{alias}.persona_id = ? AND {alias}.session_id = ? "
-            f"AND ({clause})"),
-            [self.persona_id, self.session_id, *[value for pair in owners for value in pair]],
+            (f"{alias}.persona_id = ? AND {alias}.session_id = ? AND ({clause})"),
+            [
+                self.persona_id,
+                self.session_id,
+                *[value for pair in owners for value in pair],
+            ],
         )

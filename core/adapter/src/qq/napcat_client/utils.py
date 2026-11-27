@@ -1,39 +1,43 @@
+import contextlib
 import re
+from typing import Any, Literal
 
 
 class QQMessageType:
     class Text:
-        def __init__(self, text: str):
+        def __init__(self, text: str) -> None:
             self.text: str = text
 
         @property
-        def repr(self):
+        def repr(self) -> str:
             return self.text
 
     class Image:
-        def __init__(self, url=None, base64=None):
+        def __init__(self, url=None, base64=None) -> None:
             self.url: str | None = url
             self.base64: str | None = base64
 
         @property
-        def repr(self):
+        def repr(self) -> Literal["[Image]"]:
             return "[Image]"
 
     class At:
-        def __init__(self, pid: int | str, nickname: str | None = None):
+        def __init__(self, pid: int | str, nickname: str | None = None) -> None:
             """set pid to 'all' to at all group members"""
             self.pid: str = str(pid)
             self.nickname: str = nickname
 
         @property
-        def repr(self):
+        def repr(self) -> str:
             if self.nickname:
                 return f"[At {self.nickname}({self.pid})]"
             else:
                 return f"[At {self.pid}]"
 
     class Reply:
-        def __init__(self, message_id: int | str, message_content: str | None = None):
+        def __init__(
+            self, message_id: int | str, message_content: str | None = None
+        ) -> None:
             self.message_id: str = str(message_id)
             self.message_content: str = message_content
 
@@ -42,61 +46,56 @@ class QQMessageType:
             return f"[Reply {self.message_id}]"
 
     class Emoji:
-        def __init__(self, emoji_id: int | str):
+        def __init__(self, emoji_id: int | str) -> None:
             self.emoji_id: str = str(emoji_id)
 
         @property
-        def repr(self):
+        def repr(self) -> str:
             return f"[Emoji {self.emoji_id}]"
 
     class Sticker:
-        def __init__(self, sticker_id: int | str, sticker_bs64: str):
+        def __init__(self, sticker_id: int | str, sticker_bs64: str) -> None:
             self.sticker_id: str = str(sticker_id)
             self.sticker_bs64: str = sticker_bs64
 
         @property
-        def repr(self):
+        def repr(self) -> str:
             return f"[Sticker {self.sticker_id}]"
 
     class Record:
-        def __init__(self, bs64: str):
+        def __init__(self, bs64: str) -> None:
             self.bs64: str = bs64
 
         @property
-        def repr(self):
+        def repr(self) -> Literal["[Record]"]:
             return "[Record]"
 
     class Notice:
-        def __init__(self, text: str):
+        def __init__(self, text: str) -> None:
             self.text = text
 
         @property
-        def repr(self):
+        def repr(self) -> Literal["[Notice]"]:
             return "[Notice]"
 
     class Poke:
-        def __init__(self, pid: int | str):
+        def __init__(self, pid: int | str) -> None:
             self.pid = str(pid)
 
         @property
-        def repr(self):
+        def repr(self) -> Literal["[Poke]"]:
             return "[Poke]"
 
 
 class QQMessageChain:
-    def __init__(self, msg_list: list | None = None):
+    def __init__(self, msg_list: list | None = None) -> None:
         self.msg_seg_list = msg_list if msg_list else []
 
-    def to_list(self):
+    def to_list(self) -> list[Any]:
         msg_list = []
         for ele in self.msg_seg_list:
             if isinstance(ele, QQMessageType.Text):
-                msg_list.append({
-                    "type": "text",
-                    "data": {
-                        "text": ele.text
-                    }
-                })
+                msg_list.append({"type": "text", "data": {"text": ele.text}})
             elif isinstance(ele, QQMessageType.Image):
                 if ele.url:
                     file_param = ele.url
@@ -104,69 +103,61 @@ class QQMessageChain:
                     if ele.base64.startswith("base64://"):
                         file_param = ele.base64
                     else:
-                        m = re.match(r"data:image/(jpg|jpeg|png|gif|bmp|webp|tiff|svg);base64,(.*)", ele.base64)
+                        m = re.match(
+                            r"data:image/(jpg|jpeg|png|gif|bmp|webp|tiff|svg);base64,(.*)",
+                            ele.base64,
+                        )
                         file_param = f"base64://{m.group(2)}" if m else ""
                 else:
                     file_param = ""
 
-                msg_list.append({
-                    "type": "image",
-                    "data": {
-                        "file": file_param,
-                        "summary": "[图片]"
-                    }
-                })
+                msg_list.append(
+                    {"type": "image", "data": {"file": file_param, "summary": "[图片]"}}
+                )
             elif isinstance(ele, QQMessageType.At):
-                msg_list.append({
-                    "type": "at",
-                    "data": {
-                        "qq": ele.pid,
+                msg_list.append(
+                    {
+                        "type": "at",
+                        "data": {
+                            "qq": ele.pid,
+                        },
                     }
-                })
+                )
             elif isinstance(ele, QQMessageType.Reply):
                 if any(isinstance(item, QQMessageType.Reply) for item in msg_list):
                     pass
                 else:
-                    msg_list.insert(0, {
-                        "type": "reply",
-                        "data": {
-                            "id": ele.message_id
-                        }
-                    },)
+                    msg_list.insert(
+                        0,
+                        {"type": "reply", "data": {"id": ele.message_id}},
+                    )
             elif isinstance(ele, QQMessageType.Emoji):
-                try:
-                    msg_list.append({
-                        "type": "face",
-                        "data": {
-                            "id": int(ele.emoji_id)
-                        }
-                    })
-                except (ValueError, TypeError):
-                    pass
+                with contextlib.suppress(ValueError, TypeError):
+                    msg_list.append({"type": "face", "data": {"id": int(ele.emoji_id)}})
             elif isinstance(ele, QQMessageType.Sticker):
                 if ele.sticker_bs64.startswith("base64://"):
                     file_param = ele.sticker_bs64
                 else:
-                    m = re.match(r"data:image/(jpg|jpeg|png|gif|bmp|webp|tiff|svg);base64,(.*)", ele.sticker_bs64)
+                    m = re.match(
+                        r"data:image/(jpg|jpeg|png|gif|bmp|webp|tiff|svg);base64,(.*)",
+                        ele.sticker_bs64,
+                    )
                     file_param = f"base64://{m.group(2)}" if m else ""
-                msg_list.append({
-                    "type": "image",
-                    "data": {
-                        "file": file_param,
-                        "summary": "[动画表情]",
-                        "sub_type": 1,
+                msg_list.append(
+                    {
+                        "type": "image",
+                        "data": {
+                            "file": file_param,
+                            "summary": "[动画表情]",
+                            "sub_type": 1,
+                        },
                     }
-                })
+                )
             elif isinstance(ele, QQMessageType.Record):
                 if ele.bs64.startswith("base64://"):
                     file_param = ele.bs64
                 else:
                     m = re.match(r"data:(.*)/(.*);base64,(.*)", ele.bs64)
                     file_param = f"base64://{m.group(3)}" if m else ""
-                msg_list.append({
-                    "type": "record",
-                    "data": {
-                        "file": file_param
-                    }
-                })
+                msg_list.append({"type": "record", "data": {"file": file_param}})
         return msg_list

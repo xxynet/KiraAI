@@ -5,7 +5,7 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from core.adapter.base import AdapterTargetId
 from core.adapter.capabilities import IMCapability
@@ -49,12 +49,7 @@ def extract_card_info(card_json: str) -> dict:
         return {"raw": card_json} if isinstance(card_json, str) else {}
 
     meta = card_json.get("meta", {})
-    content = (
-        meta.get("detail_1")
-        or meta.get("news")
-        or meta.get("music")
-        or meta
-    )
+    content = meta.get("detail_1") or meta.get("news") or meta.get("music") or meta
 
     result = {}
 
@@ -77,16 +72,31 @@ def extract_card_info(card_json: str) -> dict:
 class QQIMCapability(IMCapability["QQAdapter"]):
     """Convert, receive and send OneBot messages for the owning QQ account."""
 
-    _SUPPORTED_ELEMENTS = ["text", "img", "at", "reply", "record", "emoji", "sticker", "poke", "file", "video", "forward"]
+    _SUPPORTED_ELEMENTS = [
+        "text",
+        "img",
+        "at",
+        "reply",
+        "record",
+        "emoji",
+        "sticker",
+        "poke",
+        "file",
+        "video",
+        "forward",
+    ]
 
-    def __init__(self, adapter: QQAdapter):
+    def __init__(self, adapter: QQAdapter) -> None:
         super().__init__(adapter)
         self._metadata = MessageFormatMetadata(
-            self._supported_elements, emojis=load_emoji_mapping(Path(__file__).with_name("emoji.json")),
+            self._supported_elements,
+            emojis=load_emoji_mapping(Path(__file__).with_name("emoji.json")),
         )
 
     async def get_message_metadata(self) -> MessageFormatMetadata:
-        return MessageFormatMetadata(self._supported_elements, emojis=self._metadata.emojis)
+        return MessageFormatMetadata(
+            self._supported_elements, emojis=self._metadata.emojis
+        )
 
     @staticmethod
     def _extract_poke_texts(msg: dict) -> tuple[str, str]:
@@ -95,8 +105,12 @@ class QQIMCapability(IMCapability["QQAdapter"]):
         raw_info = msg.get("raw_info")
         if isinstance(raw_info, list) and len(raw_info) > 4:
             try:
-                motion_text = raw_info[2].get("txt") if isinstance(raw_info[2], dict) else None
-                object_text = raw_info[4].get("txt") if isinstance(raw_info[4], dict) else None
+                motion_text = (
+                    raw_info[2].get("txt") if isinstance(raw_info[2], dict) else None
+                )
+                object_text = (
+                    raw_info[4].get("txt") if isinstance(raw_info[4], dict) else None
+                )
                 if motion_text is not None and object_text is not None:
                     return str(motion_text), str(object_text)
             except Exception:
@@ -110,11 +124,19 @@ class QQIMCapability(IMCapability["QQAdapter"]):
         return str(motion_text), str(object_text)
 
     @staticmethod
-    def _sent_result_from_response(response: object, operation: str) -> KiraIMSentResult:
+    def _sent_result_from_response(
+        response: object, operation: str
+    ) -> KiraIMSentResult:
         if not isinstance(response, dict):
-            return KiraIMSentResult(None, ok=False, err=f"Failed to {operation}: invalid response {response!r}")
+            return KiraIMSentResult(
+                None,
+                ok=False,
+                err=f"Failed to {operation}: invalid response {response!r}",
+            )
         if response.get("status") != "ok":
-            return KiraIMSentResult(None, ok=False, err=f"Failed to {operation}: {response}")
+            return KiraIMSentResult(
+                None, ok=False, err=f"Failed to {operation}: {response}"
+            )
 
         message_id = (response.get("data") or {}).get("message_id")
         return KiraIMSentResult(str(message_id) if message_id is not None else None)
@@ -127,7 +149,9 @@ class QQIMCapability(IMCapability["QQAdapter"]):
             file_value = f"base64://{await media.to_base64()}"
         return file_value, media.name or uuid.uuid4().hex
 
-    async def _send_file(self, target_id, file: File, is_group: bool) -> KiraIMSentResult:
+    async def _send_file(
+        self, target_id, file: File, is_group: bool
+    ) -> KiraIMSentResult:
         try:
             file_value, file_name = await self._prepare_media_file(file)
             if is_group:
@@ -144,18 +168,26 @@ class QQIMCapability(IMCapability["QQAdapter"]):
                 )
             return self._sent_result_from_response(response, "upload file")
         except Exception as e:
-            return KiraIMSentResult(message_id=None, ok=False, err=f"Error occurred while uploading file: {e}")
+            return KiraIMSentResult(
+                message_id=None,
+                ok=False,
+                err=f"Error occurred while uploading file: {e}",
+            )
 
-    async def _send_video(self, target_id, video: Video, is_group: bool) -> KiraIMSentResult:
+    async def _send_video(
+        self, target_id, video: Video, is_group: bool
+    ) -> KiraIMSentResult:
         try:
             file_value, file_name = await self._prepare_media_file(video)
-            message = [{
-                "type": "video",
-                "data": {
-                    "name": file_name,
-                    "file": file_value,
-                },
-            }]
+            message = [
+                {
+                    "type": "video",
+                    "data": {
+                        "name": file_name,
+                        "file": file_value,
+                    },
+                }
+            ]
             if is_group:
                 response = await self.adapter.bot.send_group_segments(
                     group_id=target_id,
@@ -168,16 +200,30 @@ class QQIMCapability(IMCapability["QQAdapter"]):
                 )
             return self._sent_result_from_response(response, "send video")
         except Exception as e:
-            return KiraIMSentResult(message_id=None, ok=False, err=f"Error occurred while uploading video: {e}")
+            return KiraIMSentResult(
+                message_id=None,
+                ok=False,
+                err=f"Error occurred while uploading video: {e}",
+            )
 
-    async def _send_forward(self, target_id, forward: Forward, is_group: bool) -> KiraIMSentResult:
+    async def _send_forward(
+        self, target_id, forward: Forward, is_group: bool
+    ) -> KiraIMSentResult:
         try:
             raw_message_ids = forward.message_id
             if raw_message_ids is None:
-                return KiraIMSentResult(message_id=None, ok=False, err="Forward message has no message ID")
-            message_ids = [raw_message_ids] if isinstance(raw_message_ids, (str, int)) else list(raw_message_ids)
+                return KiraIMSentResult(
+                    message_id=None, ok=False, err="Forward message has no message ID"
+                )
+            message_ids = (
+                [raw_message_ids]
+                if isinstance(raw_message_ids, (str, int))
+                else list(raw_message_ids)
+            )
             if not message_ids:
-                return KiraIMSentResult(message_id=None, ok=False, err="Forward message has no message ID")
+                return KiraIMSentResult(
+                    message_id=None, ok=False, err="Forward message has no message ID"
+                )
 
             if forward.merge:
                 message = [
@@ -206,32 +252,54 @@ class QQIMCapability(IMCapability["QQAdapter"]):
                         message_id=message_ids[0],
                     )
             else:
-                self.adapter.logger.warning("Multiple non-merged forwards are not supported")
-                return KiraIMSentResult(message_id=None, ok=False, err="Multiple non-merged forwards are not supported")
+                self.adapter.logger.warning(
+                    "Multiple non-merged forwards are not supported"
+                )
+                return KiraIMSentResult(
+                    message_id=None,
+                    ok=False,
+                    err="Multiple non-merged forwards are not supported",
+                )
 
             return self._sent_result_from_response(response, "forward message")
         except Exception as e:
-            return KiraIMSentResult(message_id=None, ok=False, err=f"Error occurred while forwarding message: {e}")
+            return KiraIMSentResult(
+                message_id=None,
+                ok=False,
+                err=f"Error occurred while forwarding message: {e}",
+            )
 
-    async def send_group_message(self, group_id: AdapterTargetId, message: MessageChain) -> KiraIMSentResult:
+    async def send_group_message(
+        self, group_id: AdapterTargetId, message: MessageChain
+    ) -> KiraIMSentResult:
         try:
             message_chain = await self._process_outgoing_message(message)
             if not message_chain:
                 self.adapter.logger.warning("处理后的消息链为空，跳过群消息发送")
-                return KiraIMSentResult(None, ok=False, err="Empty message chain after processing")
+                return KiraIMSentResult(
+                    None, ok=False, err="Empty message chain after processing"
+                )
             ele = message_chain[0]
             if isinstance(ele, Poke):
                 await self.adapter.bot.send_poke(user_id=ele.pid, group_id=group_id)
                 return KiraIMSentResult(message_id=None, is_notice=True)
             elif isinstance(ele, File):
-                return await self._send_file(target_id=group_id, file=ele, is_group=True)
+                return await self._send_file(
+                    target_id=group_id, file=ele, is_group=True
+                )
             elif isinstance(ele, Video):
-                return await self._send_video(target_id=group_id, video=ele, is_group=True)
+                return await self._send_video(
+                    target_id=group_id, video=ele, is_group=True
+                )
             elif isinstance(ele, Forward):
-                return await self._send_forward(target_id=group_id, forward=ele, is_group=True)
+                return await self._send_forward(
+                    target_id=group_id, forward=ele, is_group=True
+                )
 
             message_chain = QQMessageChain(message_chain)
-            result = await self.adapter.bot.send_group_message(group_id=group_id, msg=message_chain)
+            result = await self.adapter.bot.send_group_message(
+                group_id=group_id, msg=message_chain
+            )
             status = result.get("status")
             retcode = result.get("retcode")
             msg_res = KiraIMSentResult(None)
@@ -248,7 +316,9 @@ class QQIMCapability(IMCapability["QQAdapter"]):
         except Exception as e:
             return KiraIMSentResult(None, ok=False, err=str(e))
 
-    async def send_direct_message(self, user_id: AdapterTargetId, message: MessageChain) -> KiraIMSentResult:
+    async def send_direct_message(
+        self, user_id: AdapterTargetId, message: MessageChain
+    ) -> KiraIMSentResult:
         msg_res = KiraIMSentResult(None)
         try:
             message_chain = await self._process_outgoing_message(message)
@@ -263,14 +333,22 @@ class QQIMCapability(IMCapability["QQAdapter"]):
                 msg_res.is_notice = True
                 return msg_res
             elif isinstance(ele, File):
-                return await self._send_file(target_id=user_id, file=ele, is_group=False)
+                return await self._send_file(
+                    target_id=user_id, file=ele, is_group=False
+                )
             elif isinstance(ele, Video):
-                return await self._send_video(target_id=user_id, video=ele, is_group=False)
+                return await self._send_video(
+                    target_id=user_id, video=ele, is_group=False
+                )
             elif isinstance(ele, Forward):
-                return await self._send_forward(target_id=user_id, forward=ele, is_group=False)
+                return await self._send_forward(
+                    target_id=user_id, forward=ele, is_group=False
+                )
 
             message_chain = QQMessageChain(message_chain)
-            result = await self.adapter.bot.send_direct_message(user_id=user_id, msg=message_chain)
+            result = await self.adapter.bot.send_direct_message(
+                user_id=user_id, msg=message_chain
+            )
             status = result.get("status")
             retcode = result.get("retcode")
             if status == "failed":
@@ -297,18 +375,28 @@ class QQIMCapability(IMCapability["QQAdapter"]):
                 at_obj = At(str(ele.get("data").get("qq")))
                 if str(ele.get("data").get("qq")) != "all":
                     try:
-                        at_user_info = await self.adapter.bot.get_user_info(user_id=str(ele.get("data").get("qq")))
+                        at_user_info = await self.adapter.bot.get_user_info(
+                            user_id=str(ele.get("data").get("qq"))
+                        )
                         at_obj.nickname = at_user_info["data"]["nickname"]
                     except Exception as e:
-                        self.adapter.logger.error(f"QQ message conversion failed ({type(e).__name__})")
+                        self.adapter.logger.error(
+                            f"QQ message conversion failed ({type(e).__name__})"
+                        )
                 message_content.append(at_obj)
             elif ele.get("type") == "reply":
                 try:
-                    reply_content = await self.adapter.bot.get_msg(ele.get("data").get("id"))
+                    reply_content = await self.adapter.bot.get_msg(
+                        ele.get("data").get("id")
+                    )
                     reply_chain = await self._process_reply_message(reply_content)
-                    message_content.append(Reply(ele.get("data").get("id"), chain=reply_chain))
+                    message_content.append(
+                        Reply(ele.get("data").get("id"), chain=reply_chain)
+                    )
                 except Exception as e:
-                    self.adapter.logger.error(f"QQ message conversion failed ({type(e).__name__})")
+                    self.adapter.logger.error(
+                        f"QQ message conversion failed ({type(e).__name__})"
+                    )
             elif ele.get("type") == "face":
                 emoji_id = str(ele.get("data").get("id"))
                 emoji_desc = self._metadata.emojis.get(emoji_id)
@@ -324,21 +412,32 @@ class QQIMCapability(IMCapability["QQAdapter"]):
                 if sub_type == 1 or summary == "[动画表情]":
                     try:
                         from core.utils.common_utils import image_to_base64
+
                         sticker_bs64 = await image_to_base64(img_url)
                         message_content.append(Sticker(sticker=sticker_bs64))
                     except Exception as e:
-                        self.adapter.logger.error(f"QQ message conversion failed ({type(e).__name__})")
+                        self.adapter.logger.error(
+                            f"QQ message conversion failed ({type(e).__name__})"
+                        )
                 else:
                     message_content.append(Image(image=img_url))
             elif ele.get("type") == "video":
                 try:
-                    video_file_name = ele.get("data", {}).get("file", "")  # e.g. xxx.mp4
+                    video_file_name = ele.get("data", {}).get(
+                        "file", ""
+                    )  # e.g. xxx.mp4
                     video_file_url = ele.get("data", {}).get("url", "")
-                    video_file_size = ele.get("data", {}).get("file_size", "")  # Bytes, str
-                    video_obj = Video(file=video_file_url, name=video_file_name, size=video_file_size)
+                    video_file_size = ele.get("data", {}).get(
+                        "file_size", ""
+                    )  # Bytes, str
+                    video_obj = Video(
+                        file=video_file_url, name=video_file_name, size=video_file_size
+                    )
                     message_content.append(video_obj)
                 except Exception as e:
-                    self.adapter.logger.error(f"QQ message conversion failed ({type(e).__name__})")
+                    self.adapter.logger.error(
+                        f"QQ message conversion failed ({type(e).__name__})"
+                    )
             elif ele.get("type") == "json":
                 json_card_info = ele.get("data", {}).get("data", "")
                 card_data = extract_card_info(json_card_info)
@@ -350,12 +449,16 @@ class QQIMCapability(IMCapability["QQAdapter"]):
                     file_size = ele.get("data").get("file_size")  # Bytes, str
 
                     if message_type == "group":
-                        file_info = await self.adapter.bot.get_group_file_url(group_id=group_id, file_id=file_id)
+                        file_info = await self.adapter.bot.get_group_file_url(
+                            group_id=group_id, file_id=file_id
+                        )
                         if not file_info:
                             continue
                         file_url = (file_info.get("data", {}) or {}).get("url")
                     elif message_type == "private":
-                        file_info = await self.adapter.bot.get_private_file_url(file_id=file_id)
+                        file_info = await self.adapter.bot.get_private_file_url(
+                            file_id=file_id
+                        )
                         if not file_info:
                             continue
                         file_url = (file_info.get("data", {}) or {}).get("url")
@@ -372,25 +475,37 @@ class QQIMCapability(IMCapability["QQAdapter"]):
                     # file_info = await self.adapter.bot.send_action("get_file", {"file_id": file_id})
                     # file_b64 = file_info.get("data", {}).get("base64")
                 except Exception as e:
-                    self.adapter.logger.error(f"QQ message conversion failed ({type(e).__name__})")
+                    self.adapter.logger.error(
+                        f"QQ message conversion failed ({type(e).__name__})"
+                    )
 
             elif ele.get("type") == "forward":
                 try:
                     forward_message_id = msg.get("message_id")
-                    forward_message = await self.adapter.bot.get_forward_msg(forward_message_id)
-                    forward_chains = await self._process_forward_message(forward_message)
+                    forward_message = await self.adapter.bot.get_forward_msg(
+                        forward_message_id
+                    )
+                    forward_chains = await self._process_forward_message(
+                        forward_message
+                    )
                     message_content.append(Forward(chains=forward_chains))
                 except Exception as e:
-                    self.adapter.logger.error(f"QQ message conversion failed ({type(e).__name__})")
+                    self.adapter.logger.error(
+                        f"QQ message conversion failed ({type(e).__name__})"
+                    )
             elif ele.get("type") == "record":
                 try:
                     file_id = ele.get("data").get("file")
 
-                    record_info = await self.adapter.bot.get_record(file_id, output_format="mp3")
+                    record_info = await self.adapter.bot.get_record(
+                        file_id, output_format="mp3"
+                    )
                     audio_base64 = record_info.get("data").get("base64")
                     message_content.append(Record(record=audio_base64))
                 except Exception as e:
-                    self.adapter.logger.error(f"QQ message conversion failed ({type(e).__name__})")
+                    self.adapter.logger.error(
+                        f"QQ message conversion failed ({type(e).__name__})"
+                    )
         return MessageChain(message_content)
 
     def _log_message_summary(self, msg: dict) -> None:
@@ -400,7 +515,7 @@ class QQIMCapability(IMCapability["QQAdapter"]):
         kind = "notice" if "notice_type" in msg else "message"
         self.adapter.logger.debug(f"QQ inbound {kind}: segments={count}")
 
-    async def _on_notice_message(self, msg: dict):
+    async def _on_notice_message(self, msg: dict) -> None:
         notice_type = msg.get("notice_type")
         sub_type = msg.get("sub_type")
         self_id = msg.get("self_id")
@@ -408,15 +523,18 @@ class QQIMCapability(IMCapability["QQAdapter"]):
         target_id = msg.get("target_id")
         group_id = msg.get("group_id")
 
-        if group_id:
-            if not self.is_allowed(group_id, permission="im.group.receive"):
-                return
+        if group_id and not self.is_allowed(group_id, permission="im.group.receive"):
+            return
 
         timestamp = int(msg.get("time") or time.time())
 
         if self.adapter.debug_mode:
             if self.adapter.debug_mode_list:
-                if f"gm:{group_id}" in self.adapter.debug_mode_list or not group_id and f"dm:{user_id}" in self.adapter.debug_mode_list:
+                if (
+                    f"gm:{group_id}" in self.adapter.debug_mode_list
+                    or not group_id
+                    and f"dm:{user_id}" in self.adapter.debug_mode_list
+                ):
                     self._log_message_summary(msg)
             else:
                 self._log_message_summary(msg)
@@ -426,11 +544,10 @@ class QQIMCapability(IMCapability["QQAdapter"]):
 
         if group_id:
             group_info = await self.adapter.bot.get_group_info(group_id=group_id)
-            group_name = ((group_info or {}).get("data") or {}).get("group_name") or str(group_id)
-            group_obj = Group(
-                group_id=str(group_id),
-                group_name=group_name
-            )
+            group_name = ((group_info or {}).get("data") or {}).get(
+                "group_name"
+            ) or str(group_id)
+            group_obj = Group(group_id=str(group_id), group_name=group_name)
 
         user_nickname = "None"
         if user_id:
@@ -445,9 +562,10 @@ class QQIMCapability(IMCapability["QQAdapter"]):
         # Poke notifications.
 
         if notice_type == "notify" and sub_type == "poke":
-            if not group_id:
-                if not self.is_allowed(user_id, permission="im.direct.receive"):
-                    return
+            if not group_id and not self.is_allowed(
+                user_id, permission="im.direct.receive"
+            ):
+                return
 
             # Normalize identifier types used by different OneBot implementations.
             if str(self_id) == str(target_id):
@@ -455,34 +573,35 @@ class QQIMCapability(IMCapability["QQAdapter"]):
                 # NapCat provides raw_info; SnowLuma provides action and suffix.
                 motion_text, object_text = self._extract_poke_texts(msg)
 
-                notice_str = f"[Poke 用户{user_id}({user_nickname}){motion_text}你{object_text}]"
+                notice_str = (
+                    f"[Poke 用户{user_id}({user_nickname}){motion_text}你{object_text}]"
+                )
                 message_chain.text(notice_str)
 
         # Build the message event explicitly at the platform boundary.
 
         message_obj = KiraMessageEvent(
             adapter=self.adapter.info,
-            supported_elements=list((await self.get_message_metadata()).supported_elements),
+            supported_elements=list(
+                (await self.get_message_metadata()).supported_elements
+            ),
             message=KiraIMMessage(
                 timestamp=timestamp,
                 message_id="None",
                 group=group_obj,
-                sender=User(
-                    user_id=str(user_id),
-                    nickname=user_nickname
-                ),
+                sender=User(user_id=str(user_id), nickname=user_nickname),
                 is_notice=True,
                 is_mentioned=is_mentioned,
                 self_id=str(self_id),
                 bot=User(str(self_id), self.adapter.bot.self_nickname),
                 chain=message_chain,
-                raw_message=msg
+                raw_message=msg,
             ),
-            timestamp=timestamp
+            timestamp=timestamp,
         )
         self.publish(message_obj)
 
-    async def _on_group_message(self, msg):
+    async def _on_group_message(self, msg) -> None:
         group_id = str(msg.get("group_id"))
         user_id = str(msg.get("user_id"))
 
@@ -502,18 +621,26 @@ class QQIMCapability(IMCapability["QQAdapter"]):
 
         for m in msg.get("message", {}):
             at_id = m.get("data", {}).get("qq", "")
-            if m.get("type") == "at" and (at_id == str(msg.get("self_id")) or at_id == "all"):
+            if m.get("type") == "at" and (
+                at_id == str(msg.get("self_id")) or at_id == "all"
+            ):
                 is_mentioned = True
                 break
             elif m.get("type") == "reply":
                 try:
-                    reply_msg_info = await self.adapter.bot.get_msg((m.get("data", {}) or {}).get("id", ""))
+                    reply_msg_info = await self.adapter.bot.get_msg(
+                        (m.get("data", {}) or {}).get("id", "")
+                    )
                 except Exception as e:
                     # The quoted message may be absent from the protocol side's
                     # store, never a reason to drop the whole incoming message.
-                    self.adapter.logger.warning(f"获取引用消息失败，跳过引用判定: {type(e).__name__}")
+                    self.adapter.logger.warning(
+                        f"获取引用消息失败，跳过引用判定: {type(e).__name__}"
+                    )
                     continue
-                if (reply_msg_info.get("data", {}) or {}).get("user_id") == msg.get("self_id"):  # int int
+                if (reply_msg_info.get("data", {}) or {}).get("user_id") == msg.get(
+                    "self_id"
+                ):  # int int
                     is_mentioned = True
                     break
 
@@ -524,34 +651,35 @@ class QQIMCapability(IMCapability["QQAdapter"]):
 
         sender_info = msg.get("sender") or {}
         raw_card = sender_info.get("card")
-        group_nickname = raw_card.strip() if isinstance(raw_card, str) and raw_card.strip() else None
+        group_nickname = (
+            raw_card.strip() if isinstance(raw_card, str) and raw_card.strip() else None
+        )
 
         message_obj = KiraMessageEvent(
             adapter=self.adapter.info,
-            supported_elements=list((await self.get_message_metadata()).supported_elements),
+            supported_elements=list(
+                (await self.get_message_metadata()).supported_elements
+            ),
             message=KiraIMMessage(
                 timestamp=timestamp,
-                group=Group(
-                    group_id=group_id,
-                    group_name=group_name
-                ),
+                group=Group(group_id=group_id, group_name=group_name),
                 sender=User(
                     user_id=user_id,
                     nickname=sender_info.get("nickname"),
-                    group_nickname=group_nickname
+                    group_nickname=group_nickname,
                 ),
                 is_mentioned=is_mentioned,
                 message_id=str(msg.get("message_id")),
                 self_id=str(msg.get("self_id")),
                 bot=User(str(msg.get("self_id")), self.adapter.bot.self_nickname),
                 chain=message_chain,
-                raw_message=msg
+                raw_message=msg,
             ),
-            timestamp=timestamp
+            timestamp=timestamp,
         )
         self.publish(message_obj)
 
-    async def _on_private_message(self, msg: dict):
+    async def _on_private_message(self, msg: dict) -> None:
         user_id = str(msg.get("user_id"))
 
         if not self.is_allowed(msg.get("user_id"), permission="im.direct.receive"):
@@ -570,25 +698,26 @@ class QQIMCapability(IMCapability["QQAdapter"]):
 
         message_obj = KiraMessageEvent(
             adapter=self.adapter.info,
-            supported_elements=list((await self.get_message_metadata()).supported_elements),
+            supported_elements=list(
+                (await self.get_message_metadata()).supported_elements
+            ),
             message=KiraIMMessage(
                 timestamp=timestamp,
                 sender=User(
-                    user_id=user_id,
-                    nickname=msg.get("sender").get("nickname")
+                    user_id=user_id, nickname=msg.get("sender").get("nickname")
                 ),
                 message_id=str(msg.get("message_id")),
                 is_mentioned=True,
                 self_id=str(msg.get("self_id")),
                 bot=User(str(msg.get("self_id")), self.adapter.bot.self_nickname),
                 chain=message_chain,
-                raw_message=msg
+                raw_message=msg,
             ),
-            timestamp=timestamp
+            timestamp=timestamp,
         )
         self.publish(message_obj)
 
-    async def _process_reply_message(self, message_data):
+    async def _process_reply_message(self, message_data) -> MessageChain:
         if not message_data:
             return MessageChain()
 
@@ -607,7 +736,7 @@ class QQIMCapability(IMCapability["QQAdapter"]):
         elements_chain.extend(inner_elements_chain)
         return elements_chain
 
-    async def _process_forward_message(self, message_data):
+    async def _process_forward_message(self, message_data) -> list[Any] | None:
         if not message_data:
             self.adapter.logger.warning("处理转发消息时获取到了空消息")
             return
@@ -632,7 +761,7 @@ class QQIMCapability(IMCapability["QQAdapter"]):
 
         return chains
 
-    async def _process_outgoing_message(self, message: MessageChain):
+    async def _process_outgoing_message(self, message: MessageChain) -> list[Any]:
         """Convert shared message elements into OneBot segments."""
         message_chain_elements = []
         for ele in message:
@@ -640,7 +769,9 @@ class QQIMCapability(IMCapability["QQAdapter"]):
                 message_chain_elements.append(QQMessageType.Text(ele.text))
             elif isinstance(ele, Emoji):
                 if ele.emoji_id in self._metadata.emojis:
-                    message_chain_elements.append(QQMessageType.Emoji(int(ele.emoji_id)))
+                    message_chain_elements.append(
+                        QQMessageType.Emoji(int(ele.emoji_id))
+                    )
                 else:
                     self.adapter.logger.warning(f"未定义的 Emoji ID: {ele.emoji_id}")
             elif isinstance(ele, Sticker):
@@ -660,12 +791,16 @@ class QQIMCapability(IMCapability["QQAdapter"]):
                     message_chain_elements.append(QQMessageType.Image(ele.image))
                 else:
                     image_base64 = await ele.to_base64()
-                    message_chain_elements.append(QQMessageType.Image(f"base64://{image_base64}"))
+                    message_chain_elements.append(
+                        QQMessageType.Image(f"base64://{image_base64}")
+                    )
             elif isinstance(ele, Reply):
                 message_chain_elements.append(QQMessageType.Reply(ele.message_id))
             elif isinstance(ele, Record):
                 record_base64 = await ele.to_base64()
-                message_chain_elements.append(QQMessageType.Record(f"base64://{record_base64}"))
+                message_chain_elements.append(
+                    QQMessageType.Record(f"base64://{record_base64}")
+                )
             elif isinstance(ele, (Poke, File, Video, Forward)):
                 message_chain_elements.append(ele)
             else:

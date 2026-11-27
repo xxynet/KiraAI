@@ -3,6 +3,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -22,13 +23,13 @@ class SkillInfo:
 
 
 class SkillValidationError(ValueError):
-    def __init__(self, code: str, message: str):
+    def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = code
 
 
 class SkillsManager:
-    def __init__(self):
+    def __init__(self) -> None:
         self.skills_dir = get_data_path() / "skills"
         self.skills_config = get_config_path() / "skills.json"
         self._raw_config = self._load_raw_config()
@@ -40,7 +41,7 @@ class SkillsManager:
         """Load the full JSON config (including _scope)."""
         if not self.skills_config.exists():
             self.skills_config.write_text("{}", encoding="utf-8")
-        with open(self.skills_config, 'r', encoding="utf-8") as f:
+        with open(self.skills_config, encoding="utf-8") as f:
             try:
                 return json.loads(f.read())
             except json.JSONDecodeError:
@@ -51,7 +52,7 @@ class SkillsManager:
         """Build {name: bool} dict from raw config, excluding reserved keys."""
         return {k: v for k, v in self._raw_config.items() if not k.startswith("_")}
 
-    def _save_config(self):
+    def _save_config(self) -> None:
         """Write full config (enabled states + _scope) back to disk."""
         full = {}
         full.update(self.skills_config_dict)
@@ -59,7 +60,7 @@ class SkillsManager:
         if scope:
             full["_scope"] = scope
         self._raw_config = full
-        with open(self.skills_config, 'w', encoding="utf-8") as f:
+        with open(self.skills_config, "w", encoding="utf-8") as f:
             f.write(json.dumps(full, indent=4, ensure_ascii=False))
 
     def scan_skill_dir(self) -> list[SkillInfo]:
@@ -83,11 +84,11 @@ class SkillsManager:
 
         return skills_info
 
-    def get_skill_config_dict(self):
+    def get_skill_config_dict(self) -> dict[Any, Any]:
         self._raw_config = self._load_raw_config()
         return self._build_enabled_dict()
 
-    def set_skill_enabled(self, skill_name: str, enabled: bool):
+    def set_skill_enabled(self, skill_name: str, enabled: bool) -> bool:
         for skill in self.skills_info:
             if skill.name == skill_name:
                 if skill.enabled != enabled:
@@ -106,46 +107,49 @@ class SkillsManager:
             return None
 
         try:
-            with open(skill_md, 'r', encoding='utf-8') as f:
+            with open(skill_md, encoding="utf-8") as f:
                 text = f.read()
 
             return SkillsManager.parse_skill_content(text, skill_path)
         except Exception as e:
-            logger.error(f'Failed to parse {skill_md}: {e}')
+            logger.error(f"Failed to parse {skill_md}: {e}")
             return None
 
     @staticmethod
     def parse_skill_content(text: str, skill_path: Path) -> SkillInfo:
         """Parse and validate skill metadata before loading or saving it."""
         frontmatter = re.match(
-            r'\A\ufeff?---[ \t]*\r?\n(.*?)^---[ \t]*(?:\r?\n|\Z)',
-            text, re.MULTILINE | re.DOTALL,
+            r"\A\ufeff?---[ \t]*\r?\n(.*?)^---[ \t]*(?:\r?\n|\Z)",
+            text,
+            re.MULTILINE | re.DOTALL,
         )
         if frontmatter is None:
             raise SkillValidationError(
-                "missing_frontmatter", "SKILL.md must contain YAML frontmatter between --- delimiters",
+                "missing_frontmatter",
+                "SKILL.md must contain YAML frontmatter between --- delimiters",
             )
         try:
             data = yaml.safe_load(frontmatter.group(1))
         except yaml.YAMLError as e:
-            raise SkillValidationError("invalid_yaml", f"Invalid SKILL.md frontmatter: {e}") from e
+            raise SkillValidationError(
+                "invalid_yaml", f"Invalid SKILL.md frontmatter: {e}"
+            ) from e
         if not isinstance(data, dict) or any(
             not isinstance(data.get(key), str) or not data[key].strip()
             for key in ("name", "description")
         ):
             raise SkillValidationError(
-                "invalid_metadata", "SKILL.md must contain non-empty string name and description fields",
+                "invalid_metadata",
+                "SKILL.md must contain non-empty string name and description fields",
             )
-        return SkillInfo(name=data["name"], description=data["description"], path=skill_path)
+        return SkillInfo(
+            name=data["name"], description=data["description"], path=skill_path
+        )
 
     def build_skills_prompt(self, skills_info: list[SkillInfo] | None = None) -> Prompt:
         if skills_info is None:
             skills_info = self.skills_info
-        p = Prompt(
-            name="skills",
-            source="system",
-            content="## Skills\n"
-        )
+        p = Prompt(name="skills", source="system", content="## Skills\n")
 
         p.content += "You have **Skills**,reusable instruction bundles stored\nBefore replying: scan description entries of the skills below.\n- If exactly one skill clearly applies: read its SKILL.md with `read_file` tool, then follow it.\n  e.g. if the path is `data/skills/skill_name`, read `data/skills/skill_name/SKILL.md`\n- If multiple could apply: choose the most specific one, then read/follow it.\n- If none clearly apply: do not read any SKILL.md.\nConstraints: never read more than one skill up front; only read after selecting.\nIf you need to store files while executing skills, store to `data/files` for persistent storage, `data/temp` for temporary storage, DO NOT directly store to current working directory\nDO NOT read a specific skill file if the user just asked what skills you have\n\nAvailable skills are listed below:\n"
 
@@ -175,7 +179,9 @@ class SkillsManager:
             return session_id not in scope["deny"]
         return True
 
-    def set_skill_scope(self, skill_name: str, mode: str | None, sessions: list[str]):
+    def set_skill_scope(
+        self, skill_name: str, mode: str | None, sessions: list[str]
+    ) -> None:
         """Set scope for a skill. mode='allow'|'deny', or None to clear."""
         scope = self._raw_config.get("_scope", {})
         if mode and sessions:
@@ -188,7 +194,7 @@ class SkillsManager:
             self._raw_config.pop("_scope", None)
         self._save_config()
 
-    def remove_session_from_scopes(self, session_id: str):
+    def remove_session_from_scopes(self, session_id: str) -> None:
         """Remove a session from all skill scope entries (cleanup on session delete)."""
         scope = self._raw_config.get("_scope", {})
         changed = False
@@ -207,4 +213,3 @@ class SkillsManager:
             else:
                 self._raw_config.pop("_scope", None)
             self._save_config()
-

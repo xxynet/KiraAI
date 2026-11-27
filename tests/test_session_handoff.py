@@ -6,9 +6,11 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from core.chat.session import Session
-from core.plugin.builtin_plugins.session_tools.handoff import HANDOFF_KEY, SessionHandoff
+from core.plugin.builtin_plugins.session_tools.handoff import (
+    HANDOFF_KEY,
+    SessionHandoff,
+)
 from core.plugin.builtin_plugins.session_tools.main import SessionPlugin
-
 
 A = "test:gm:a"
 B = "test:dm:b"

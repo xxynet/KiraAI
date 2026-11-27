@@ -1,20 +1,20 @@
 {
-    "name": "SiliconflowCN",
-    "display_name": "SiliconFlow CN",
-    "version": "1.0.0",
-    "author": "KiraAI",
-    "description": "硅基流动CN提供商",
-    "repo": null,
-    "icon": "icon.svg",
-    "icon-dark": "icon-dark.svg",
-    "locales": {
-        "zh": {
-            "display_name": "硅基流动 CN",
-            "description": "硅基流动 CN 提供商"
-        },
-        "en": {
-            "display_name": "SiliconFlow CN",
-            "description": "SiliconFlow CN Provider"
-        }
+  "name": "SiliconflowCN",
+  "display_name": "SiliconFlow CN",
+  "version": "1.0.0",
+  "author": "KiraAI",
+  "description": "硅基流动CN提供商",
+  "repo": null,
+  "icon": "icon.svg",
+  "icon-dark": "icon-dark.svg",
+  "locales": {
+    "zh": {
+      "display_name": "硅基流动 CN",
+      "description": "硅基流动 CN 提供商"
+    },
+    "en": {
+      "display_name": "SiliconFlow CN",
+      "description": "SiliconFlow CN Provider"
     }
+  }
 }

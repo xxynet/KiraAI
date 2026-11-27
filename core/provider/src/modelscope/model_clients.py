@@ -19,7 +19,7 @@ logger = get_logger("provider", "purple")
 
 
 class ImageGenerationTimeoutError(TimeoutError):
-    def __init__(self, message: str = "Image generation timed out"):
+    def __init__(self, message: str = "Image generation timed out") -> None:
         super().__init__(message)
 
 
@@ -28,7 +28,7 @@ class ModelScopeLLMClient(OpenAICompatibleLLMClient):
 
 
 class ModelScopeImageClient(ImageModelClient):
-    def __init__(self, model: ModelInfo):
+    def __init__(self, model: ModelInfo) -> None:
         super().__init__(model)
 
     async def text_to_image(self, prompt) -> Image:
@@ -98,30 +98,40 @@ class ModelScopeEmbeddingClient(EmbeddingModelClient):
             return []
 
         model_cfg = self.model.model_config or {}
-        embedding_cfg = model_cfg.get("embedding", {}) if isinstance(model_cfg, dict) else {}
+        embedding_cfg = (
+            model_cfg.get("embedding", {}) if isinstance(model_cfg, dict) else {}
+        )
 
-        timeout_sec = embedding_cfg.get("timeout", model_cfg.get("timeout", 60) if isinstance(model_cfg, dict) else 60)
+        timeout_sec = embedding_cfg.get(
+            "timeout",
+            model_cfg.get("timeout", 60) if isinstance(model_cfg, dict) else 60,
+        )
         slow_threshold = embedding_cfg.get(
             "slow_request_threshold",
-            model_cfg.get("slow_request_threshold", None) if isinstance(model_cfg, dict) else None
+            model_cfg.get("slow_request_threshold", None)
+            if isinstance(model_cfg, dict)
+            else None,
         )
 
         async with AsyncOpenAI(
             api_key=self.model.provider_config.get("api_key", ""),
             base_url="https://api-inference.modelscope.cn/v1",
-            timeout=timeout_sec
+            timeout=timeout_sec,
         ) as client:
             try:
                 start_time = time.perf_counter()
                 response = await client.embeddings.create(
-                    model=self.model.model_name,
-                    input=texts
+                    model=self.model.model_name, input=texts
                 )
                 elapsed = round(time.perf_counter() - start_time, 2)
                 if slow_threshold is not None and elapsed > slow_threshold:
-                    logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_name})")
+                    logger.warning(
+                        f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_name})"
+                    )
                 if not isinstance(getattr(response, "data", None), list):
-                    raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
+                    raise ProviderAPIError(
+                        f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}"
+                    )
                 return [item.embedding for item in response.data]
             except (APIStatusError, APITimeoutError, APIConnectionError) as e:
                 logger.error(f"Embedding API error: {e}")

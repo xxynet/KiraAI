@@ -115,13 +115,16 @@ class KiraLifecycle:
 
     def schedule_tasks(self):
         """Report failures of registered background tasks as soon as they finish."""
+
         def report_result(task: asyncio.Task):
             if task.cancelled():
                 return
             error = task.exception()
             if error is not None:
                 logger.error(
-                    "Scheduled task '%s' failed: %s", task.get_name(), error,
+                    "Scheduled task '%s' failed: %s",
+                    task.get_name(),
+                    error,
                     exc_info=(type(error), error, error.__traceback__),
                 )
 
@@ -133,16 +136,22 @@ class KiraLifecycle:
         proxy = network.get("http_proxy")
         if proxy:
             if not proxy.startswith(("http://", "https://")):
-                logger.warning(f"Ignoring invalid http_proxy (must start with http:// or https://): {proxy}")
+                logger.warning(
+                    f"Ignoring invalid http_proxy (must start with http:// or https://): {proxy}"
+                )
             else:
                 os.environ["HTTP_PROXY"] = proxy
                 os.environ["HTTPS_PROXY"] = proxy
                 logger.info(f"HTTP proxy set from config: {proxy}")
         mirror = network.get("pypi_mirror")
         if mirror and not mirror.startswith(("http://", "https://")):
-            logger.warning(f"Ignoring invalid pypi_mirror (must start with http:// or https://): {mirror}")
+            logger.warning(
+                f"Ignoring invalid pypi_mirror (must start with http:// or https://): {mirror}"
+            )
 
-    async def init_and_run_system(self, on_initialized: Callable[[], None] | None = None):
+    async def init_and_run_system(
+        self, on_initialized: Callable[[], None] | None = None
+    ):
         """主函数：负责启动和初始化各个模块"""
         logger.info(f"✨ Starting KiraAI {VERSION}...")
 
@@ -159,7 +168,9 @@ class KiraLifecycle:
         setup_logging(
             log_level=self.kira_config.get_config("logging.log_level", "INFO"),
             log_file_path=self.kira_config.get_config("logging.log_file_path"),
-            log_file_max_size=self.kira_config.get_config("logging.log_file_max_size", 10),
+            log_file_max_size=self.kira_config.get_config(
+                "logging.log_file_max_size", 10
+            ),
         )
 
         # ====== init database manager ======
@@ -180,7 +191,9 @@ class KiraLifecycle:
 
         # ====== record startup time and init telemetry ======
         self.stats.set_stats("started_ts", int(time.time()))
-        self.telemetry_client = TelemetryClient(self.db_service, self.kira_config, self.stats)
+        self.telemetry_client = TelemetryClient(
+            self.db_service, self.kira_config, self.stats
+        )
         try:
             await self.telemetry_client.initialize()
         except Exception as e:
@@ -190,11 +203,16 @@ class KiraLifecycle:
         self.provider_manager = ProviderManager(self.db_service, self.kira_config)
 
         # ====== init function tool manager ======
-        self.tool_manager = FuncToolManager(lambda: build_tool_execution_config(self.kira_config))
+        self.tool_manager = FuncToolManager(
+            lambda: build_tool_execution_config(self.kira_config)
+        )
         # ====== init adapter manager ======
         self.adapter_manager = AdapterManager(self.kira_config, event_queue)
         webchat_adapter = None
-        if any(info.name == WebChatAdapter.NAME for info in self.adapter_manager.get_adapters_info()):
+        if any(
+            info.name == WebChatAdapter.NAME
+            for info in self.adapter_manager.get_adapters_info()
+        ):
             logger.warning(
                 "Built-in WebChat is disabled because a configured adapter already uses the name "
                 "'webchat'. Rename that adapter and restart to enable WebChat; its configuration is unchanged."
@@ -202,10 +220,15 @@ class KiraLifecycle:
         else:
             webchat_store = WebChatStore(get_data_path() / "webchat")
             await webchat_store.initialize()
-            webchat_adapter = WebChatAdapter(AdapterContext(
-                info=AdapterInfo(True, "builtin-webchat", WebChatAdapter.NAME, "webchat"),
-                event_queue=event_queue,
-            ), webchat_store)
+            webchat_adapter = WebChatAdapter(
+                AdapterContext(
+                    info=AdapterInfo(
+                        True, "builtin-webchat", WebChatAdapter.NAME, "webchat"
+                    ),
+                    event_queue=event_queue,
+                ),
+                webchat_store,
+            )
             await self.adapter_manager.register_builtin_adapter(webchat_adapter)
         await self.adapter_manager.initialize()
 
@@ -233,8 +256,7 @@ class KiraLifecycle:
         await self.sticker_manager.init()
 
         # ====== init prompt manager ======
-        self.prompt_manager = PromptManager(self.kira_config,
-                                            self.persona_manager)
+        self.prompt_manager = PromptManager(self.kira_config, self.persona_manager)
 
         # ====== init MCP manager ======
         try:
@@ -248,7 +270,9 @@ class KiraLifecycle:
         self.skills_manager = SkillsManager()
 
         # ====== init message history ======
-        self.message_history = MessageHistoryService(self.db_service, self.session_manager)
+        self.message_history = MessageHistoryService(
+            self.db_service, self.session_manager
+        )
         await self.message_history.initialize()
 
         # ====== init image description cache ======
@@ -256,10 +280,15 @@ class KiraLifecycle:
 
         # ====== assemble shared IM services and workflow ======
         message_buffer = SessionBufferManager(
-            max_count=int(self.kira_config.get_config("bot_config.bot.max_buffer_messages", 3)),
+            max_count=int(
+                self.kira_config.get_config("bot_config.bot.max_buffer_messages", 3)
+            ),
         )
         message_delivery = MessageDeliveryService(
-            self.kira_config, self.adapter_manager, self.persona_manager, self.message_history,
+            self.kira_config,
+            self.adapter_manager,
+            self.persona_manager,
+            self.message_history,
         )
         self.message_router = MessageRouter(session_manager=self.session_manager)
         self.subagent_manager = SubAgentManager(
@@ -287,7 +316,10 @@ class KiraLifecycle:
             self.message_history.on_session_deleted,
         )
         message_formatter = MessageFormatter(
-            self.kira_config, self.provider_manager, self.session_manager, self.image_desc_cache,
+            self.kira_config,
+            self.provider_manager,
+            self.session_manager,
+            self.image_desc_cache,
         )
         im_context = IMWorkflowContext(
             message_formatter=message_formatter,
@@ -326,8 +358,7 @@ class KiraLifecycle:
 
         self.tasks.append(
             asyncio.create_task(
-                self.image_desc_cache.cleanup_task(),
-                name="image_desc_cache_cleanup"
+                self.image_desc_cache.cleanup_task(), name="image_desc_cache_cleanup"
             )
         )
 
@@ -402,8 +433,7 @@ class KiraLifecycle:
 
         self.tasks.append(
             asyncio.create_task(
-                self.temp_monitor.start_monitoring(),
-                name="temp_folder_monitor"
+                self.temp_monitor.start_monitoring(), name="temp_folder_monitor"
             )
         )
 

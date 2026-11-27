@@ -9,7 +9,7 @@ from core.provider import LLMRequest
 
 
 class DefaultChatPlugin(BasePlugin):
-    def __init__(self, ctx, cfg: dict):
+    def __init__(self, ctx, cfg: dict) -> None:
         super().__init__(ctx, cfg)
         self.session_events: dict[str, asyncio.Event] = {}
         self.session_tasks: dict[str, asyncio.Task] = {}
@@ -17,11 +17,19 @@ class DefaultChatPlugin(BasePlugin):
 
     @property
     def debounce_interval(self) -> float:
-        return float(self.ctx.config.get("bot_config", {}).get("bot", {}).get("max_message_interval", 1.5))
+        return float(
+            self.ctx.config.get("bot_config", {})
+            .get("bot", {})
+            .get("max_message_interval", 1.5)
+        )
 
     @property
     def max_buffer_messages(self) -> int:
-        return int(self.ctx.config.get("bot_config", {}).get("bot", {}).get("max_buffer_messages", 3))
+        return int(
+            self.ctx.config.get("bot_config", {})
+            .get("bot", {})
+            .get("max_buffer_messages", 3)
+        )
 
     @property
     def max_unmentioned_messages(self) -> int:
@@ -58,17 +66,21 @@ class DefaultChatPlugin(BasePlugin):
             return False
         sessions = [entry.strip() for entry in sessions if isinstance(entry, str)]
         return ListAccessPolicy.from_lists(
-            mode, allow_list=sessions, deny_list=sessions,
+            mode,
+            allow_list=sessions,
+            deny_list=sessions,
         ).allows(sid)
 
     def _receives_unmentioned(self, sid: str) -> bool:
-        return self.receive_unmentioned and self._session_allowed("receive_unmentioned_access", sid)
+        return self.receive_unmentioned and self._session_allowed(
+            "receive_unmentioned_access", sid
+        )
 
-    async def initialize(self):
+    async def initialize(self) -> None:
         self._terminating = False
         logger.info("[Default Chat] initialize")
-    
-    async def terminate(self):
+
+    async def terminate(self) -> None:
         """Cancel all pending debounce tasks before the plugin is unloaded."""
         self._terminating = True
         tasks = list(self.session_tasks.values())
@@ -80,7 +92,7 @@ class DefaultChatPlugin(BasePlugin):
             await asyncio.gather(*tasks, return_exceptions=True)
 
     @on.im_message(priority=Priority.HIGH)
-    async def handle_msg(self, event: KiraMessageEvent):
+    async def handle_msg(self, event: KiraMessageEvent) -> None:
         if self._terminating:
             return
 
@@ -97,7 +109,9 @@ class DefaultChatPlugin(BasePlugin):
             if self._receives_unmentioned(sid):
                 buffer = self.ctx.get_buffer(sid)
                 if buffer.get_length() >= self.max_unmentioned_messages:
-                    buffer.pop(count=buffer.get_length()-self.max_unmentioned_messages+1)
+                    buffer.pop(
+                        count=buffer.get_length() - self.max_unmentioned_messages + 1
+                    )
                 event.buffer()
                 if (
                     self.group_proactive_chat
@@ -126,7 +140,7 @@ class DefaultChatPlugin(BasePlugin):
             )
         self.session_events[sid].set()
 
-    async def _debounce_loop(self, sid: str, event: asyncio.Event):
+    async def _debounce_loop(self, sid: str, event: asyncio.Event) -> None:
         try:
             while True:
                 if self._terminating:
@@ -159,7 +173,9 @@ class DefaultChatPlugin(BasePlugin):
                     self.session_events.pop(sid, None)
 
     @on.llm_request(priority=Priority.MEDIUM)
-    async def inject_group_prompt(self, event: KiraMessageBatchEvent, req: LLMRequest, *_):
+    async def inject_group_prompt(
+        self, event: KiraMessageBatchEvent, req: LLMRequest, *_
+    ) -> None:
         if not event.is_group_message():
             return
         if self.group_chat_prompt:

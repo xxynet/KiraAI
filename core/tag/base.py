@@ -21,13 +21,13 @@ class BaseTag(ABC):
     parent: str | None = "msg"
 
     @abstractmethod
-    async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:
-        ...
+    async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]: ...
 
 
 @dataclass
 class RootTagAction:
     """A root-level tag action to be executed between messages during send phase."""
+
     tag: BaseTag
     value: str
     attrs: dict

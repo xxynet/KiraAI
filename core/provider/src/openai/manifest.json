@@ -1,16 +1,16 @@
 {
-    "name": "OpenAI",
-    "display_name": "OpenAI",
-    "version": "1.0.0",
-    "author": "KiraAI",
-    "description": "OpenAI Provider",
-    "repo": null,
-    "icon": "icon.svg",
-    "icon-dark": "icon-dark.svg",
-    "locales": {
-        "zh": {
-            "display_name": "OpenAI",
-            "description": "OpenAI 提供商"
-        }
+  "name": "OpenAI",
+  "display_name": "OpenAI",
+  "version": "1.0.0",
+  "author": "KiraAI",
+  "description": "OpenAI Provider",
+  "repo": null,
+  "icon": "icon.svg",
+  "icon-dark": "icon-dark.svg",
+  "locales": {
+    "zh": {
+      "display_name": "OpenAI",
+      "description": "OpenAI 提供商"
     }
+  }
 }

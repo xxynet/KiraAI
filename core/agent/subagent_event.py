@@ -27,7 +27,9 @@ class SubAgentEvent(KiraMessageBatchEvent):
     supported_elements: list[str] = field(default_factory=list)
     timestamp: int = field(default_factory=lambda: int(time.time()))
     extra: dict = field(default_factory=dict)
-    _source_batch_metadata: tuple[AdapterInfo | None, tuple[str, ...], User | None] | None = field(
+    _source_batch_metadata: (
+        tuple[AdapterInfo | None, tuple[str, ...], User | None] | None
+    ) = field(
         default=None,
         init=False,
         repr=False,
@@ -47,7 +49,11 @@ class SubAgentEvent(KiraMessageBatchEvent):
 
     def set_source_batch(self, source: KiraMessageBatchEvent | None) -> None:
         """Capture transport metadata from an input batch in the permission session."""
-        if not isinstance(source, KiraMessageBatchEvent) or source.session is None or source.sid != self.sid:
+        if (
+            not isinstance(source, KiraMessageBatchEvent)
+            or source.session is None
+            or source.sid != self.sid
+        ):
             return
         self._source_batch_metadata = (
             source.adapter,
@@ -65,25 +71,37 @@ class SubAgentEvent(KiraMessageBatchEvent):
         self.message_str = None
         self.message_repr = None
         if self._source_batch_metadata is not None:
-            self.adapter, supported_elements, self._source_bot = self._source_batch_metadata
+            self.adapter, supported_elements, self._source_bot = (
+                self._source_batch_metadata
+            )
             self.supported_elements = list(supported_elements)
 
     def append_input(self, message: str | OpenAIMessage) -> None:
         """Expose the task to tools as an IM message in the permission session."""
         self.content = message
         content = message.content if isinstance(message, OpenAIMessage) else message
-        parts = content if isinstance(content, list) else [{"type": "text", "text": str(content or "")}]
+        parts = (
+            content
+            if isinstance(content, list)
+            else [{"type": "text", "text": str(content or "")}]
+        )
         elements = []
         for part in parts:
             if not isinstance(part, dict):
                 continue
             if part.get("type") == "text" and isinstance(part.get("text"), str):
                 elements.append(Text(part["text"]))
-            elif part.get("type") == "image_url" and isinstance(part.get("image_url"), dict):
+            elif part.get("type") == "image_url" and isinstance(
+                part.get("image_url"), dict
+            ):
                 url = part["image_url"].get("url")
-                if isinstance(url, str) and url.startswith(("https://", "http://", "data:image/")):
+                if isinstance(url, str) and url.startswith(
+                    ("https://", "http://", "data:image/")
+                ):
                     elements.append(Image(image=url))
-        text = "\n".join(element.text for element in elements if isinstance(element, Text))
+        text = "\n".join(
+            element.text for element in elements if isinstance(element, Text)
+        )
         display = " ".join(element.repr for element in elements)
         group = None
         if self.session.session_type == "gm":

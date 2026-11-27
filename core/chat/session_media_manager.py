@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 class SessionMediaManager:
     """Clean session media in response to persisted-memory lifecycle events."""
 
-    def __init__(self, event_bus: EventBus, session_manager: SessionManager):
+    def __init__(self, event_bus: EventBus, session_manager: SessionManager) -> None:
         self.session_manager = session_manager
         self._session_locks: dict[str, asyncio.Lock] = {}
         event_bus.subscribe("session_memory_updated", self._on_memory_updated)
@@ -31,16 +31,17 @@ class SessionMediaManager:
 
     async def _cleanup_current_session_media(self, session: str) -> None:
         """Serialize cleanup and use the newest persisted memory for a session."""
-        async with self._get_session_lock(session):
-            async with self.session_manager.maintenance():
-                current = await self.session_manager.get_session(session)
-                memory = current.content if current is not None else []
-                task = asyncio.create_task(asyncio.to_thread(cleanup_session_media, session, memory or []))
-                try:
-                    await asyncio.shield(task)
-                except asyncio.CancelledError:
-                    await task
-                    raise
+        async with self._get_session_lock(session), self.session_manager.maintenance():
+            current = await self.session_manager.get_session(session)
+            memory = current.content if current is not None else []
+            task = asyncio.create_task(
+                asyncio.to_thread(cleanup_session_media, session, memory or [])
+            )
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                await task
+                raise
 
     async def _on_memory_updated(self, event: SystemEvent) -> None:
         await self._cleanup_current_session_media(event.payload["session"])

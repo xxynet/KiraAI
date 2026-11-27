@@ -95,8 +95,8 @@ async def test_history_only_session_is_queryable_but_excluded_from_prompt(sessio
 
 @pytest.mark.anyio
 async def test_sessions_prompt_excludes_subagent_sessions(session_plugin, history, monkeypatch):
-    from core.provider import LLMRequest
     from core.prompt_manager import Prompt
+    from core.provider import LLMRequest
 
     parent = await history.session_manager.get_session(SID)
     child = await history.session_manager.create_subagent_session(

@@ -37,7 +37,10 @@
         "hint": "高级模型配置选项",
         "collapsed": true,
         "locales": {
-          "en": { "name": "Advanced Settings", "hint": "Advanced model configuration options" }
+          "en": {
+            "name": "Advanced Settings",
+            "hint": "Advanced model configuration options"
+          }
         },
         "fields": {
           "temperature": {
@@ -57,7 +60,10 @@
             "default": {},
             "hint": "合并到请求体中的额外字段（JSON 对象）",
             "locales": {
-              "en": { "name": "Extra Body", "hint": "Additional fields merged into the request body (JSON object)" }
+              "en": {
+                "name": "Extra Body",
+                "hint": "Additional fields merged into the request body (JSON object)"
+              }
             }
           }
         }
@@ -71,7 +77,10 @@
         "min": 1,
         "hint": "生图超时时间（秒）",
         "locales": {
-          "en": { "name": "Timeout", "hint": "Image generation timeout (seconds)" }
+          "en": {
+            "name": "Timeout",
+            "hint": "Image generation timeout (seconds)"
+          }
         }
       }
     },
@@ -92,7 +101,10 @@
         "default": null,
         "hint": "超过此阈值（秒）的请求将被记录为慢请求，null 表示禁用慢请求记录",
         "locales": {
-          "en": { "name": "Slow Request Threshold", "hint": "Requests slower than this threshold (seconds) will be logged as slow requests, null disables slow request logging" }
+          "en": {
+            "name": "Slow Request Threshold",
+            "hint": "Requests slower than this threshold (seconds) will be logged as slow requests, null disables slow request logging"
+          }
         }
       }
     }

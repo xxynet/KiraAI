@@ -50,9 +50,9 @@ def parse_github_url(url: str) -> tuple[str, str]:
 
 async def get_latest_release(owner: str, repo: str, proxy: str | None = None):
     """
-    dict_keys(['url', 'assets_url', 'upload_url', 'html_url', 'id', 'author', 
-    'node_id', 'tag_name', 'target_commitish', 'name', 'draft', 'immutable', 
-    'prerelease', 'created_at', 'updated_at', 'published_at', 'assets', 
+    dict_keys(['url', 'assets_url', 'upload_url', 'html_url', 'id', 'author',
+    'node_id', 'tag_name', 'target_commitish', 'name', 'draft', 'immutable',
+    'prerelease', 'created_at', 'updated_at', 'published_at', 'assets',
     'tarball_url', 'zipball_url', 'body'])
     """
     url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
@@ -111,8 +111,8 @@ async def get_all_releases(
             if not data:
                 break
 
-            for item in data:
-                releases.append({
+            releases.extend(
+                {
                     "tag_name": item.get("tag_name"),
                     "name": item.get("name"),
                     "body": item.get("body"),
@@ -120,7 +120,9 @@ async def get_all_releases(
                     "published_at": item.get("published_at"),
                     "prerelease": item.get("prerelease"),
                     "draft": item.get("draft"),
-                })
+                }
+                for item in data
+            )
 
             # If fewer results than per_page, no more pages
             if len(data) < per_page:
@@ -150,16 +152,17 @@ async def get_release_assets(
         resp.raise_for_status()
 
     data = resp.json()
-    assets: list[dict] = []
-    for item in data.get("assets", []):
-        assets.append({
+    assets: list[dict] = [
+        {
             "name": item.get("name"),
             "size": item.get("size"),
             "download_url": item.get("browser_download_url"),
             "content_type": item.get("content_type"),
             "state": item.get("state"),
             "digest": item.get("digest"),
-        })
+        }
+        for item in data.get("assets", [])
+    ]
     return assets
 
 
@@ -287,8 +290,7 @@ async def download_and_verify_asset(
     if not target:
         available = [a["name"] for a in assets]
         raise ValueError(
-            f"Asset '{asset_name}' not found in release '{tag}'. "
-            f"Available: {available}"
+            f"Asset '{asset_name}' not found in release '{tag}'. Available: {available}"
         )
 
     content = await download_asset(target["download_url"], proxy)
@@ -340,7 +342,9 @@ async def download_zipball(
                 raise ValueError(f"Repository {owner}/{repo} not found") from e
             raise ValueError(f"GitHub returned HTTP {status}") from e
         except httpx.HTTPError as e:
-            raise ConnectionError(f"Network error while downloading from GitHub: {e}") from e
+            raise ConnectionError(
+                f"Network error while downloading from GitHub: {e}"
+            ) from e
 
     return resp.content
 
@@ -381,7 +385,9 @@ async def download_source_zipball(
                 raise ValueError(f"Tag {tag} not found in {owner}/{repo}") from e
             raise ValueError(f"GitHub returned HTTP {status}") from e
         except httpx.HTTPError as e:
-            raise ConnectionError(f"Network error while downloading from GitHub: {e}") from e
+            raise ConnectionError(
+                f"Network error while downloading from GitHub: {e}"
+            ) from e
 
     return resp.content
 
@@ -407,7 +413,9 @@ async def pick_fastest_source(
 
     logger.info(f"Speed-testing {len(candidates)} GitHub sources ...")
 
-    async def _probe(label: str, url: str, base: str | None) -> tuple[str, str | None, float | None]:
+    async def _probe(
+        label: str, url: str, base: str | None
+    ) -> tuple[str, str | None, float | None]:
         try:
             result = await test_url_speed(url, proxy=proxy, timeout=timeout)
             return label, base, result["latency"]
@@ -438,7 +446,7 @@ async def pick_fastest_source(
     return ranked
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     print(asyncio.run(get_latest_release("KiraAI-Dev", "KiraAI")))
 
     # print(asyncio.run(get_all_releases("KiraAI-Dev", "KiraAI")))

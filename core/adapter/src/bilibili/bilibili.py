@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, cast
 
 from bilibili_api import Credential, user
 from bilibili_api.session import EventType, Session
@@ -22,7 +22,7 @@ from .qr_login import BiliBiliQRCodeLoginHandler
 
 
 class BiliBiliAdapter(BaseAdapter):
-    def __init__(self, ctx: AdapterContext):
+    def __init__(self, ctx: AdapterContext) -> None:
         super().__init__(ctx)
         self.logger = get_logger(self.info.name, "blue")
         self.bot_uid = self.config.get("bot_uid") or self.config.get("dedeuserid")
@@ -39,11 +39,14 @@ class BiliBiliAdapter(BaseAdapter):
         self.listening_task: asyncio.Task | None = None
         self._comment_task: asyncio.Task | None = None
         self.comment_notifications = BiliBiliCommentNotifications(self)
-        self.feed = self.register_capability(FeedCapability, BiliBiliFeedCapability(self))
+        self.feed = cast(
+            "BiliBiliFeedCapability",
+            self.register_capability(FeedCapability, BiliBiliFeedCapability(self)),
+        )
         self._dm_session: Session | None = None
         self._dm_task: asyncio.Task | None = None
         self._user_info_cache: dict[int, dict] = {}
-        self.im: BiliBiliIMCapability | None = None
+        self.im: IMCapability[BiliBiliAdapter] | None = None
         if self.config.get("enable_im", True):
             self.im = self.register_capability(IMCapability, BiliBiliIMCapability(self))
             policy = ListAccessPolicy.from_lists(
@@ -52,12 +55,15 @@ class BiliBiliAdapter(BaseAdapter):
                 deny_list=self.config.get("user_deny_list", []),
             )
             self.access.set_policy(
-                capability_type=IMCapability, permission="im.direct.receive", policy=policy,
+                capability_type=IMCapability,
+                permission="im.direct.receive",
+                policy=policy,
             )
 
     @classmethod
     def create_qrcode_login_handler(
-        cls, config: dict[str, Any],
+        cls,
+        config: dict[str, Any],
     ) -> BiliBiliQRCodeLoginHandler:
         return BiliBiliQRCodeLoginHandler()
 
@@ -65,7 +71,9 @@ class BiliBiliAdapter(BaseAdapter):
         if self._run_task and not self._run_task.done():
             await asyncio.shield(self._run_task)
             return
-        self._run_task = asyncio.create_task(self._run(), name=f"bilibili:{self.info.name}")
+        self._run_task = asyncio.create_task(
+            self._run(), name=f"bilibili:{self.info.name}"
+        )
         await self._run_task
 
     async def _run(self) -> None:
@@ -78,13 +86,20 @@ class BiliBiliAdapter(BaseAdapter):
         get_bilibili_client()
         await self._log_login_status()
         tasks = []
-        if self.config.get("enable_comment_notifications", True) and self.credential.sessdata:
+        if (
+            self.config.get("enable_comment_notifications", True)
+            and self.credential.sessdata
+        ):
             if self.bot_uid:
                 self.comment_notifications.reset()
-                self._comment_task = asyncio.create_task(self._start_comment_notifications())
+                self._comment_task = asyncio.create_task(
+                    self._start_comment_notifications()
+                )
                 tasks.append(self._comment_task)
             else:
-                self.logger.warning("Bilibili comment notifications require a verified or configured account UID")
+                self.logger.warning(
+                    "Bilibili comment notifications require a verified or configured account UID"
+                )
         if self.config.get("listening_bvid") and self._comment_task is None:
             self.listening_task = asyncio.create_task(self._start_listening())
             tasks.append(self.listening_task)
@@ -105,13 +120,17 @@ class BiliBiliAdapter(BaseAdapter):
 
     async def _start_comment_notifications(self) -> None:
         interval = max(1.0, float(self.config.get("listening_interval") or 20.0))
-        self.logger.info(f"Start listening comment notifications for BiliBili user {self.bot_uid}")
+        self.logger.info(
+            f"Start listening comment notifications for BiliBili user {self.bot_uid}"
+        )
         try:
             while True:
                 await self.comment_notifications.check()
                 await asyncio.sleep(interval)
         finally:
-            self.logger.info(f"Stopped BiliBili comment notifications for {self.bot_uid}")
+            self.logger.info(
+                f"Stopped BiliBili comment notifications for {self.bot_uid}"
+            )
 
     async def _start_im(self) -> None:
         if not self.credential.sessdata:
@@ -128,21 +147,32 @@ class BiliBiliAdapter(BaseAdapter):
             (EventType.PICTURE, "picture"),
             (EventType.SHARE_VIDEO, "share_video"),
         ):
+
             async def handle(event, msg_kind=kind):
                 if self._dm_session is not session:
                     return
+                im = self.im
+                if im is None:
+                    return
                 task = asyncio.current_task()
+                if task is None:
+                    return
                 handlers.add(task)
                 try:
-                    await self.im._handle_incoming_event(event, msg_kind)
+                    await cast("BiliBiliIMCapability", im)._handle_incoming_event(
+                        event, msg_kind
+                    )
                 finally:
                     handlers.discard(task)
+
             session.on(event_type)(handle)
         try:
             self.logger.info(f"Start listening DM for BiliBili user {self.bot_uid}")
             await session.start(exclude_self=True)
         except Exception as exc:
-            self.logger.error(f"Failed to start BiliBili DM adapter: {type(exc).__name__}")
+            self.logger.error(
+                f"Failed to start BiliBili DM adapter: {type(exc).__name__}"
+            )
             raise
         finally:
             self._dm_session = None
@@ -158,7 +188,11 @@ class BiliBiliAdapter(BaseAdapter):
             self.logger.info(f"Stopped BiliBili DM adapter for {self.bot_uid}")
 
     async def _stop_listeners(self) -> None:
-        tasks = [task for task in (self.listening_task, self._dm_task, self._comment_task) if task is not None]
+        tasks = [
+            task
+            for task in (self.listening_task, self._dm_task, self._comment_task)
+            if task is not None
+        ]
         self.listening_task = None
         self._dm_task = None
         self._comment_task = None
@@ -211,10 +245,14 @@ class BiliBiliAdapter(BaseAdapter):
         return self._client
 
     async def send_direct_message(
-        self, user_id: AdapterTargetId, send_message_obj: MessageChain,
+        self,
+        user_id: AdapterTargetId,
+        send_message_obj: MessageChain,
     ) -> KiraIMSentResult | None:
         """Deprecated compatibility wrapper; use the IM capability directly.
 
         await adapter.get_capability(IMCapability).send_direct_message(user_id, message)
         """
-        return await self.get_capability(IMCapability).send_direct_message(user_id, send_message_obj)
+        return await self.get_capability(IMCapability).send_direct_message(
+            user_id, send_message_obj
+        )

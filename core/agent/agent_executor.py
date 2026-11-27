@@ -26,7 +26,12 @@ if TYPE_CHECKING:
     from core.chat.message_utils import KiraMessageBatchEvent
 
 
-__all__ = ["AgentExecutionContext", "AgentExecutor", "AgentStepResult", "IMAgentExecutionHooks"]
+__all__ = [
+    "AgentExecutionContext",
+    "AgentExecutor",
+    "AgentStepResult",
+    "IMAgentExecutionHooks",
+]
 
 
 logger = get_logger("agent_executor", "cyan")
@@ -43,13 +48,19 @@ class IMAgentExecutionHooks(AgentExecutionHooks[AgentExecutionContext]):
     """Dispatch IM plugin events during agent execution."""
 
     async def on_tool_call(self, ctx: ToolCallContext) -> None:
-        for handler in event_handler_reg.get_handlers(event_type=EventType.ON_TOOL_CALL):
+        for handler in event_handler_reg.get_handlers(
+            event_type=EventType.ON_TOOL_CALL
+        ):
             await handler.exec_handler(ctx)
             if ctx.result is not None:
                 return
 
-    async def on_llm_response(self, ctx: AgentExecutionContext, response: LLMResponse) -> bool:
-        for handler in event_handler_reg.get_handlers(event_type=EventType.ON_LLM_RESPONSE):
+    async def on_llm_response(
+        self, ctx: AgentExecutionContext, response: LLMResponse
+    ) -> bool:
+        for handler in event_handler_reg.get_handlers(
+            event_type=EventType.ON_LLM_RESPONSE
+        ):
             await handler.exec_handler(ctx.event, response)
             if ctx.event.is_stopped:
                 logger.info("Event stopped")
@@ -57,7 +68,12 @@ class IMAgentExecutionHooks(AgentExecutionHooks[AgentExecutionContext]):
         return False
 
     async def on_exception(
-        self, ctx: AgentExecutionContext, exception: Exception, *, source: str, comp_id: str | None,
+        self,
+        ctx: AgentExecutionContext,
+        exception: Exception,
+        *,
+        source: str,
+        comp_id: str | None,
     ) -> None:
         exc_event = KiraExceptionEvent(
             name=type(exception).__name__,
@@ -74,8 +90,12 @@ class IMAgentExecutionHooks(AgentExecutionHooks[AgentExecutionContext]):
             except Exception:
                 logger.error(traceback.format_exc())
 
-    async def on_tool_result(self, ctx: AgentExecutionContext, result: ToolResult) -> bool:
-        for handler in event_handler_reg.get_handlers(event_type=EventType.ON_TOOL_RESULT):
+    async def on_tool_result(
+        self, ctx: AgentExecutionContext, result: ToolResult
+    ) -> bool:
+        for handler in event_handler_reg.get_handlers(
+            event_type=EventType.ON_TOOL_RESULT
+        ):
             await handler.exec_handler(ctx.event, result)
             if ctx.event.is_stopped:
                 logger.info("Event stopped while ON_TOOL_RESULT stage")
@@ -96,10 +116,15 @@ class AgentExecutor(BaseAgentExecutor[AgentExecutionContext]):
         tool_executor: ToolExecutor | None = None,
         config: AgentExecutionConfig | None = None,
         on_result: Callable[[AgentStepResult], Awaitable[None]] | None = None,
-    ):
+    ) -> None:
         super().__init__(
-            model_group, context=context, request=request,
+            model_group,
+            context=context,
+            request=request,
             hooks=hooks if hooks is not None else IMAgentExecutionHooks(),
-            tool_executor=tool_executor if tool_executor is not None else IMToolExecutor(context.event),
-            config=config, on_result=on_result,
+            tool_executor=tool_executor
+            if tool_executor is not None
+            else IMToolExecutor(context.event),
+            config=config,
+            on_result=on_result,
         )

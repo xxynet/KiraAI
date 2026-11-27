@@ -1,16 +1,16 @@
 {
-    "name": "BiliBili",
-    "display_name": "BiliBili",
-    "version": "1.0.0",
-    "author": "KiraAI",
-    "description": "BiliBili Adapter",
-    "repo": null,
-    "icon": "icon.svg",
-    "login_method": "qrcode",
-    "locales": {
-        "zh": {
-            "display_name": "BiliBili",
-            "description": "BiliBili 平台适配器"
-        }
+  "name": "BiliBili",
+  "display_name": "BiliBili",
+  "version": "1.0.0",
+  "author": "KiraAI",
+  "description": "BiliBili Adapter",
+  "repo": null,
+  "icon": "icon.svg",
+  "login_method": "qrcode",
+  "locales": {
+    "zh": {
+      "display_name": "BiliBili",
+      "description": "BiliBili 平台适配器"
     }
+  }
 }

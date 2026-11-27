@@ -28,6 +28,7 @@ _plugin_components: dict[str, PluginComponents] = {}
 def _ensure_components(plugin_id: str) -> PluginComponents:
     return _plugin_components.setdefault(plugin_id, PluginComponents())
 
+
 """Plugins that failed to load: {plugin_id: {"manifest": {...}, "error": "..."}}"""
 _plugin_load_errors: dict[str, dict[str, Any]] = {}
 
@@ -77,7 +78,10 @@ def get_obj_plugin_id(obj: Any):
             if caller_name in _module_to_plugin:
                 plugin_id = _module_to_plugin[caller_name]
                 break
-            if getattr(caller_module, "__file__", None) and caller_module is not sys.modules[__name__]:
+            if (
+                getattr(caller_module, "__file__", None)
+                and caller_module is not sys.modules[__name__]
+            ):
                 caller_path = Path(caller_module.__file__).resolve()
                 caller_root = caller_path.parent
                 manifest_path = caller_root / "manifest.json"

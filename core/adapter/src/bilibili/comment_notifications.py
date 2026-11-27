@@ -26,7 +26,7 @@ class _NotificationCursor:
 class BiliBiliCommentNotifications:
     """Receive account comment replies and mentions through SDK message feeds."""
 
-    def __init__(self, adapter: BiliBiliAdapter):
+    def __init__(self, adapter: BiliBiliAdapter) -> None:
         self.adapter = adapter
         self.reset()
 
@@ -34,8 +34,7 @@ class BiliBiliCommentNotifications:
         self._since_ts = int(time.time())
         self._video_cursor = (self._since_ts, 0)
         self._streams = {
-            kind: _NotificationCursor(self._since_ts)
-            for kind in ("reply", "at")
+            kind: _NotificationCursor(self._since_ts) for kind in ("reply", "at")
         }
 
     @staticmethod
@@ -72,11 +71,15 @@ class BiliBiliCommentNotifications:
                         collect(event, position > self._video_cursor)
                     video_checkpoint = max(video_checkpoint, position)
             except Exception as exc:
-                self.adapter.logger.warning(f"Bilibili video comment polling failed: {type(exc).__name__}")
+                self.adapter.logger.warning(
+                    f"Bilibili video comment polling failed: {type(exc).__name__}"
+                )
 
         for kind, state in self._streams.items():
             try:
-                events, checkpoint = await asyncio.wait_for(self._check_stream(kind, state), timeout=60.0)
+                events, checkpoint = await asyncio.wait_for(
+                    self._check_stream(kind, state), timeout=60.0
+                )
                 for event, is_new in events:
                     collect(event, is_new)
                 checkpoints[kind] = checkpoint
@@ -86,8 +89,12 @@ class BiliBiliCommentNotifications:
                     f"Bilibili {kind} comment notification polling failed: {type(exc).__name__}"
                 )
 
-        interval = max(0.0, float(self.adapter.config.get("message_process_interval", 5.0) or 0))
-        for key, event in sorted(candidates.items(), key=lambda pair: pair[1].timestamp):
+        interval = max(
+            0.0, float(self.adapter.config.get("message_process_interval", 5.0) or 0)
+        )
+        for key, event in sorted(
+            candidates.items(), key=lambda pair: pair[1].timestamp
+        ):
             if key not in already_processed:
                 self.adapter.feed.publish(event)
                 await asyncio.sleep(interval)
@@ -98,10 +105,16 @@ class BiliBiliCommentNotifications:
             self.adapter.feed.last_process_ts = video_checkpoint[0]
 
     async def _check_stream(
-        self, kind: str, state: _NotificationCursor,
+        self,
+        kind: str,
+        state: _NotificationCursor,
     ) -> tuple[list[tuple[KiraCommentEvent, bool]], tuple[int, int]]:
         client = self.adapter.get_client()
-        fetch = client.get_reply_notifications if kind == "reply" else client.get_at_notifications
+        fetch = (
+            client.get_reply_notifications
+            if kind == "reply"
+            else client.get_at_notifications
+        )
         boundary = (state.last_time, state.last_id)
         newest = boundary
         events = []
@@ -127,7 +140,9 @@ class BiliBiliCommentNotifications:
                     newest = max(newest, position)
                     event = self._event(notification, kind, timestamp)
                 except (KeyError, TypeError, ValueError, AttributeError):
-                    self.adapter.logger.warning(f"Bilibili {kind} comment notification skipped: invalid metadata")
+                    self.adapter.logger.warning(
+                        f"Bilibili {kind} comment notification skipped: invalid metadata"
+                    )
                     continue
                 if event is not None and timestamp > self._since_ts:
                     events.append((event, is_new))
@@ -140,7 +155,9 @@ class BiliBiliCommentNotifications:
             visited.add(cursor)
         raise ValueError("Bilibili notification pagination budget exceeded")
 
-    def _event(self, notification: dict[str, Any], kind: str, timestamp: int) -> KiraCommentEvent | None:
+    def _event(
+        self, notification: dict[str, Any], kind: str, timestamp: int
+    ) -> KiraCommentEvent | None:
         item = notification.get("item") or {}
         sender = notification.get("user") or {}
         uid = str(sender.get("mid") or "")
@@ -155,7 +172,13 @@ class BiliBiliCommentNotifications:
         oid = int(item.get("subject_id") or 0)
         comment_id = int(item.get("source_id") or 0)
         text = item.get("source_content")
-        if resource_type is None or oid <= 0 or comment_id <= 0 or not isinstance(text, str) or not text.strip():
+        if (
+            resource_type is None
+            or oid <= 0
+            or comment_id <= 0
+            or not isinstance(text, str)
+            or not text.strip()
+        ):
             return None
         root_id = int(item["root_id"] or 0) or comment_id
         if root_id <= 0:
@@ -165,12 +188,20 @@ class BiliBiliCommentNotifications:
         if resource_type == "dynamic":
             # This ID already identifies the native comment resource, not a dynamic lookup.
             target = FeedItem(
-                ref=resource, kind="post", content=MessageChain(),
-                comment_target=resource, title=item.get("title"), url=item.get("uri"),
+                ref=resource,
+                kind="post",
+                content=MessageChain(),
+                comment_target=resource,
+                title=item.get("title"),
+                url=item.get("uri"),
             )
         root_text = item.get("root_reply_content")
         # The default comment plugin treats root context as the bot's own words.
-        own_root = kind == "reply" and root_id != comment_id and root_id == int(item.get("target_id") or 0)
+        own_root = (
+            kind == "reply"
+            and root_id != comment_id
+            and root_id == int(item.get("target_id") or 0)
+        )
         return KiraCommentEvent(
             platform=self.adapter.info.platform,
             adapter_name=self.adapter.info.name,
@@ -182,5 +213,7 @@ class BiliBiliCommentNotifications:
             comment_content=MessageChain([Text(text)]),
             target=target,
             root_comment_id=root_id,
-            root_comment_content=MessageChain([Text(root_text)]) if own_root and root_text else None,
+            root_comment_content=MessageChain([Text(root_text)])
+            if own_root and root_text
+            else None,
         )

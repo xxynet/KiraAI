@@ -14,9 +14,16 @@ _PROMPT_TEMPLATE_ENV = Environment(autoescape=False, undefined=StrictUndefined)
 
 
 class Prompt:
-    def __init__(self, content: str, name: str | None = None, source: str | None = None,
-                 end: str | None = "\n", persist: bool = True,
-                 render_template: bool = False, **kwargs):
+    def __init__(
+        self,
+        content: str,
+        name: str | None = None,
+        source: str | None = None,
+        end: str | None = "\n",
+        persist: bool = True,
+        render_template: bool = False,
+        **kwargs,
+    ):
         self.name = name
         self.source = source
         self.content = content
@@ -43,10 +50,8 @@ class Prompt:
 
 class PromptManager:
     """Prompt manager, managing all system prompts"""
-    
-    def __init__(self,
-                 kira_config: KiraConfig,
-                 persona_manager: PersonaManager):
+
+    def __init__(self, kira_config: KiraConfig, persona_manager: PersonaManager):
         self.kira_config = kira_config
         self.persona_manager = persona_manager
         self.ada_config_prompt = self.load_ada_config_prompt()
@@ -82,22 +87,65 @@ class PromptManager:
         )
 
         max_tool_loop = self.kira_config.get_config("bot_config.agent.max_tool_loop")
-        max_tool_calls_per_turn = self.kira_config.get_config("bot_config.agent.max_tool_calls_per_turn")
+        max_tool_calls_per_turn = self.kira_config.get_config(
+            "bot_config.agent.max_tool_calls_per_turn"
+        )
         persona = await self.persona_manager.get_persona()
         persona_prompt = persona.content
 
         agent_prompt: list[Prompt] = [
             Prompt(templates["role"], name="role", source="system"),
-            Prompt(templates["persona"], name="persona", source="system", render_template=True, persona=persona_prompt),
+            Prompt(
+                templates["persona"],
+                name="persona",
+                source="system",
+                render_template=True,
+                persona=persona_prompt,
+            ),
             Prompt(templates["attention"], name="attention", source="system"),
-            Prompt(templates["output"], name="output", source="system", render_template=True, max_tool_loop=max_tool_loop, max_tool_calls_per_turn=max_tool_calls_per_turn),
-            Prompt(templates["format"], name="format", source="system", render_template=True),
-            Prompt(templates["accounts"], name="accounts", source="system", render_template=True, accounts=self.ada_config_prompt),
+            Prompt(
+                templates["output"],
+                name="output",
+                source="system",
+                render_template=True,
+                max_tool_loop=max_tool_loop,
+                max_tool_calls_per_turn=max_tool_calls_per_turn,
+            ),
+            Prompt(
+                templates["format"],
+                name="format",
+                source="system",
+                render_template=True,
+            ),
+            Prompt(
+                templates["accounts"],
+                name="accounts",
+                source="system",
+                render_template=True,
+                accounts=self.ada_config_prompt,
+            ),
             Prompt(templates["sessions"], name="sessions", source="system"),
-            Prompt(templates["chat_env"], name="chat_env", source="system", render_template=True, chat_env=chat_env),
-            Prompt(templates["memory"], name="memory", source="system", persona_id=persona.id),
+            Prompt(
+                templates["chat_env"],
+                name="chat_env",
+                source="system",
+                render_template=True,
+                chat_env=chat_env,
+            ),
+            Prompt(
+                templates["memory"],
+                name="memory",
+                source="system",
+                persona_id=persona.id,
+            ),
             Prompt(templates["tools"], name="tools", source="system"),
-            Prompt(templates["time"], name="time", source="system", render_template=True, time_str=formatted_time)
+            Prompt(
+                templates["time"],
+                name="time",
+                source="system",
+                render_template=True,
+                time_str=formatted_time,
+            ),
         ]
         chat_rules = [persona.chat_rules]
         if chat_env.get("chat_type") == "DirectMessage":
@@ -106,5 +154,10 @@ class PromptManager:
             chat_rules.append(persona.group_chat_rules)
         chat_rules_prompt = "\n\n".join(rule for rule in chat_rules if rule)
         if chat_rules_prompt:
-            agent_prompt.insert(2, Prompt(chat_rules_prompt, name="chat_rules", source="system", end="\n\n"))
+            agent_prompt.insert(
+                2,
+                Prompt(
+                    chat_rules_prompt, name="chat_rules", source="system", end="\n\n"
+                ),
+            )
         return agent_prompt

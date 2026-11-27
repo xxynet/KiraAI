@@ -20,7 +20,8 @@ _account_state_lock = Lock()
 
 class TypingSessionState:
     """Reserved state for a typing session."""
-    def __init__(self):
+
+    def __init__(self) -> None:
         self.ticket = None
         self.ticket_context_token = None
         self.refresh_after = 0.0
@@ -40,7 +41,7 @@ class WeixinOCAdapter(BaseAdapter):
     ) -> WeixinOCQRCodeLoginHandler:
         return WeixinOCQRCodeLoginHandler(config)
 
-    def __init__(self, ctx: AdapterContext):
+    def __init__(self, ctx: AdapterContext) -> None:
         super().__init__(ctx)
         self.logger = get_logger(self.info.name, "green")
 
@@ -74,7 +75,9 @@ class WeixinOCAdapter(BaseAdapter):
         )
 
         self.token = str(self.config.get("weixin_oc_token", "")).strip() or None
-        self.account_id = str(self.config.get("weixin_oc_account_id", "")).strip() or None
+        self.account_id = (
+            str(self.config.get("weixin_oc_account_id", "")).strip() or None
+        )
         self._sync_buf = str(self.config.get("weixin_oc_sync_buf", "")).strip()
 
         self.client = WeixinOCClient(
@@ -109,8 +112,12 @@ class WeixinOCAdapter(BaseAdapter):
             permission="im.direct.receive",
             policy=ListAccessPolicy.from_lists(
                 mode if valid_mode else "allow_list",
-                allow_list=allow_list if valid_mode and isinstance(allow_list, list) else [],
-                deny_list=deny_list if valid_mode and isinstance(deny_list, list) else [],
+                allow_list=allow_list
+                if valid_mode and isinstance(allow_list, list)
+                else [],
+                deny_list=deny_list
+                if valid_mode and isinstance(deny_list, list)
+                else [],
             ),
         )
 
@@ -182,7 +189,8 @@ class WeixinOCAdapter(BaseAdapter):
         except Exception as exc:
             self.logger.error(
                 "weixin_oc(%s): failed to save account state: %s",
-                self.info.name, type(exc).__name__,
+                self.info.name,
+                type(exc).__name__,
             )
 
     def _persist_account_state(self, config: dict[str, Any]) -> None:
@@ -197,7 +205,9 @@ class WeixinOCAdapter(BaseAdapter):
                 kira_config.save_config()
                 self.logger.info("weixin_oc(%s): account state saved", self.info.name)
             else:
-                self.logger.warning("weixin_oc(%s): adapter not found in config", self.info.name)
+                self.logger.warning(
+                    "weixin_oc(%s): adapter not found in config", self.info.name
+                )
 
     async def start(self) -> None:
         if self._stop_task and not self._stop_task.done():
@@ -219,7 +229,8 @@ class WeixinOCAdapter(BaseAdapter):
         self._close_task = None
         self._stop_task = None
         self._run_task = asyncio.create_task(
-            self._run_loop(), name=f"weixin-oc:{self.info.name}",
+            self._run_loop(),
+            name=f"weixin-oc:{self.info.name}",
         )
         self._run_task.add_done_callback(self._on_run_done)
         task = self._run_task
@@ -235,7 +246,8 @@ class WeixinOCAdapter(BaseAdapter):
             if exc is not None:
                 self.logger.error(
                     "weixin_oc(%s): run loop failed: %s",
-                    self.info.name, type(exc).__name__,
+                    self.info.name,
+                    type(exc).__name__,
                 )
 
     async def _run_loop(self) -> None:
@@ -252,12 +264,14 @@ class WeixinOCAdapter(BaseAdapter):
                     await self._poll_inbound_updates()
                 except asyncio.TimeoutError:
                     self.logger.debug(
-                        "weixin_oc(%s): inbound long-poll timeout", self.info.name,
+                        "weixin_oc(%s): inbound long-poll timeout",
+                        self.info.name,
                     )
                 except Exception as exc:
                     self.logger.error(
                         "weixin_oc(%s): poll inbound failed, retry in 5s: %s",
-                        self.info.name, type(exc).__name__,
+                        self.info.name,
+                        type(exc).__name__,
                     )
                     await asyncio.sleep(5)
         finally:
@@ -292,7 +306,9 @@ class WeixinOCAdapter(BaseAdapter):
         return self.client
 
     async def send_group_message(
-        self, group_id: AdapterTargetId, send_message_obj: MessageChain,
+        self,
+        group_id: AdapterTargetId,
+        send_message_obj: MessageChain,
     ) -> KiraIMSentResult:
         """Deprecated compatibility wrapper; use the IM capability directly.
 
@@ -301,7 +317,9 @@ class WeixinOCAdapter(BaseAdapter):
         return await self.im.send_group_message(group_id, send_message_obj)
 
     async def send_direct_message(
-        self, user_id: AdapterTargetId, send_message_obj: MessageChain,
+        self,
+        user_id: AdapterTargetId,
+        send_message_obj: MessageChain,
     ) -> KiraIMSentResult:
         """Deprecated compatibility wrapper; use the IM capability directly.
 

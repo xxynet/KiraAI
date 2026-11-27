@@ -77,7 +77,9 @@ class DeepSeekLLMClient(LLMModelClient):
             "model": self.model.model_name,
             "messages": [provider_message_dict(m) for m in request.messages],
             "tools": request.tools if request.tools else NOT_GIVEN,
-            "tool_choice": request.tool_choice if request.tool_choice != "none" else NOT_GIVEN,
+            "tool_choice": request.tool_choice
+            if request.tool_choice != "none"
+            else NOT_GIVEN,
         }
 
         if thinking_enabled:
@@ -95,12 +97,16 @@ class DeepSeekLLMClient(LLMModelClient):
     async def chat(self, request: LLMRequest, **kwargs) -> LLMResponse:
         async with self._build_client() as client:
             messages = await resolve_media_references(request.messages)
-            request_kwargs = self._build_request_kwargs(request, messages=messages, **kwargs)
+            request_kwargs = self._build_request_kwargs(
+                request, messages=messages, **kwargs
+            )
 
             start_time = time.perf_counter()
             response = await client.chat.completions.create(**request_kwargs)
             if not isinstance(getattr(response, "choices", None), list):
-                raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
+                raise ProviderAPIError(
+                    f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}"
+                )
             end_time = time.perf_counter()
 
         llm_resp = LLMResponse("")
@@ -113,14 +119,16 @@ class DeepSeekLLMClient(LLMModelClient):
             if message.tool_calls:
                 for tool_call in message.tool_calls:
                     name = tool_call.function.name
-                    llm_resp.tool_calls.append({
-                        "id": tool_call.id,
-                        "type": "function",
-                        "function": {
-                            "name": name,
-                            "arguments": tool_call.function.arguments
+                    llm_resp.tool_calls.append(
+                        {
+                            "id": tool_call.id,
+                            "type": "function",
+                            "function": {
+                                "name": name,
+                                "arguments": tool_call.function.arguments,
+                            },
                         }
-                    })
+                    )
 
             content = message.content if message.content else ""
             # DeepSeek returns reasoning_content alongside content
@@ -132,12 +140,15 @@ class DeepSeekLLMClient(LLMModelClient):
                 llm_resp.input_tokens = response.usage.prompt_tokens
                 llm_resp.output_tokens = response.usage.completion_tokens
                 # DeepSeek cache hit tokens
-                llm_resp.cached_tokens = getattr(response.usage, "prompt_cache_hit_tokens", None)
+                llm_resp.cached_tokens = getattr(
+                    response.usage, "prompt_cache_hit_tokens", None
+                )
 
         return llm_resp
 
-
-    async def chat_stream(self, request: LLMRequest, **kwargs) -> AsyncGenerator[LLMStreamChunk, None]:
+    async def chat_stream(
+        self, request: LLMRequest, **kwargs
+    ) -> AsyncGenerator[LLMStreamChunk, None]:
         async with self._build_client() as client:
             messages = await resolve_media_references(request.messages)
             request_kwargs = self._build_request_kwargs(
@@ -147,10 +158,14 @@ class DeepSeekLLMClient(LLMModelClient):
 
             stream = await client.chat.completions.create(**request_kwargs)
             if not hasattr(stream, "__aiter__"):
-                raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(stream).__name__}): {stream!r}")
+                raise ProviderAPIError(
+                    f"Invalid OpenAI-compatible API response ({type(stream).__name__}): {stream!r}"
+                )
             async for event in stream:
                 if not isinstance(getattr(event, "choices", None), list):
-                    raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(event).__name__}): {event!r}")
+                    raise ProviderAPIError(
+                        f"Invalid OpenAI-compatible API response ({type(event).__name__}): {event!r}"
+                    )
                 # Usage-only event (sent by OpenAI API after the final choice chunk)
                 if not event.choices:
                     if event.usage:
@@ -159,7 +174,9 @@ class DeepSeekLLMClient(LLMModelClient):
                             usage={
                                 "input_tokens": event.usage.prompt_tokens,
                                 "output_tokens": event.usage.completion_tokens,
-                                "cached_tokens": getattr(event.usage, "prompt_cache_hit_tokens", None),
+                                "cached_tokens": getattr(
+                                    event.usage, "prompt_cache_hit_tokens", None
+                                ),
                             },
                         )
                     continue
@@ -186,8 +203,12 @@ class DeepSeekLLMClient(LLMModelClient):
                             "id": tc.id or "",
                             "type": "function",
                             "function": {
-                                "name": tc.function.name if tc.function and tc.function.name else "",
-                                "arguments": tc.function.arguments if tc.function and tc.function.arguments else "",
+                                "name": tc.function.name
+                                if tc.function and tc.function.name
+                                else "",
+                                "arguments": tc.function.arguments
+                                if tc.function and tc.function.arguments
+                                else "",
                             },
                         }
                         chunk.tool_calls_delta.append(fragment)
@@ -276,7 +297,9 @@ class DeepSeekSTTClient(STTModelClient):
         else:
             raise ValueError("DeepSeek ASR requires 16-bit PCM WAV or Ogg Opus audio")
 
-        response = await _post_audio_tool(self.model, "asr", files={"file": (filename, audio, mime)})
+        response = await _post_audio_tool(
+            self.model, "asr", files={"file": (filename, audio, mime)}
+        )
         result = response.json()
         if not isinstance(result, dict) or not isinstance(result.get("text"), str):
             raise ProviderAPIError("DeepSeek ASR response is missing transcript text")
@@ -292,7 +315,9 @@ class DeepSeekTTSClient(TTSModelClient):
         payload = {
             "text": text,
             "voice_id": kwargs.get("voice_id", config.get("voice_id", "stella")),
-            "filter_markdown": kwargs.get("filter_markdown", config.get("filter_markdown", True)),
+            "filter_markdown": kwargs.get(
+                "filter_markdown", config.get("filter_markdown", True)
+            ),
             "format": "wav",
         }
         response = await _post_audio_tool(self.model, "tts", json=payload)
@@ -300,4 +325,8 @@ class DeepSeekTTSClient(TTSModelClient):
             raise ProviderAPIError("DeepSeek TTS response did not contain WAV audio")
 
         audio = await asyncio.to_thread(base64.b64encode, response.content)
-        return Record(record=f"base64://{audio.decode('ascii')}", name="speech.wav", mime="audio/wav")
+        return Record(
+            record=f"base64://{audio.decode('ascii')}",
+            name="speech.wav",
+            mime="audio/wav",
+        )

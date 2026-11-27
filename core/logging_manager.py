@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import re
 import sys
@@ -12,9 +13,9 @@ from colorlog.escape_codes import escape_codes
 
 from core.utils.path_utils import get_data_path
 
-sys.stdout.reconfigure(encoding='utf-8')
+sys.stdout.reconfigure(encoding="utf-8")
 
-escape_codes['orange'] = '\033[38;5;208m'  # 208 是接近橙色的 ANSI 256 色编号
+escape_codes["orange"] = "\033[38;5;208m"  # 208 是接近橙色的 ANSI 256 色编号
 
 logger_color_mapping = {}
 
@@ -39,14 +40,14 @@ _LOG_CONTROL_TRANSLATION = {
     for code in (
         0x05,  # ENQ: terminal answerback query.
         0x07,  # BEL: terminal bell.
-        0x1b,  # ESC: seven-bit terminal sequence introducer.
+        0x1B,  # ESC: seven-bit terminal sequence introducer.
         0x90,  # DCS: device control string.
         0x98,  # SOS: start of string.
-        0x9a,  # DECID: terminal identification query.
-        0x9b,  # CSI: control sequence introducer.
-        0x9d,  # OSC: operating system command.
-        0x9e,  # PM: privacy message.
-        0x9f,  # APC: application program command.
+        0x9A,  # DECID: terminal identification query.
+        0x9B,  # CSI: control sequence introducer.
+        0x9D,  # OSC: operating system command.
+        0x9E,  # PM: privacy message.
+        0x9F,  # APC: application program command.
     )
 }
 
@@ -114,30 +115,32 @@ class LogCacheManager:
         name = _escape_log_controls(name)
         message = _escape_log_controls(message)
         # Add to cache
-        self.log_cache.append({
-            "time": time,
-            "level": level,
-            "name": name,
-            "message": message,
-            "color": color
-        })
-        
+        self.log_cache.append(
+            {
+                "time": time,
+                "level": level,
+                "name": name,
+                "message": message,
+                "color": color,
+            }
+        )
+
         # Send to all queues
         for que in self.queues:
-            try:
-                que.put_nowait({
-                    "time": time,
-                    "level": level,
-                    "name": name,
-                    "message": message,
-                    "color": color
-                })
-            except Exception:
-                pass
+            with contextlib.suppress(Exception):
+                que.put_nowait(
+                    {
+                        "time": time,
+                        "level": level,
+                        "name": name,
+                        "message": message,
+                        "color": color,
+                    }
+                )
 
 
 class LogQueueHandler(logging.Handler):
-    def __init__(self, log_cache_mgr: LogCacheManager):
+    def __init__(self, log_cache_mgr: LogCacheManager) -> None:
         super().__init__()
         self.log_cache_mgr = log_cache_mgr
 
@@ -150,7 +153,7 @@ class LogQueueHandler(logging.Handler):
             record.levelname,
             record.name,
             message,
-            logger_color_mapping.get(record.name, "blue")
+            logger_color_mapping.get(record.name, "blue"),
         )
 
 
@@ -182,17 +185,26 @@ def _get_shared_file_handler() -> RotatingFileHandler:
     if _shared_file_handler is None:
         log_file = _log_file_path or f"{get_data_path()}/log.log"
         _shared_file_handler = RotatingFileHandler(
-            filename=log_file, maxBytes=_log_file_max_size * 1024 * 1024, backupCount=5, encoding='utf-8'
+            filename=log_file,
+            maxBytes=_log_file_max_size * 1024 * 1024,
+            backupCount=5,
+            encoding="utf-8",
         )
         _shared_file_handler.setLevel(logging.DEBUG)
-        _shared_file_handler.setFormatter(_SafeFormatter(
-            '%(asctime)s %(levelname)-8s [%(name)s] %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        ))
+        _shared_file_handler.setFormatter(
+            _SafeFormatter(
+                "%(asctime)s %(levelname)-8s [%(name)s] %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
+        )
     return _shared_file_handler
 
 
-def setup_logging(log_level: str = "INFO", log_file_path: str | None = None, log_file_max_size: int = 10):
+def setup_logging(
+    log_level: str = "INFO",
+    log_file_path: str | None = None,
+    log_file_max_size: int = 10,
+):
     """Called once after config is loaded to apply logging settings."""
     global _log_level, _log_file_path, _log_file_max_size, _shared_file_handler
 
@@ -217,24 +229,31 @@ def setup_logging(log_level: str = "INFO", log_file_path: str | None = None, log
     max_bytes = _log_file_max_size * 1024 * 1024
 
     # Replace shared file handler if path or size changed
-    if _shared_file_handler is not None:
-        if _shared_file_handler.baseFilename != log_file or _shared_file_handler.maxBytes != max_bytes:
-            old = _shared_file_handler
-            old.close()
-            _shared_file_handler = RotatingFileHandler(
-                filename=log_file, maxBytes=max_bytes, backupCount=5, encoding='utf-8'
-            )
-            _shared_file_handler.setLevel(logging.DEBUG)
-            _shared_file_handler.setFormatter(old.formatter)
+    if _shared_file_handler is not None and (
+        _shared_file_handler.baseFilename != log_file
+        or _shared_file_handler.maxBytes != max_bytes
+    ):
+        old = _shared_file_handler
+        old.close()
+        _shared_file_handler = RotatingFileHandler(
+            filename=log_file, maxBytes=max_bytes, backupCount=5, encoding="utf-8"
+        )
+        _shared_file_handler.setLevel(logging.DEBUG)
+        _shared_file_handler.setFormatter(old.formatter)
 
     for name in _created_by_get_logger:
         logger = logging.getLogger(name)
         for handler in logger.handlers[:]:
             # Remove any per-logger RotatingFileHandler from the old pattern
-            if isinstance(handler, RotatingFileHandler) and handler is not _shared_file_handler:
+            if (
+                isinstance(handler, RotatingFileHandler)
+                and handler is not _shared_file_handler
+            ):
                 handler.close()
                 logger.removeHandler(handler)
-            elif isinstance(handler, logging.StreamHandler) and not isinstance(handler, LogQueueHandler):
+            elif isinstance(handler, logging.StreamHandler) and not isinstance(
+                handler, LogQueueHandler
+            ):
                 handler.setLevel(level)
 
         # Ensure the shared handler is attached
@@ -255,18 +274,18 @@ def get_logger(name: str, color: str):
     logger.setLevel(logging.DEBUG)
     logger.propagate = False  # 不传播到上级 logger
     console_formatter = _SafeColoredFormatter(
-        '%(blue)s%(asctime)s%(reset)s %(log_color)s%(levelname)-8s%(reset)s'
-        f'%({color})s[%(name)s]%(reset)s %({color})s%(message)s%(reset)s',
-        datefmt='%Y-%m-%d %H:%M:%S',
+        "%(blue)s%(asctime)s%(reset)s %(log_color)s%(levelname)-8s%(reset)s"
+        f"%({color})s[%(name)s]%(reset)s %({color})s%(message)s%(reset)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
         log_colors={
-            'DEBUG': 'cyan',
-            'INFO': 'bold_green',
-            'WARNING': 'bold_yellow',
-            'ERROR': 'bold_red',
-            'CRITICAL': 'bold_red,bg_white',
+            "DEBUG": "cyan",
+            "INFO": "bold_green",
+            "WARNING": "bold_yellow",
+            "ERROR": "bold_red",
+            "CRITICAL": "bold_red,bg_white",
         },
         secondary_log_colors={},
-        style='%'
+        style="%",
     )
 
     level = _LEVEL_MAP.get(_log_level.upper(), logging.INFO)
@@ -279,7 +298,7 @@ def get_logger(name: str, color: str):
 
     qh = LogQueueHandler(log_cache_manager)
     qh.setLevel(logging.DEBUG)
-    qh.setFormatter(_SafeFormatter(datefmt='%Y-%m-%d %H:%M:%S'))
+    qh.setFormatter(_SafeFormatter(datefmt="%Y-%m-%d %H:%M:%S"))
     qh.addFilter(GetLoggerFilter(_created_by_get_logger))
 
     logger.addHandler(ch)
@@ -298,7 +317,10 @@ def inspect_rotated_logs(*, delete: bool = False) -> dict[str, int]:
         active = Path(handler.baseFilename)
         pattern = re.compile(re.escape(active.name) + r"\.[1-9][0-9]*")
         return inspect_files(
-            active.parent, float("inf"), delete=delete, recursive=False,
+            active.parent,
+            float("inf"),
+            delete=delete,
+            recursive=False,
             include=lambda path: pattern.fullmatch(path.name) is not None,
         )
     finally:

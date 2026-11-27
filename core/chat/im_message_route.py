@@ -25,7 +25,7 @@ class IMMessageRoute:
         delivery: MessageDeliveryService,
         adapter_mgr: AdapterManager,
         workflow: IMWorkflow,
-    ):
+    ) -> None:
         self.delivery = delivery
         self.adapter_mgr = adapter_mgr
         self.workflow = workflow
@@ -49,8 +49,12 @@ class IMMessageRoute:
             await self.workflow.handle_batch_event(message)
 
     async def send_message_chain(
-        self, session: Session, chain: MessageChain, *,
-        memory_message: OpenAIMessage | None = None, bot: User | None = None,
+        self,
+        session: Session,
+        chain: MessageChain,
+        *,
+        memory_message: OpenAIMessage | None = None,
+        bot: User | None = None,
     ) -> KiraIMSentResult:
         """Keep outgoing archival, bot identity, and adapter results unchanged."""
         return await self.delivery.send_message_chain(

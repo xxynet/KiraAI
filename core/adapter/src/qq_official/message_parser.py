@@ -20,7 +20,11 @@ MAX_IDENTITIES = 4096
 
 
 def field(value: Any, name: str, default: Any = None) -> Any:
-    return value.get(name, default) if isinstance(value, dict) else getattr(value, name, default)
+    return (
+        value.get(name, default)
+        if isinstance(value, dict)
+        else getattr(value, name, default)
+    )
 
 
 def scene_value(message: Any, name: str) -> str:
@@ -49,7 +53,15 @@ def _face_text(match: re.Match) -> str:
         encoded = match[1] + "=" * (-len(match[1]) % 4)
         data = json.loads(base64.b64decode(encoded, validate=True).decode("utf-8"))
         if isinstance(data, dict):
-            for key in ("text", "name", "desc", "description", "prompt", "summary", "title"):
+            for key in (
+                "text",
+                "name",
+                "desc",
+                "description",
+                "prompt",
+                "summary",
+                "title",
+            ):
                 value = data.get(key)
                 if isinstance(value, str) and value.strip():
                     return f"[Emoji: {value.strip()[:128]}]"
@@ -59,7 +71,7 @@ def _face_text(match: re.Match) -> str:
 
 
 class QQOfficialMessageParser:
-    def __init__(self):
+    def __init__(self) -> None:
         self._names: OrderedDict[tuple[bool, str, str], str] = OrderedDict()
         self._self_ids: OrderedDict[tuple[bool, str], str] = OrderedDict()
 
@@ -70,14 +82,18 @@ class QQOfficialMessageParser:
         while len(cache) > MAX_IDENTITIES:
             cache.popitem(last=False)
 
-    def nickname(self, is_group: bool, target_id: str, author: Any, user_id: str) -> str:
+    def nickname(
+        self, is_group: bool, target_id: str, author: Any, user_id: str
+    ) -> str:
         key = (is_group, target_id, user_id)
         name = field(author, "username")
         if isinstance(name, str) and name.strip():
             self._remember(self._names, key, name.strip())
         return self._names.get(key, user_id)
 
-    def self_ids(self, message: Any, is_group: bool, target_id: str, robot_id: str) -> set[str]:
+    def self_ids(
+        self, message: Any, is_group: bool, target_id: str, robot_id: str
+    ) -> set[str]:
         key = (is_group, target_id)
         mentions = field(message, "mentions", [])
         if isinstance(mentions, list):
@@ -95,7 +111,9 @@ class QQOfficialMessageParser:
                 if field(mention, "is_you") is True or uid in self_ids:
                     return True
         content = field(message, "content", "")
-        if isinstance(content, str) and any((m[1] or m[2]) in self_ids for m in AT_MARKUP.finditer(content)):
+        if isinstance(content, str) and any(
+            (m[1] or m[2]) in self_ids for m in AT_MARKUP.finditer(content)
+        ):
             return True
         if str(field(message, "message_type", "")) == "103":
             elements = field(message, "msg_elements", [])
@@ -105,7 +123,9 @@ class QQOfficialMessageParser:
                 return bool(uid and uid in self_ids)
         return False
 
-    def content_elements(self, message: Any, is_group: bool, target_id: str) -> list[Any]:
+    def content_elements(
+        self, message: Any, is_group: bool, target_id: str
+    ) -> list[Any]:
         elements: list[Any] = []
         content = field(message, "content")
         mentions = field(message, "mentions", [])
@@ -120,7 +140,7 @@ class QQOfficialMessageParser:
             position = 0
             for match in AT_MARKUP.finditer(content):
                 if match.start() > position:
-                    elements.append(Text(content[position:match.start()]))
+                    elements.append(Text(content[position : match.start()]))
                 uid = match[1] or match[2]
                 name = names.get(uid) or self._names.get((is_group, target_id, uid))
                 elements.append(At(uid, name))
@@ -132,8 +152,15 @@ class QQOfficialMessageParser:
             fields = ark.get("fields")
             fields = fields if isinstance(fields, dict) else {}
             parts = [ark.get("ark_name") or ark.get("ark_type")]
-            parts.extend(fields.get(key) or ark.get(key) for key in ("title", "desc", "prompt", "jump_url", "address"))
-            summary = " - ".join(dict.fromkeys(p.strip() for p in parts if isinstance(p, str) and p.strip()))
+            parts.extend(
+                fields.get(key) or ark.get(key)
+                for key in ("title", "desc", "prompt", "jump_url", "address")
+            )
+            summary = " - ".join(
+                dict.fromkeys(
+                    p.strip() for p in parts if isinstance(p, str) and p.strip()
+                )
+            )
             elements.append(Text(f"[Card: {summary}]" if summary else "[Card]"))
         attachments = field(message, "attachments", [])
         for attachment in attachments if isinstance(attachments, list) else []:
@@ -143,27 +170,54 @@ class QQOfficialMessageParser:
                 if isinstance(transcript, str) and transcript.strip():
                     elements.append(Text(f"[Voice: {transcript.strip()}]"))
                     continue
-            url = field(attachment, "voice_wav_url") if content_type == "voice" else None
+            url = (
+                field(attachment, "voice_wav_url") if content_type == "voice" else None
+            )
             url = url or field(attachment, "url")
             if not isinstance(url, str) or not url:
                 continue
             name = field(attachment, "filename")
             name = name if isinstance(name, str) else None
             guessed_mime = mimetypes.guess_type(name or "")[0] or ""
-            mime = guessed_mime if content_type in {"", "application/octet-stream", "binary/octet-stream"} else content_type
+            mime = (
+                guessed_mime
+                if content_type
+                in {"", "application/octet-stream", "binary/octet-stream"}
+                else content_type
+            )
             suffix = Path(name or "").suffix.lower()
             try:
                 if content_type == "voice":
-                    mime = "audio/wav" if field(attachment, "voice_wav_url") else "audio/silk"
+                    mime = (
+                        "audio/wav"
+                        if field(attachment, "voice_wav_url")
+                        else "audio/silk"
+                    )
                     elements.append(Record(url, name=name, mime=mime))
                 elif mime.startswith("image/"):
                     elements.append(Image(url, name=name, mime=mime))
-                elif mime.startswith("audio/") or suffix in {".amr", ".silk", ".ogg", ".mp3", ".wav", ".m4a", ".aac", ".flac"}:
+                elif mime.startswith("audio/") or suffix in {
+                    ".amr",
+                    ".silk",
+                    ".ogg",
+                    ".mp3",
+                    ".wav",
+                    ".m4a",
+                    ".aac",
+                    ".flac",
+                }:
                     elements.append(Record(url, name=name, mime=mime or None))
                 elif mime.startswith("video/"):
                     elements.append(Video(url, name=name, mime=mime))
                 else:
-                    elements.append(File(url, name=name, size=str(field(attachment, "size", "") or "") or None, mime=mime or None))
+                    elements.append(
+                        File(
+                            url,
+                            name=name,
+                            size=str(field(attachment, "size", "") or "") or None,
+                            mime=mime or None,
+                        )
+                    )
             except ValueError:
                 elements.append(Text("[Attachment]"))
         return elements

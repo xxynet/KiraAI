@@ -7,6 +7,7 @@ over to KiraLauncher.
 
 import argparse
 import asyncio
+import contextlib
 import os
 import signal
 
@@ -48,13 +49,11 @@ def _install_child_signal_handlers() -> None:
         sig = getattr(signal, name, None)
         if sig is None:
             continue
-        try:
+        with contextlib.suppress(ValueError, OSError):
             signal.signal(sig, _on_stop)
-        except (ValueError, OSError):
-            pass  # not the main thread / unsupported platform
 
 
-def run_child(args: argparse.Namespace):
+def run_child(args: argparse.Namespace) -> None:
     """Run the actual application (called in the child process)."""
     _install_child_signal_handlers()
 
@@ -71,6 +70,7 @@ def run_child(args: argparse.Namespace):
         os.makedirs(get_data_path() / folder, exist_ok=True)
 
     from core.logging_manager import get_logger
+
     logger = get_logger("launcher", "blue")
 
     for logo_line in kira_logo.split("\n"):
@@ -91,7 +91,5 @@ def run_child(args: argparse.Namespace):
         disable_webui_auth=args.disable_webui_auth,
     )
 
-    try:
+    with contextlib.suppress(KeyboardInterrupt):
         asyncio.run(launcher.start())
-    except KeyboardInterrupt:
-        pass

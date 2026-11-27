@@ -167,10 +167,17 @@ time_tmpl = """\
 # The legacy module-level names above are Chinese templates and remain public
 # for compatibility with existing imports.
 zh_templates = {
-    "role": role_tmpl, "persona": persona_tmpl, "attention": attention_tmpl,
-    "output": output_tmpl, "format": format_tmpl, "accounts": accounts_tmpl,
-    "sessions": sessions_tmpl, "chat_env": chat_env_tmpl, "memory": memory_tmpl,
-    "tools": tools_tmpl, "time": time_tmpl,
+    "role": role_tmpl,
+    "persona": persona_tmpl,
+    "attention": attention_tmpl,
+    "output": output_tmpl,
+    "format": format_tmpl,
+    "accounts": accounts_tmpl,
+    "sessions": sessions_tmpl,
+    "chat_env": chat_env_tmpl,
+    "memory": memory_tmpl,
+    "tools": tools_tmpl,
+    "time": time_tmpl,
 }
 
 en_templates = {

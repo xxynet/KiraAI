@@ -18,7 +18,9 @@ from .model_identity import (
     validate_model_names,
 )
 
-LEGACY_MODEL_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "https://kira-ai.top/model-identity/v1")
+LEGACY_MODEL_NAMESPACE = uuid.uuid5(
+    uuid.NAMESPACE_URL, "https://kira-ai.top/model-identity/v1"
+)
 
 
 def migrate_provider_models(provider: dict) -> bool:
@@ -37,7 +39,9 @@ def migrate_provider_models(provider: dict) -> bool:
     if not isinstance(groups, dict):
         raise ValueError("Invalid model configuration")
     migrated = {}
-    reserved_ids = {key for models in groups.values() if isinstance(models, dict) for key in models}
+    reserved_ids = {
+        key for models in groups.values() if isinstance(models, dict) for key in models
+    }
     for kind, models in groups.items():
         if not isinstance(models, dict):
             raise ValueError("Invalid model configuration group")
@@ -95,17 +99,26 @@ def migrate_model_select_fields(config: dict, fields, providers: dict) -> bool:
         value = config.get(field.key)
         if isinstance(field, SectionField):
             if isinstance(value, dict):
-                changed = migrate_model_select_fields(value, field.fields, providers) or changed
-        elif field.type == ConfigType.ModelSelect or getattr(field, "source", None) == "model":
+                changed = (
+                    migrate_model_select_fields(value, field.fields, providers)
+                    or changed
+                )
+        elif (
+            field.type == ConfigType.ModelSelect
+            or getattr(field, "source", None) == "model"
+        ):
             kind = getattr(field, "model_type", None) or "llm"
             if isinstance(value, list):
-                normalized = [resolve_model_reference(providers, item, kind) for item in value]
+                normalized = [
+                    resolve_model_reference(providers, item, kind) for item in value
+                ]
             else:
                 normalized = resolve_model_reference(providers, value, kind)
             if normalized != value:
                 config[field.key] = normalized
                 changed = True
     return changed
+
 
 def _back_up_config(path: Path):
     backup_path = path.with_name(path.name + ".model-identity-v1.bak")
@@ -114,8 +127,11 @@ def _back_up_config(path: Path):
     temporary_path = None
     try:
         with tempfile.NamedTemporaryFile(
-            mode="wb", dir=path.parent,
-            prefix=".model_backup-", suffix=".tmp", delete=False,
+            mode="wb",
+            dir=path.parent,
+            prefix=".model_backup-",
+            suffix=".tmp",
+            delete=False,
         ) as backup:
             temporary_path = backup.name
             with path.open("rb") as original:
@@ -133,8 +149,12 @@ def write_migrated_model_config(path: Path, config: dict):
     temporary_path = None
     try:
         with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", dir=path.parent,
-            prefix=f".{path.stem}-", suffix=".tmp", delete=False,
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.stem}-",
+            suffix=".tmp",
+            delete=False,
         ) as f:
             temporary_path = f.name
             json.dump(config, f, indent=4, ensure_ascii=False)

@@ -13,10 +13,10 @@ class ModelScopeProvider(BaseProvider):
     models = {
         ModelType.LLM: ModelScopeLLMClient,
         ModelType.IMAGE: ModelScopeImageClient,
-        ModelType.EMBEDDING: ModelScopeEmbeddingClient
+        ModelType.EMBEDDING: ModelScopeEmbeddingClient,
     }
 
-    def __init__(self, provider_id, provider_name, provider_config):
+    def __init__(self, provider_id, provider_name, provider_config) -> None:
         super().__init__(provider_id, provider_name, provider_config)
 
     async def get_llm_list(self) -> list[dict]:
@@ -36,9 +36,11 @@ class ModelScopeProvider(BaseProvider):
             model_id = item.get("id", "")
             if not model_id:
                 continue
-            models.append({
-                "id": model_id,
-                "name": item.get("name", model_id),
-                "description": item.get("description", ""),
-            })
+            models.append(
+                {
+                    "id": model_id,
+                    "name": item.get("name", model_id),
+                    "description": item.get("description", ""),
+                }
+            )
         return models

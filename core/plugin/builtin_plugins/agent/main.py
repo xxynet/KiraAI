@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import json
 import os
 import posixpath
@@ -46,30 +47,96 @@ LEGACY_KEY_LOCATIONS = {
 }
 LEGACY_EXTRA_PATH_KEYS = ("extra_read_paths", "extra_write_paths")
 
-restricted_paths = ['~/.ssh/', '~/.gnupg/', '~/.aws/', '~/.config/gh/', '.pem',
-                    '.p12', 'key', 'secret', 'password', 'token', 'credential']
+restricted_paths = [
+    "~/.ssh/",
+    "~/.gnupg/",
+    "~/.aws/",
+    "~/.config/gh/",
+    ".pem",
+    ".p12",
+    "key",
+    "secret",
+    "password",
+    "token",
+    "credential",
+]
 
-blocked_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg',
-                      '.mp3', '.mp4', '.wav', '.ogg', '.flac', '.aac', '.silk', '.slk',
-                      '.slac', '.amr', '.avi', '.mkv', '.mov', '.flv', '.wmv',
-                      '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.exe', '.bin',
-                      '.dll', '.so', '.dylib', '.pdf', '.doc', '.docx', '.xls', '.xlsx',
-                      '.ppt', '.pptx', '.iso', '.img', '.dmg'}
+blocked_extensions = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".bmp",
+    ".webp",
+    ".svg",
+    ".mp3",
+    ".mp4",
+    ".wav",
+    ".ogg",
+    ".flac",
+    ".aac",
+    ".silk",
+    ".slk",
+    ".slac",
+    ".amr",
+    ".avi",
+    ".mkv",
+    ".mov",
+    ".flv",
+    ".wmv",
+    ".zip",
+    ".rar",
+    ".7z",
+    ".tar",
+    ".gz",
+    ".bz2",
+    ".exe",
+    ".bin",
+    ".dll",
+    ".so",
+    ".dylib",
+    ".pdf",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".ppt",
+    ".pptx",
+    ".iso",
+    ".img",
+    ".dmg",
+}
 
 # Raster image formats read_file can serve to the LLM (compression and VLM
 # both handle these). SVG stays blocked: it is text-based and neither the
 # image compressor nor vision models treat it as a raster image.
-readable_image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'}
+readable_image_extensions = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}
 
 # Audio formats read_file transcribes via the default STT model, mirroring the
 # voice-recognition set of the chat adapters (which also accepts .m4a, so it is
 # routed here even though it is not in blocked_extensions).
-readable_audio_extensions = {'.mp3', '.wav', '.ogg', '.flac', '.aac', '.m4a',
-                             '.amr', '.silk', '.slk', '.slac'}
+readable_audio_extensions = {
+    ".mp3",
+    ".wav",
+    ".ogg",
+    ".flac",
+    ".aac",
+    ".m4a",
+    ".amr",
+    ".silk",
+    ".slk",
+    ".slac",
+}
 
 ALL_TOOL_NAMES = [
-    "read_file", "write_file", "edit_file", "list_files", "grep", "search_files",
-    "exec", "manage_background_exec",
+    "read_file",
+    "write_file",
+    "edit_file",
+    "list_files",
+    "grep",
+    "search_files",
+    "exec",
+    "manage_background_exec",
 ]
 PROCESS_TERMINATION_GRACE_SECONDS = 5
 
@@ -96,8 +163,8 @@ class AgentPlugin(BasePlugin):
     Gives the AI agent-style access to the local environment: file operations
     and shell command execution, both guarded by session and path permissions.
     """
-    
-    def __init__(self, ctx, cfg: dict):
+
+    def __init__(self, ctx, cfg: dict) -> None:
         super().__init__(ctx, cfg)
         self.file_permission_mode = ALLOW_LIST
         self.file_sessions = []
@@ -113,7 +180,7 @@ class AgentPlugin(BasePlugin):
         self._background_exec_tasks: dict[str, BackgroundExecTask] = {}
         self._background_notice_tasks: set[asyncio.Task] = set()
 
-    async def initialize(self):
+    async def initialize(self) -> None:
         self._migrate_legacy_config()
 
         file_access = self._config_section("file_access")
@@ -264,7 +331,9 @@ class AgentPlugin(BasePlugin):
             try:
                 legacy_path.unlink()
             except OSError as e:
-                logger.warning(f"Failed to remove migrated legacy config {legacy_path}: {e}")
+                logger.warning(
+                    f"Failed to remove migrated legacy config {legacy_path}: {e}"
+                )
             logger.info(
                 f"Migrated {len(legacy_cfg)} setting(s) from {legacy_path.name} "
                 f"into the {PLUGIN_ID} plugin config"
@@ -285,7 +354,9 @@ class AgentPlugin(BasePlugin):
             return None
 
         if not isinstance(legacy_cfg, dict):
-            logger.warning(f"Ignoring legacy plugin config {legacy_path}: not a JSON object")
+            logger.warning(
+                f"Ignoring legacy plugin config {legacy_path}: not a JSON object"
+            )
             return None
 
         return legacy_cfg
@@ -359,7 +430,9 @@ class AgentPlugin(BasePlugin):
     def get_disabled_tool_names(self) -> set[str]:
         """Return agent tool names disabled by the plugin's enabled_tools config."""
         tools_cfg = self.plugin_cfg.get("tools")
-        enabled = tools_cfg.get("enabled_tools") if isinstance(tools_cfg, dict) else None
+        enabled = (
+            tools_cfg.get("enabled_tools") if isinstance(tools_cfg, dict) else None
+        )
         if enabled is None:
             enabled = ALL_TOOL_NAMES
         enabled = set(enabled)
@@ -390,7 +463,11 @@ class AgentPlugin(BasePlugin):
             notice_task.cancel()
 
         await asyncio.gather(
-            *(task.execution_task for task in background_tasks if task.execution_task is not None),
+            *(
+                task.execution_task
+                for task in background_tasks
+                if task.execution_task is not None
+            ),
             *notice_tasks,
             return_exceptions=True,
         )
@@ -405,23 +482,33 @@ class AgentPlugin(BasePlugin):
     ) -> str:
         try:
             if os.name == "nt":
-                result = await run_windows_shell_command(shell_command, exec_timeout, env, exec_work_dir)
+                result = await run_windows_shell_command(
+                    shell_command, exec_timeout, env, exec_work_dir
+                )
             else:
                 result = await asyncio.to_thread(
                     subprocess.run,
-                    shell_command, shell=True, capture_output=True, check=False,
+                    shell_command,
+                    shell=True,
+                    capture_output=True,
+                    check=False,
                     stdin=subprocess.DEVNULL,
-                    timeout=exec_timeout, env=env, cwd=exec_work_dir,
-                    encoding='utf-8', errors='replace',
+                    timeout=exec_timeout,
+                    env=env,
+                    cwd=exec_work_dir,
+                    encoding="utf-8",
+                    errors="replace",
                 )
-            output = (result.stdout or '') + (result.stderr or '')
+            output = (result.stdout or "") + (result.stderr or "")
             if result.returncode == 0:
-                return f'Shell command output:\n{output}'
-            return f'Shell command failed (exit {result.returncode}):\n{output}'
+                return f"Shell command output:\n{output}"
+            return f"Shell command failed (exit {result.returncode}):\n{output}"
         except subprocess.TimeoutExpired:
-            return f'Shell command timed out after {exec_timeout} seconds: {shell_command}'
+            return (
+                f"Shell command timed out after {exec_timeout} seconds: {shell_command}"
+            )
         except Exception as e:
-            return f'Unexpected error while executing shell command: {e}'
+            return f"Unexpected error while executing shell command: {e}"
 
     @staticmethod
     async def _read_background_output(
@@ -431,7 +518,9 @@ class AgentPlugin(BasePlugin):
         if stream is None:
             return
         while chunk := await stream.read(4096):
-            background_task.output_chunks.append(chunk.decode("utf-8", errors="replace"))
+            background_task.output_chunks.append(
+                chunk.decode("utf-8", errors="replace")
+            )
 
     @staticmethod
     async def _terminate_background_process(process: asyncio.subprocess.Process | None):
@@ -441,12 +530,18 @@ class AgentPlugin(BasePlugin):
         try:
             if os.name == "nt":
                 killer = await asyncio.create_subprocess_exec(
-                    "taskkill", "/PID", str(process.pid), "/T", "/F",
+                    "taskkill",
+                    "/PID",
+                    str(process.pid),
+                    "/T",
+                    "/F",
                     stdin=asyncio.subprocess.DEVNULL,
                     stdout=asyncio.subprocess.DEVNULL,
                     stderr=asyncio.subprocess.DEVNULL,
                 )
-                await asyncio.wait_for(killer.wait(), timeout=PROCESS_TERMINATION_GRACE_SECONDS)
+                await asyncio.wait_for(
+                    killer.wait(), timeout=PROCESS_TERMINATION_GRACE_SECONDS
+                )
                 if killer.returncode != 0 and process.returncode is None:
                     logger.warning(
                         f"taskkill failed for background process {process.pid} "
@@ -460,7 +555,9 @@ class AgentPlugin(BasePlugin):
                 process.kill()
 
         try:
-            await asyncio.wait_for(process.wait(), timeout=PROCESS_TERMINATION_GRACE_SECONDS)
+            await asyncio.wait_for(
+                process.wait(), timeout=PROCESS_TERMINATION_GRACE_SECONDS
+            )
         except asyncio.TimeoutError:
             if os.name == "nt":
                 logger.warning(
@@ -469,10 +566,8 @@ class AgentPlugin(BasePlugin):
                 if process.returncode is None:
                     process.kill()
             else:
-                try:
+                with contextlib.suppress(OSError, ProcessLookupError):
                     os.killpg(process.pid, signal.SIGKILL)
-                except (OSError, ProcessLookupError):
-                    pass
             await process.wait()
 
     async def _run_background_shell_command(
@@ -500,8 +595,12 @@ class AgentPlugin(BasePlugin):
             background_task.process = process
             background_task.status = "running"
             readers = [
-                asyncio.create_task(self._read_background_output(process.stdout, background_task)),
-                asyncio.create_task(self._read_background_output(process.stderr, background_task)),
+                asyncio.create_task(
+                    self._read_background_output(process.stdout, background_task)
+                ),
+                asyncio.create_task(
+                    self._read_background_output(process.stderr, background_task)
+                ),
             ]
 
             timed_out = False
@@ -510,7 +609,9 @@ class AgentPlugin(BasePlugin):
                     await self._terminate_background_process(process)
                 else:
                     try:
-                        await asyncio.wait_for(process.wait(), timeout=background_task.timeout)
+                        await asyncio.wait_for(
+                            process.wait(), timeout=background_task.timeout
+                        )
                     except asyncio.TimeoutError:
                         timed_out = True
                         background_task.status = "timed_out"
@@ -536,7 +637,7 @@ class AgentPlugin(BasePlugin):
             background_task.status = "failed"
             return f"Unexpected error while executing shell command: {e}"
 
-    async def _stop_background_task(self, background_task: BackgroundExecTask):
+    async def _stop_background_task(self, background_task: BackgroundExecTask) -> None:
         background_task.stop_requested = True
         background_task.notify_on_completion = False
         if background_task.process is not None:
@@ -548,7 +649,7 @@ class AgentPlugin(BasePlugin):
         session: str,
         status: str,
         task: asyncio.Task[str],
-    ):
+    ) -> None:
         try:
             result = task.result()
         except asyncio.CancelledError:
@@ -569,9 +670,13 @@ class AgentPlugin(BasePlugin):
                 is_mentioned=True,
             )
         except Exception as e:
-            logger.error(f"Failed to publish background shell command result for task {task_id}: {e}")
+            logger.error(
+                f"Failed to publish background shell command result for task {task_id}: {e}"
+            )
 
-    def _on_background_exec_done(self, task_id: str, session: str, task: asyncio.Task[str]):
+    def _on_background_exec_done(
+        self, task_id: str, session: str, task: asyncio.Task[str]
+    ) -> None:
         background_task = self._background_exec_tasks.pop(task_id, None)
         if background_task is None or not background_task.notify_on_completion:
             return
@@ -658,16 +763,29 @@ class AgentPlugin(BasePlugin):
         {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "File path, must start with an allowed path prefix"},
-                "offset": {"type": "integer", "description": "Which line to start reading, defaults to 1. Ignored for image and audio files."},
-                "limit": {"type": "integer", "description": "Maximum lines to read, defaults to 200. Ignored for image and audio files."},
+                "path": {
+                    "type": "string",
+                    "description": "File path, must start with an allowed path prefix",
+                },
+                "offset": {
+                    "type": "integer",
+                    "description": "Which line to start reading, defaults to 1. Ignored for image and audio files.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum lines to read, defaults to 200. Ignored for image and audio files.",
+                },
             },
-            "required": ["path"]
-        }
+            "required": ["path"],
+        },
     )
-    async def read_file(self, event: KiraMessageBatchEvent, path: str, offset: int = 1, limit: int = 200) -> str | ToolResult:
+    async def read_file(
+        self, event: KiraMessageBatchEvent, path: str, offset: int = 1, limit: int = 200
+    ) -> str | ToolResult:
         if not self._is_file_session_allowed(event.sid):
-            return "Permission denied: current session not allowed to access local files"
+            return (
+                "Permission denied: current session not allowed to access local files"
+            )
 
         path = self._normalize_path(path)
         if path is None:
@@ -694,7 +812,7 @@ class AgentPlugin(BasePlugin):
             if offset > len(file_lines) or offset < 1:
                 return "Offset out of range"
 
-            selected = file_lines[offset-1:offset-1+limit]
+            selected = file_lines[offset - 1 : offset - 1 + limit]
 
             start_line = offset
             end_line = offset + len(selected) - 1
@@ -702,13 +820,15 @@ class AgentPlugin(BasePlugin):
 
             read_result = "".join(selected)
             if truncated:
-                read_result += f"\n[Showing lines {start_line}-{end_line}. Use offset={end_line+1} to continue if needed.]"
+                read_result += f"\n[Showing lines {start_line}-{end_line}. Use offset={end_line + 1} to continue if needed.]"
 
             return read_result
         except Exception as e:
             return f"[Failed to read file: {e}]"
 
-    async def _read_image_file(self, event: KiraMessageBatchEvent, path: str) -> str | ToolResult:
+    async def _read_image_file(
+        self, event: KiraMessageBatchEvent, path: str
+    ) -> str | ToolResult:
         """Read an image file according to the image processing mode.
 
         Native multimodal mode attaches the (possibly compressed) image data as
@@ -721,14 +841,22 @@ class AgentPlugin(BasePlugin):
         if not abs_path.is_file():
             return f"[Failed to read file: file not found: {path}]"
 
-        capabilities = await self.ctx.get_session_capabilities(event.sid) if self.ctx else {}
-        image_recognition = capabilities.get("image_recognition") if isinstance(capabilities, dict) else None
+        capabilities = (
+            await self.ctx.get_session_capabilities(event.sid) if self.ctx else {}
+        )
+        image_recognition = (
+            capabilities.get("image_recognition")
+            if isinstance(capabilities, dict)
+            else None
+        )
         if not isinstance(image_recognition, dict):
             image_recognition = {}
         mode = image_recognition.get("mode", "vlm_description")
 
         compression_config = (
-            self.ctx.config.get_config("bot_config.image_compression", {}) if self.ctx else {}
+            self.ctx.config.get_config("bot_config.image_compression", {})
+            if self.ctx
+            else {}
         )
         try:
             image_path, mime = await compress_image_file(abs_path, compression_config)
@@ -738,8 +866,12 @@ class AgentPlugin(BasePlugin):
         try:
             if mode == "native":
                 target_session = getattr(event, "target_session", None)
-                media_sid = target_session.sid if target_session is not None else event.sid
-                message_id = event.messages[-1].message_id if event.messages else "read_file"
+                media_sid = (
+                    target_session.sid if target_session is not None else event.sid
+                )
+                message_id = (
+                    event.messages[-1].message_id if event.messages else "read_file"
+                )
                 media_ref = await store_session_media(
                     Image(image=str(image_path), mime=mime),
                     media_sid,
@@ -765,9 +897,13 @@ class AgentPlugin(BasePlugin):
                 try:
                     await asyncio.to_thread(image_path.unlink, missing_ok=True)
                 except OSError as e:
-                    logger.warning(f"Failed to remove compressed temp image {image_path.name}: {e}")
+                    logger.warning(
+                        f"Failed to remove compressed temp image {image_path.name}: {e}"
+                    )
 
-    async def _describe_image_file(self, image_path: Path, mime: str, image_recognition: dict) -> str:
+    async def _describe_image_file(
+        self, image_path: Path, mime: str, image_recognition: dict
+    ) -> str:
         """Transcribe an image file with the default VLM, reusing the shared description cache.
 
         An empty return means the VLM produced no description; the caller tells
@@ -791,7 +927,8 @@ class AgentPlugin(BasePlugin):
             desc = await desc_img(
                 client=vlm_client,
                 image=Image(image=str(image_path), mime=mime),
-                prompt=str(image_recognition.get("desc_prompt", "") or "").strip() or None,
+                prompt=str(image_recognition.get("desc_prompt", "") or "").strip()
+                or None,
                 lang=self.ctx.get_lang(),
             )
         except Exception as e:
@@ -816,7 +953,9 @@ class AgentPlugin(BasePlugin):
         if not abs_path.is_file():
             return f"[Failed to read file: file not found: {path}]"
 
-        capabilities = await self.ctx.get_session_capabilities(event.sid) if self.ctx else {}
+        capabilities = (
+            await self.ctx.get_session_capabilities(event.sid) if self.ctx else {}
+        )
         stt_caps = capabilities.get("stt") if isinstance(capabilities, dict) else None
         if not isinstance(stt_caps, dict):
             stt_caps = {}
@@ -841,15 +980,25 @@ class AgentPlugin(BasePlugin):
         {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "File path, must start with an allowed path prefix"},
-                "content": {"type": "string", "description": "Content to write to the file"},
+                "path": {
+                    "type": "string",
+                    "description": "File path, must start with an allowed path prefix",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Content to write to the file",
+                },
             },
-            "required": ["path", "content"]
-        }
+            "required": ["path", "content"],
+        },
     )
-    async def write_file(self, event: KiraMessageBatchEvent, path: str, content: str) -> str:
+    async def write_file(
+        self, event: KiraMessageBatchEvent, path: str, content: str
+    ) -> str:
         if not self._is_file_session_allowed(event.sid):
-            return "Permission denied: current session not allowed to access local files"
+            return (
+                "Permission denied: current session not allowed to access local files"
+            )
 
         path = self._normalize_path(path)
         if path is None:
@@ -879,17 +1028,29 @@ class AgentPlugin(BasePlugin):
         {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "File path, must start with an allowed path prefix"},
-                "old_text": {"type": "string",
-                             "description": "Exact text to find and replace (must match exactly, including whitespace)"},
-                "new_text": {"type": "string", "description": "New text to replace the old text with"},
+                "path": {
+                    "type": "string",
+                    "description": "File path, must start with an allowed path prefix",
+                },
+                "old_text": {
+                    "type": "string",
+                    "description": "Exact text to find and replace (must match exactly, including whitespace)",
+                },
+                "new_text": {
+                    "type": "string",
+                    "description": "New text to replace the old text with",
+                },
             },
-            "required": ["path", "old_text", "new_text"]
-        }
+            "required": ["path", "old_text", "new_text"],
+        },
     )
-    async def edit_file(self, event: KiraMessageBatchEvent, path: str, old_text: str, new_text: str) -> str:
+    async def edit_file(
+        self, event: KiraMessageBatchEvent, path: str, old_text: str, new_text: str
+    ) -> str:
         if not self._is_file_session_allowed(event.sid):
-            return "Permission denied: current session not allowed to access local files"
+            return (
+                "Permission denied: current session not allowed to access local files"
+            )
 
         path = self._normalize_path(path)
         if path is None:
@@ -921,7 +1082,9 @@ class AgentPlugin(BasePlugin):
             new_content = content.replace(old_text, new_text)
 
             await asyncio.to_thread(self._write_file_text, abs_path, new_content)
-            return f"Successfully edited file: {path}, {replacements} replacement(s) made."
+            return (
+                f"Successfully edited file: {path}, {replacements} replacement(s) made."
+            )
         except Exception as e:
             return f"Failed to edit file: {e!s}"
 
@@ -931,16 +1094,29 @@ class AgentPlugin(BasePlugin):
         {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Directory path, must start with an allowed path prefix"},
-                "offset": {"type": "integer", "description": "Which index to start displaying file or folder name, defaults to 1"},
-                "limit": {"type": "integer", "description": "Maximum file count to display, defaults to 20"},
+                "path": {
+                    "type": "string",
+                    "description": "Directory path, must start with an allowed path prefix",
+                },
+                "offset": {
+                    "type": "integer",
+                    "description": "Which index to start displaying file or folder name, defaults to 1",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum file count to display, defaults to 20",
+                },
             },
-            "required": ["path"]
-        }
+            "required": ["path"],
+        },
     )
-    async def list_files(self, event: KiraMessageBatchEvent, path: str, offset: int = 1, limit: int = 20) -> str:
+    async def list_files(
+        self, event: KiraMessageBatchEvent, path: str, offset: int = 1, limit: int = 20
+    ) -> str:
         if not self._is_file_session_allowed(event.sid):
-            return "Permission denied: current session not allowed to access local files"
+            return (
+                "Permission denied: current session not allowed to access local files"
+            )
 
         path = self._normalize_path(path)
         if path is None:
@@ -960,7 +1136,7 @@ class AgentPlugin(BasePlugin):
             if offset < 1 or offset > len(files):
                 return "offset out of range"
 
-            selected = files[offset - 1:offset - 1 + limit]
+            selected = files[offset - 1 : offset - 1 + limit]
 
             start_index = offset
             end_index = offset + len(selected) - 1
@@ -982,13 +1158,18 @@ class AgentPlugin(BasePlugin):
     def _has_ripgrep() -> bool:
         return shutil.which("rg") is not None
 
-    def _grep_guard(self, event: KiraMessageBatchEvent, path: str) -> tuple[str | None, str | None]:
+    def _grep_guard(
+        self, event: KiraMessageBatchEvent, path: str
+    ) -> tuple[str | None, str | None]:
         """Common permission guard for grep-like tools.
 
         Returns (normalized_path, None) on success or (None, error_message) on failure.
         """
         if not self._is_file_session_allowed(event.sid):
-            return None, "Permission denied: current session not allowed to access local files"
+            return (
+                None,
+                "Permission denied: current session not allowed to access local files",
+            )
 
         normalized = self._normalize_path(path)
         if normalized is None:
@@ -999,7 +1180,10 @@ class AgentPlugin(BasePlugin):
                 return None, "Permission denied: Path contains restricted keywords"
 
         if not self._is_path_allowed(normalized, self.allowed_read_paths):
-            return None, f"Permission denied: Path must start with one of: {', '.join(self.allowed_read_paths)}"
+            return (
+                None,
+                f"Permission denied: Path must start with one of: {', '.join(self.allowed_read_paths)}",
+            )
 
         return normalized, None
 
@@ -1046,8 +1230,7 @@ class AgentPlugin(BasePlugin):
 
         try:
             result = subprocess.run(
-                cmd, capture_output=True, timeout=30,
-                encoding="utf-8", errors="replace"
+                cmd, capture_output=True, timeout=30, encoding="utf-8", errors="replace"
             )
             # rg exits 1 when no matches, 2 on error
             if result.returncode == 2:
@@ -1091,9 +1274,13 @@ class AgentPlugin(BasePlugin):
             files = [root]
         elif root.is_dir():
             if glob:
-                files = sorted(root.glob(glob), key=lambda p: p.stat().st_mtime, reverse=True)
+                files = sorted(
+                    root.glob(glob), key=lambda p: p.stat().st_mtime, reverse=True
+                )
             else:
-                files = sorted(root.rglob("*"), key=lambda p: p.stat().st_mtime, reverse=True)
+                files = sorted(
+                    root.rglob("*"), key=lambda p: p.stat().st_mtime, reverse=True
+                )
         else:
             return f"Path not found: {search_path}"
 
@@ -1170,7 +1357,7 @@ class AgentPlugin(BasePlugin):
                 return "No matches found."
             result = self._format_grep_results(lines, limit)
             if limit == 0 or len(matched_files) <= limit:
-                result += f"\n\n[{len(matched_files)} files matched. Use output_mode=\"content\" to see matching lines.]"
+                result += f'\n\n[{len(matched_files)} files matched. Use output_mode="content" to see matching lines.]'
             return result
 
         if output_mode == "count":
@@ -1203,46 +1390,52 @@ class AgentPlugin(BasePlugin):
             "properties": {
                 "pattern": {
                     "type": "string",
-                    "description": "The regex pattern to search for in file contents. Uses Python re syntax (ripgrep when available)."
+                    "description": "The regex pattern to search for in file contents. Uses Python re syntax (ripgrep when available).",
                 },
                 "path": {
                     "type": "string",
-                    "description": "File or directory path to search in. Must start with an allowed path prefix."
+                    "description": "File or directory path to search in. Must start with an allowed path prefix.",
                 },
                 "output_mode": {
                     "type": "string",
                     "enum": ["files_with_matches", "content", "count"],
-                    "description": "Output format. 'files_with_matches' (default) returns file paths only. 'content' returns matching lines with line numbers. 'count' returns match counts per file."
+                    "description": "Output format. 'files_with_matches' (default) returns file paths only. 'content' returns matching lines with line numbers. 'count' returns match counts per file.",
                 },
                 "context": {
                     "type": "integer",
-                    "description": "Number of lines of context before and after each match. Only applies in 'content' mode. Defaults to 0."
+                    "description": "Number of lines of context before and after each match. Only applies in 'content' mode. Defaults to 0.",
                 },
                 "case_insensitive": {
                     "type": "boolean",
-                    "description": "If true, perform case-insensitive matching. Defaults to false."
+                    "description": "If true, perform case-insensitive matching. Defaults to false.",
                 },
                 "glob": {
                     "type": "string",
-                    "description": "Glob pattern to filter which files to search (e.g. '*.py', '**/*.ts'). Searches all files if omitted."
+                    "description": "Glob pattern to filter which files to search (e.g. '*.py', '**/*.ts'). Searches all files if omitted.",
                 },
                 "multiline": {
                     "type": "boolean",
-                    "description": "If true, '.' in the pattern matches newlines and patterns can span multiple lines. Defaults to false."
+                    "description": "If true, '.' in the pattern matches newlines and patterns can span multiple lines. Defaults to false.",
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Maximum number of result lines to return. Defaults to 200. Use 0 for unlimited."
+                    "description": "Maximum number of result lines to return. Defaults to 200. Use 0 for unlimited.",
                 },
             },
-            "required": ["pattern", "path"]
-        }
+            "required": ["pattern", "path"],
+        },
     )
     async def grep(
-        self, event: KiraMessageBatchEvent, pattern: str, path: str,
-        output_mode: str = "files_with_matches", context: int = 0,
-        case_insensitive: bool = False, glob: str | None = None,
-        multiline: bool = False, limit: int = 200,
+        self,
+        event: KiraMessageBatchEvent,
+        pattern: str,
+        path: str,
+        output_mode: str = "files_with_matches",
+        context: int = 0,
+        case_insensitive: bool = False,
+        glob: str | None = None,
+        multiline: bool = False,
+        limit: int = 200,
     ) -> str:
         path, err = self._grep_guard(event, path)
         if err:
@@ -1255,16 +1448,29 @@ class AgentPlugin(BasePlugin):
         if self._has_ripgrep():
             return await asyncio.to_thread(
                 self._grep_with_rg,
-                pattern, abs_path, output_mode, context,
-                case_insensitive, glob, multiline, limit,
+                pattern,
+                abs_path,
+                output_mode,
+                context,
+                case_insensitive,
+                glob,
+                multiline,
+                limit,
             )
         else:
             try:
                 return await asyncio.wait_for(
                     asyncio.to_thread(
                         self._grep_with_python,
-                        pattern, abs_path, path, output_mode, context,
-                        case_insensitive, glob, multiline, limit,
+                        pattern,
+                        abs_path,
+                        path,
+                        output_mode,
+                        context,
+                        case_insensitive,
+                        glob,
+                        multiline,
+                        limit,
                     ),
                     timeout=30,
                 )
@@ -1283,23 +1489,31 @@ class AgentPlugin(BasePlugin):
             "properties": {
                 "pattern": {
                     "type": "string",
-                    "description": "Glob pattern to match files. Examples: '**/*.py', 'src/**/*.ts', '*.json'. Use '**' to match any depth."
+                    "description": "Glob pattern to match files. Examples: '**/*.py', 'src/**/*.ts', '*.json'. Use '**' to match any depth.",
                 },
                 "path": {
                     "type": "string",
-                    "description": "Directory path to search in. Must start with an allowed path prefix. Defaults to the first allowed read path."
+                    "description": "Directory path to search in. Must start with an allowed path prefix. Defaults to the first allowed read path.",
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Maximum number of file paths to return. Defaults to 100."
+                    "description": "Maximum number of file paths to return. Defaults to 100.",
                 },
             },
-            "required": ["pattern"]
-        }
+            "required": ["pattern"],
+        },
     )
-    async def search_files(self, event: KiraMessageBatchEvent, pattern: str, path: str | None = None, limit: int = 100) -> str:
+    async def search_files(
+        self,
+        event: KiraMessageBatchEvent,
+        pattern: str,
+        path: str | None = None,
+        limit: int = 100,
+    ) -> str:
         if not self._is_file_session_allowed(event.sid):
-            return "Permission denied: current session not allowed to access local files"
+            return (
+                "Permission denied: current session not allowed to access local files"
+            )
 
         if ".." in pattern:
             return "Error: glob pattern must not contain '..'"
@@ -1361,17 +1575,23 @@ class AgentPlugin(BasePlugin):
                 "cmd": {"type": "string", "description": "Command to execute"},
                 "work_dir": {
                     "type": "string",
-                    "description": "Optional existing working directory. Relative paths are resolved from the application root."
+                    "description": "Optional existing working directory. Relative paths are resolved from the application root.",
                 },
                 "background": {
                     "type": "boolean",
-                    "description": "Whether to run the command in the background. Waits for the configured background wait time before returning a task ID, then sends the completed result to this session. Defaults to false."
-                }
+                    "description": "Whether to run the command in the background. Waits for the configured background wait time before returning a task ID, then sends the completed result to this session. Defaults to false.",
+                },
             },
-            "required": ["cmd"]
-        }
+            "required": ["cmd"],
+        },
     )
-    async def exec(self, event: KiraMessageBatchEvent, cmd: str, work_dir: str | None = None, background: bool = False) -> str:
+    async def exec(
+        self,
+        event: KiraMessageBatchEvent,
+        cmd: str,
+        work_dir: str | None = None,
+        background: bool = False,
+    ) -> str:
         if not self._is_exec_session_allowed(event.sid):
             return "Permission denied: current session not allowed to execute shell commands"
 
@@ -1397,28 +1617,36 @@ class AgentPlugin(BasePlugin):
             cmd_lower = shell_command.lower()
             for blocked in self.exec_command_deny_list:
                 blocked_lower = blocked.lower()
-                if cmd_lower == blocked_lower or cmd_lower.startswith((blocked_lower + ' ', blocked_lower + '\t')):
-                    logger.warning(f'Shell command blocked by deny list "{blocked}": {shell_command}')
+                if cmd_lower == blocked_lower or cmd_lower.startswith(
+                    (blocked_lower + " ", blocked_lower + "\t")
+                ):
+                    logger.warning(
+                        f'Shell command blocked by deny list "{blocked}": {shell_command}'
+                    )
                     return f'Shell command blocked by deny list: "{blocked}" is not allowed.'
 
         # Resolve python path if it's a python command
         for py_prefix in ("python ", "python3 "):
             if shell_command.startswith(py_prefix):
                 import sys
-                shell_command = f'"{sys.executable}" ' + shell_command[len(py_prefix):]
+
+                shell_command = f'"{sys.executable}" ' + shell_command[len(py_prefix) :]
 
         # Resolve pip path if it's a pip command
         for pip_prefix in ("pip ", "pip3 "):
             if shell_command.startswith(pip_prefix):
                 import sys
-                shell_command = f'"{sys.executable}" -m pip ' + shell_command[len(pip_prefix):]
+
+                shell_command = (
+                    f'"{sys.executable}" -m pip ' + shell_command[len(pip_prefix) :]
+                )
 
         env = os.environ.copy()
-        env['PYTHONIOENCODING'] = 'utf-8'
-        if os.name == 'nt':
-            shell_command = f'chcp 65001 >nul && {shell_command}'
+        env["PYTHONIOENCODING"] = "utf-8"
+        if os.name == "nt":
+            shell_command = f"chcp 65001 >nul && {shell_command}"
 
-        logger.info(f'Executing shell command: {shell_command} (cwd: {exec_work_dir})')
+        logger.info(f"Executing shell command: {shell_command} (cwd: {exec_work_dir})")
         if not background:
             return await self._run_shell_command(
                 shell_command,
@@ -1478,7 +1706,7 @@ class AgentPlugin(BasePlugin):
                 },
                 "task_id": {
                     "type": "string",
-                    "description": "Required for the 'output' and 'stop' actions."
+                    "description": "Required for the 'output' and 'stop' actions.",
                 },
             },
             "required": ["action"],
@@ -1495,7 +1723,8 @@ class AgentPlugin(BasePlugin):
 
         if action == "list":
             session_tasks = [
-                task for task in self._background_exec_tasks.values()
+                task
+                for task in self._background_exec_tasks.values()
                 if task.session == event.sid
             ]
             if not session_tasks:

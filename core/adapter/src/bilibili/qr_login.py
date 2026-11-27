@@ -30,16 +30,25 @@ REQUEST_HEADERS = {
 class BiliBiliQRCodeLoginHandler(QRCodeLoginHandler):
     """Use Bilibili's web QR endpoints independently of bilibili-api login."""
 
-    def __init__(self, *, http_client: httpx.AsyncClient | None = None):
+    def __init__(self, *, http_client: httpx.AsyncClient | None = None) -> None:
         self._owns_http_client = http_client is None
-        self._http_client = http_client if http_client is not None else httpx.AsyncClient(
-            headers=REQUEST_HEADERS, follow_redirects=True, timeout=10.0,
+        self._http_client = (
+            http_client
+            if http_client is not None
+            else httpx.AsyncClient(
+                headers=REQUEST_HEADERS,
+                follow_redirects=True,
+                timeout=10.0,
+            )
         )
         self._qrcode_key = ""
         self._buvid3 = ""
 
     async def _request_data(
-        self, url: str, *, params: dict[str, str] | None = None,
+        self,
+        url: str,
+        *,
+        params: dict[str, str] | None = None,
     ) -> tuple[httpx.Response, dict[str, Any]]:
         try:
             response = await self._http_client.get(url, params=params)
@@ -66,11 +75,20 @@ class BiliBiliQRCodeLoginHandler(QRCodeLoginHandler):
             buvid3, buvid4 = await asyncio.wait_for(network.get_buvid(), timeout=10.0)
         except Exception:
             raise RuntimeError("adapter.qrcode_failed") from None
-        if not isinstance(buvid3, str) or not buvid3 or not isinstance(buvid4, str) or not buvid4:
+        if (
+            not isinstance(buvid3, str)
+            or not buvid3
+            or not isinstance(buvid4, str)
+            or not buvid4
+        ):
             raise RuntimeError("adapter.qrcode_invalid_response")
         self._buvid3 = buvid3
-        self._http_client.cookies.set("buvid3", buvid3, domain=".bilibili.com", path="/")
-        self._http_client.cookies.set("buvid4", buvid4, domain=".bilibili.com", path="/")
+        self._http_client.cookies.set(
+            "buvid3", buvid3, domain=".bilibili.com", path="/"
+        )
+        self._http_client.cookies.set(
+            "buvid4", buvid4, domain=".bilibili.com", path="/"
+        )
         _, data = await self._request_data(QR_GENERATE_URL)
         key = data.get("qrcode_key")
         url = data.get("url")
@@ -82,11 +100,13 @@ class BiliBiliQRCodeLoginHandler(QRCodeLoginHandler):
     async def poll(self) -> QRCodeLoginPollResult:
         if not self._qrcode_key:
             return QRCodeLoginPollResult(
-                status="error", message="adapter.qrcode_failed",
+                status="error",
+                message="adapter.qrcode_failed",
             )
         try:
             response, data = await self._request_data(
-                QR_POLL_URL, params={"qrcode_key": self._qrcode_key},
+                QR_POLL_URL,
+                params={"qrcode_key": self._qrcode_key},
             )
         except TimeoutError:
             return QRCodeLoginPollResult(status="pending")
@@ -100,16 +120,20 @@ class BiliBiliQRCodeLoginHandler(QRCodeLoginHandler):
             return QRCodeLoginPollResult(status="expired")
         if code != 0:
             return QRCodeLoginPollResult(
-                status="error", message="adapter.qrcode_invalid_response",
+                status="error",
+                message="adapter.qrcode_invalid_response",
             )
 
-        cookies = {cookie.name: cookie.value for cookie in self._http_client.cookies.jar}
+        cookies = {
+            cookie.name: cookie.value for cookie in self._http_client.cookies.jar
+        }
         for current_response in (*response.history, response):
             for cookie in current_response.cookies.jar:
                 cookies[cookie.name] = cookie.value
         if not cookies.get("SESSDATA") or not cookies.get("bili_jct"):
             return QRCodeLoginPollResult(
-                status="error", message="adapter.qrcode_incomplete_credentials",
+                status="error",
+                message="adapter.qrcode_incomplete_credentials",
             )
         return QRCodeLoginPollResult(
             status="confirmed",

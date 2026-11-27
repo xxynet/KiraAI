@@ -38,14 +38,17 @@ class BiliBiliIMCapability(IMCapability["BiliBiliAdapter"]):
 
     _SUPPORTED_ELEMENTS = ["text", "img", "emoji"]
 
-    def __init__(self, adapter: BiliBiliAdapter):
+    def __init__(self, adapter: BiliBiliAdapter) -> None:
         super().__init__(adapter)
         self._metadata = MessageFormatMetadata(
-            self._supported_elements, emojis=load_emoji_mapping(Path(__file__).with_name("emoji.json")),
+            self._supported_elements,
+            emojis=load_emoji_mapping(Path(__file__).with_name("emoji.json")),
         )
 
     async def get_message_metadata(self) -> MessageFormatMetadata:
-        return MessageFormatMetadata(self._supported_elements, emojis=self._metadata.emojis)
+        return MessageFormatMetadata(
+            self._supported_elements, emojis=self._metadata.emojis
+        )
 
     # ===== User info cache =====
     async def _get_user_nickname(self, uid: int) -> str:
@@ -60,7 +63,9 @@ class BiliBiliIMCapability(IMCapability["BiliBiliAdapter"]):
             self.adapter._user_info_cache[uid_int] = info
             return nickname
         except Exception as e:
-            self.adapter.logger.warning(f"[BiliDM] Failed to get user info for {uid}: {type(e).__name__}")
+            self.adapter.logger.warning(
+                f"[BiliDM] Failed to get user info for {uid}: {type(e).__name__}"
+            )
             return str(uid)
 
     # ===== Image download with cookie =====
@@ -77,20 +82,26 @@ class BiliBiliIMCapability(IMCapability["BiliBiliAdapter"]):
             cookies["DedeUserID"] = self.adapter.credential.dedeuserid
         try:
             async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
-                resp = await client.get(url, cookies=cookies, headers={
-                    "Referer": "https://www.bilibili.com",
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36",
-                })
+                resp = await client.get(
+                    url,
+                    cookies=cookies,
+                    headers={
+                        "Referer": "https://www.bilibili.com",
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36",
+                    },
+                )
                 resp.raise_for_status()
                 content_type = resp.headers.get("content-type", "image/png")
                 b64_str = base64.b64encode(resp.content).decode("utf-8")
                 return f"data:{content_type};base64,{b64_str}"
         except Exception as e:
-            self.adapter.logger.error(f"[BiliDM] Failed to download image: {type(e).__name__}")
+            self.adapter.logger.error(
+                f"[BiliDM] Failed to download image: {type(e).__name__}"
+            )
             return ""
 
     # ===== Incoming message handler =====
-    async def _handle_incoming_event(self, event: Event, msg_kind: str):
+    async def _handle_incoming_event(self, event: Event, msg_kind: str) -> None:
         """Unified handler for all incoming private message events.
 
         Args:
@@ -116,7 +127,7 @@ class BiliBiliIMCapability(IMCapability["BiliBiliAdapter"]):
                 # event.content is a Picture object with .url
                 # BiliBili IM images require cookie auth; download and convert to base64
                 content = event.content
-                if hasattr(content, 'url') and content.url:
+                if hasattr(content, "url") and content.url:
                     b64_url = await self._download_image_as_base64_url(content.url)
                     if b64_url:
                         elements.append(Image(b64_url))
@@ -138,17 +149,29 @@ class BiliBiliIMCapability(IMCapability["BiliBiliAdapter"]):
                         like = video_info.get("stat", {}).get("like", 0)
                         url = f"https://www.bilibili.com/video/{bvid}" if bvid else ""
                         elements.append(
-                            Text(f"[Shared Video] {title}\nUP主: {owner_name} | 播放: {view} | 点赞: {like}\n{url}")
+                            Text(
+                                f"[Shared Video] {title}\nUP主: {owner_name} | 播放: {view} | 点赞: {like}\n{url}"
+                            )
                         )
                     except Exception as e:
-                        self.adapter.logger.warning(f"[BiliDM] Failed to get video info: {type(e).__name__}")
-                        bvid = getattr(content, 'bvid', '')
+                        self.adapter.logger.warning(
+                            f"[BiliDM] Failed to get video info: {type(e).__name__}"
+                        )
+                        bvid = getattr(content, "bvid", "")
                         if bvid:
-                            elements.append(Text(f"[Shared Video] https://www.bilibili.com/video/{bvid}"))
+                            elements.append(
+                                Text(
+                                    f"[Shared Video] https://www.bilibili.com/video/{bvid}"
+                                )
+                            )
                         else:
                             elements.append(Text("[Shared Video]"))
-                elif hasattr(content, 'bvid') and content.bvid:
-                    elements.append(Text(f"[Shared Video] https://www.bilibili.com/video/{content.bvid}"))
+                elif hasattr(content, "bvid") and content.bvid:
+                    elements.append(
+                        Text(
+                            f"[Shared Video] https://www.bilibili.com/video/{content.bvid}"
+                        )
+                    )
                 else:
                     elements.append(Text("[Shared Video]"))
 
@@ -157,28 +180,31 @@ class BiliBiliIMCapability(IMCapability["BiliBiliAdapter"]):
 
             message_obj = KiraMessageEvent(
                 adapter=self.adapter.info,
-                supported_elements=list((await self.get_message_metadata()).supported_elements),
+                supported_elements=list(
+                    (await self.get_message_metadata()).supported_elements
+                ),
                 message=KiraIMMessage(
                     timestamp=ts,
-                    sender=User(
-                        user_id=sender_uid,
-                        nickname=nickname
-                    ),
+                    sender=User(user_id=sender_uid, nickname=nickname),
                     is_mentioned=True,
                     message_id=str(event.msg_key),
                     self_id=self.adapter.bot_uid,
                     bot=User(self.adapter.bot_uid, self.adapter._self_name),
                     chain=message_chain,
                 ),
-                timestamp=ts
+                timestamp=ts,
             )
             self.publish(message_obj)
             self.adapter.logger.info(f"[BiliDM] Received {msg_kind} from {sender_uid}")
         except Exception as e:
-            self.adapter.logger.error(f"[BiliDM] Error handling {msg_kind} message: {type(e).__name__}")
+            self.adapter.logger.error(
+                f"[BiliDM] Error handling {msg_kind} message: {type(e).__name__}"
+            )
 
     # ===== Send messages (called by core) =====
-    async def send_direct_message(self, user_id: AdapterTargetId, message: MessageChain) -> KiraIMSentResult | None:
+    async def send_direct_message(
+        self, user_id: AdapterTargetId, message: MessageChain
+    ) -> KiraIMSentResult | None:
         """Send direct message to a BiliBili user via bilibili_api send_msg.
 
         Merge consecutive text and emoji tokens; send images in their original order.
@@ -198,35 +224,45 @@ class BiliBiliIMCapability(IMCapability["BiliBiliAdapter"]):
                 nonlocal stage
                 if text_parts:
                     stage = "send text"
-                    await asyncio.wait_for(send_msg(
-                        self.adapter.credential,
-                        int(user_id),
-                        SessionEventType.TEXT,
-                        "".join(text_parts),
-                    ), timeout=timeout)
+                    await asyncio.wait_for(
+                        send_msg(
+                            self.adapter.credential,
+                            int(user_id),
+                            SessionEventType.TEXT,
+                            "".join(text_parts),
+                        ),
+                        timeout=timeout,
+                    )
                     text_parts.clear()
 
             for ele in message:
                 if isinstance(ele, Text):
                     text_parts.append(ele.text)
                 elif isinstance(ele, Emoji):
-                    text_parts.append(self._metadata.emojis.get(ele.emoji_id, ele.emoji_id))
+                    text_parts.append(
+                        self._metadata.emojis.get(ele.emoji_id, ele.emoji_id)
+                    )
                 elif isinstance(ele, Image):
                     await flush_text()
                     stage = "load image"
                     picture = await asyncio.wait_for(load_picture(ele), timeout=timeout)
                     pic = _BiliBiliPicture.from_picture(picture)
                     stage = "upload image"
-                    await asyncio.wait_for(pic.upload(self.adapter.credential), timeout=timeout)
+                    await asyncio.wait_for(
+                        pic.upload(self.adapter.credential), timeout=timeout
+                    )
                     stage = "send image"
-                    await asyncio.wait_for(send_msg(
-                        self.adapter.credential,
-                        int(user_id),
-                        SessionEventType.PICTURE,
-                        pic,
-                    ), timeout=timeout)
+                    await asyncio.wait_for(
+                        send_msg(
+                            self.adapter.credential,
+                            int(user_id),
+                            SessionEventType.PICTURE,
+                            pic,
+                        ),
+                        timeout=timeout,
+                    )
                 else:
-                    text_parts.append(str(getattr(ele, 'text', '[Message]')))
+                    text_parts.append(str(getattr(ele, "text", "[Message]")))
             await flush_text()
 
             self.adapter.logger.info(f"[BiliDM] Sent DM to {user_id}")
@@ -236,8 +272,14 @@ class BiliBiliIMCapability(IMCapability["BiliBiliAdapter"]):
             if isinstance(e, ResponseCodeException) and isinstance(e.code, int):
                 detail += f", code={e.code}"
             detail += ")"
-            self.adapter.logger.error(f"[BiliDM] Failed to send DM to {user_id}: {detail}")
-            return KiraIMSentResult(ok=False, err=f"Failed to send direct message: {detail}")
+            self.adapter.logger.error(
+                f"[BiliDM] Failed to send DM to {user_id}: {detail}"
+            )
+            return KiraIMSentResult(
+                ok=False, err=f"Failed to send direct message: {detail}"
+            )
 
-    async def send_group_message(self, group_id: AdapterTargetId, message: MessageChain) -> KiraIMSentResult | None:
+    async def send_group_message(
+        self, group_id: AdapterTargetId, message: MessageChain
+    ) -> KiraIMSentResult | None:
         raise NotImplementedError("Bilibili does not support group messages")

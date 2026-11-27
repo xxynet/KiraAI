@@ -44,7 +44,8 @@ class ExecuteAgentStage(BaseStage[IMBatchContext]):
         )
         agent_executor = AgentExecutor(
             model_group,
-            context=agent_ctx, request=request,
+            context=agent_ctx,
+            request=request,
             config=AgentExecutionConfig(
                 max_steps=max(0, max_tool_loop),
                 tool_config=build_tool_execution_config(services.config),
@@ -54,7 +55,9 @@ class ExecuteAgentStage(BaseStage[IMBatchContext]):
         # Accumulates per-step results so ON_FINAL_RESULT can report the whole turn
         turn_steps = ctx.turn_steps
 
-        async def send_llm_text(resp: LLMResponse, memory_message: OpenAIMessage | None) -> bool:
+        async def send_llm_text(
+            resp: LLMResponse, memory_message: OpenAIMessage | None
+        ) -> bool:
             """Process and send LLM text response. Returns False if stopped, True to continue."""
             text = resp.text_response
             message_results = []
@@ -66,11 +69,15 @@ class ExecuteAgentStage(BaseStage[IMBatchContext]):
 
                     try:
                         actions = await delivery.parse_xml(text.strip(), tag_set)
-                        parse_handlers = event_handler_reg.get_handlers(event_type=EventType.AFTER_XML_PARSE)
+                        parse_handlers = event_handler_reg.get_handlers(
+                            event_type=EventType.AFTER_XML_PARSE
+                        )
                         for handler in parse_handlers:
                             await handler.exec_handler(event, actions)
                             if event.is_stopped:
-                                logger.info(f"Event {event.event_id} stopped while AFTER_XML_PARSE stage")
+                                logger.info(
+                                    f"Event {event.event_id} stopped while AFTER_XML_PARSE stage"
+                                )
                                 return False
                     except Exception as e:
                         logger.error(f"Error parsing message: {e!s}")
@@ -79,46 +86,73 @@ class ExecuteAgentStage(BaseStage[IMBatchContext]):
                     for action in actions:
                         if isinstance(action, MessageChain):
                             if not action.is_empty():
-                                session = await services.session_manager.resolve_session(event.sid)
-                                result = await services.message_router.send_message_chain(
-                                    session,
-                                    action,
-                                    memory_message=memory_message,
-                                    bot=event.bot,
+                                session = (
+                                    await services.session_manager.resolve_session(
+                                        event.sid
+                                    )
+                                )
+                                result = (
+                                    await services.message_router.send_message_chain(
+                                        session,
+                                        action,
+                                        memory_message=memory_message,
+                                        bot=event.bot,
+                                    )
                                 )
                                 if not result.ok and result.err:
                                     logger.error(result.err)
                             else:
-                                result = KiraIMSentResult(ok=False, err="Blank message list detected")
+                                result = KiraIMSentResult(
+                                    ok=False, err="Blank message list detected"
+                                )
                             message_results.append(result)
                             stop_delivery = False
-                            sent_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_MESSAGE_SENT)
+                            sent_handlers = event_handler_reg.get_handlers(
+                                event_type=EventType.ON_MESSAGE_SENT
+                            )
                             for handler in sent_handlers:
                                 await handler.exec_handler(event, action, result)
                                 if event.is_stopped:
-                                    logger.info(f"Event {event.event_id} stopped while ON_MESSAGE_SENT stage")
+                                    logger.info(
+                                        f"Event {event.event_id} stopped while ON_MESSAGE_SENT stage"
+                                    )
                                     stop_delivery = True
                                     break
                             if stop_delivery:
                                 break
-                            await asyncio.sleep(random.uniform(delivery.min_message_delay, delivery.max_message_delay))
+                            await asyncio.sleep(
+                                random.uniform(
+                                    delivery.min_message_delay,
+                                    delivery.max_message_delay,
+                                )
+                            )
                         elif isinstance(action, RootTagAction):
                             try:
                                 await action.tag.handle(action.value, **action.attrs)
                             except Exception as e:
-                                logger.error(f"Error executing root tag <{action.tag.name}>{action.value}: {e}")
-                    raw_output = services.message_delivery.add_message_ids(text, message_results)
+                                logger.error(
+                                    f"Error executing root tag <{action.tag.name}>{action.value}: {e}"
+                                )
+                    raw_output = services.message_delivery.add_message_ids(
+                        text, message_results
+                    )
                     logger.info(f"LLM -> {sid}: {raw_output}")
-            step_result = KiraStepResult(message_results=message_results, raw_output=raw_output)
+            step_result = KiraStepResult(
+                message_results=message_results, raw_output=raw_output
+            )
             # Record the step before dispatching, so ON_FINAL_RESULT still sees messages
             # that were already sent even if a handler stops the turn below.
             turn_steps.append(step_result)
             # EventType.ON_STEP_RESULT
-            step_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_STEP_RESULT)
+            step_handlers = event_handler_reg.get_handlers(
+                event_type=EventType.ON_STEP_RESULT
+            )
             for step_handler in step_handlers:
                 await step_handler.exec_handler(event, step_result)
                 if event.is_stopped:
-                    logger.info(f"Event {event.event_id} stopped while ON_STEP_RESULT stage")
+                    logger.info(
+                        f"Event {event.event_id} stopped while ON_STEP_RESULT stage"
+                    )
                     return False
             if raw_output:
                 resp.text_response = step_result.raw_output

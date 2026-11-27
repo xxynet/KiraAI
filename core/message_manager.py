@@ -30,7 +30,7 @@ class MessageProcessor:
         im_workflow: IMWorkflow,
         *,
         message_router: MessageRouter,
-    ):
+    ) -> None:
         self.im_workflow = im_workflow
         self.message_router = message_router
         self.message_processing_semaphore = im_workflow.message_processing_semaphore
@@ -50,7 +50,7 @@ class MessageProcessor:
     def get_session_buffer_length(self, sid: str) -> int:
         return self.session_buffer.get_buffer(sid).get_length()
 
-    async def pop_session_messages(self, sid: str, count: int = 1):
+    async def pop_session_messages(self, sid: str, count: int = 1) -> None:
         self.session_buffer.get_buffer(sid).pop(count)
 
     @deprecated("Use PluginContext.flush_session_messages instead")
@@ -62,12 +62,22 @@ class MessageProcessor:
     ) -> bool:
         """Publish buffered events using the workflow's shared buffer and event bus."""
         return await publish_buffered_messages(
-            self.session_buffer, self.im_workflow.ctx.event_bus, sid,
-            extra_event=extra_event, filter_fn=filter_fn,
+            self.session_buffer,
+            self.im_workflow.ctx.event_bus,
+            sid,
+            extra_event=extra_event,
+            filter_fn=filter_fn,
         )
 
     @deprecated("Use PluginContext.send_message_chain instead")
-    async def send_message_chain(self, session: Session | str, chain: MessageChain, *, memory_message: OpenAIMessage | None = None, bot: User | None = None) -> KiraIMSentResult:
+    async def send_message_chain(
+        self,
+        session: Session | str,
+        chain: MessageChain,
+        *,
+        memory_message: OpenAIMessage | None = None,
+        bot: User | None = None,
+    ) -> KiraIMSentResult:
         target = await self.im_workflow.ctx.session_manager.resolve_session(session)
         return await self.message_router.send_message_chain(
             target,
@@ -76,7 +86,9 @@ class MessageProcessor:
             bot=bot,
         )
 
-    @deprecated("Publish the event with await PluginContext.event_bus.publish(event) instead")
+    @deprecated(
+        "Publish the event with await PluginContext.event_bus.publish(event) instead"
+    )
     async def handle_im_message(self, event: KiraMessageEvent):
         await self.message_router.handle_event(event)
 

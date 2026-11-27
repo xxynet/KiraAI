@@ -1,15 +1,15 @@
 {
-    "name": "Telegram",
-    "display_name": "Telegram",
-    "version": "1.0.0",
-    "author": "KiraAI",
-    "description": "Telegram Adapter",
-    "repo": null,
-    "icon": "icon.svg",
-    "locales": {
-        "zh": {
-            "display_name": "Telegram",
-            "description": "Telegram 平台适配器"
-        }
+  "name": "Telegram",
+  "display_name": "Telegram",
+  "version": "1.0.0",
+  "author": "KiraAI",
+  "description": "Telegram Adapter",
+  "repo": null,
+  "icon": "icon.svg",
+  "locales": {
+    "zh": {
+      "display_name": "Telegram",
+      "description": "Telegram 平台适配器"
     }
+  }
 }

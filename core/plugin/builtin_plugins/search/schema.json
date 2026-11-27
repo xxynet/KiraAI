@@ -20,11 +20,7 @@
         "type": "string",
         "name": "Search Mode",
         "default": "hybrid",
-        "options": [
-          "hybrid",
-          "tavily",
-          "anysearch"
-        ],
+        "options": ["hybrid", "tavily", "anysearch"],
         "hint": "hybrid = query both sources concurrently and merge (recommended, auto-falls back to single source if one is unavailable, equivalent to legacy auto); tavily/anysearch = force single source",
         "locales": {
           "zh": {

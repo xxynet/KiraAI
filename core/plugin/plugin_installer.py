@@ -13,7 +13,9 @@ Flow
 
 After installation call PluginManager.load_plugin_from_dir() to activate the plugin.
 """
+
 import asyncio
+import contextlib
 import json
 import shutil
 import sys
@@ -21,6 +23,7 @@ import uuid
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from core.logging_manager import get_logger
 from core.utils.github_api import parse_github_url, pick_fastest_source
@@ -51,7 +54,7 @@ def _temp_dir() -> Path:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
-async def _run_thread_worker(func: Callable, *args):
+async def _run_thread_worker(func: Callable, *args) -> Any:
     """Run blocking work in a thread and settle it before propagating cancellation."""
     worker = asyncio.create_task(asyncio.to_thread(func, *args))
     try:
@@ -63,7 +66,9 @@ async def _run_thread_worker(func: Callable, *args):
             except asyncio.CancelledError:
                 continue
             except Exception as exc:
-                logger.warning(f"Background plugin installer worker failed during cancellation: {exc}")
+                logger.warning(
+                    f"Background plugin installer worker failed during cancellation: {exc}"
+                )
                 break
         raise
 
@@ -100,7 +105,9 @@ async def install_from_github(
     owner, repo = parse_github_url(repo_url)
     if commit_sha is not None:
         commit_sha = commit_sha.strip().lower()
-        if len(commit_sha) != 40 or any(char not in "0123456789abcdef" for char in commit_sha):
+        if len(commit_sha) != 40 or any(
+            char not in "0123456789abcdef" for char in commit_sha
+        ):
             raise ValueError("commit_sha must be a full 40-character Git commit SHA")
     archive_ref = commit_sha or "HEAD"
     direct_url = f"https://github.com/{owner}/{repo}/archive/{archive_ref}.zip"
@@ -195,7 +202,9 @@ async def install_from_zip(
         raise
 
 
-async def install_requirements(plugin_dir: Path, pypi_mirror: str | None = None) -> list[str]:
+async def install_requirements(
+    plugin_dir: Path, pypi_mirror: str | None = None
+) -> list[str]:
     """
     Install dependencies listed in the plugin's requirements.txt using pip.
 
@@ -222,20 +231,28 @@ async def _install_requirements(plugin_dir: Path, pypi_mirror: str | None) -> li
         if pypi_mirror.startswith(("http://", "https://")):
             pip_cmd.extend(["-i", pypi_mirror])
         else:
-            logger.warning(f"Ignoring invalid pypi_mirror (must start with http:// or https://): {pypi_mirror}")
-    spawn_task = asyncio.create_task(asyncio.create_subprocess_exec(
-        *pip_cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    ))
+            logger.warning(
+                f"Ignoring invalid pypi_mirror (must start with http:// or https://): {pypi_mirror}"
+            )
+    spawn_task = asyncio.create_task(
+        asyncio.create_subprocess_exec(
+            *pip_cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    )
     try:
         # Cancellation during process creation must not leave an untracked pip.
         proc = await asyncio.shield(spawn_task)
         try:
-            _, stderr = await asyncio.wait_for(proc.communicate(), PLUGIN_REQUIREMENTS_TIMEOUT_SECONDS)
+            _, stderr = await asyncio.wait_for(
+                proc.communicate(), PLUGIN_REQUIREMENTS_TIMEOUT_SECONDS
+            )
         except asyncio.TimeoutError:
             await _stop_requirements_process(spawn_task)
-            return [f"Dependency installation timed out after {PLUGIN_REQUIREMENTS_TIMEOUT_SECONDS}s"]
+            return [
+                f"Dependency installation timed out after {PLUGIN_REQUIREMENTS_TIMEOUT_SECONDS}s"
+            ]
     except asyncio.CancelledError:
         await _stop_requirements_process(spawn_task)
         raise
@@ -254,16 +271,15 @@ async def _install_requirements(plugin_dir: Path, pypi_mirror: str | None) -> li
 
 async def _stop_requirements_process(spawn_task):
     """Keep the install slot until process creation and cleanup settle, even if cancelled again."""
+
     async def stop():
         try:
             proc = await spawn_task
         except Exception:
             return
         if proc.returncode is None:
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 proc.kill()
-            except ProcessLookupError:
-                pass
         await proc.communicate()
 
     cleanup = asyncio.create_task(stop())
@@ -282,6 +298,7 @@ async def _stop_requirements_process(spawn_task):
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _validate_zip_directory(temp_zip: Path) -> None:
     """Reject oversized ZIP directories before ``ZipFile`` parses their entries."""
     with temp_zip.open("rb") as archive:
@@ -294,7 +311,9 @@ def _validate_zip_directory(temp_zip: Path) -> None:
             f"Plugin archive exceeds the {MAX_PLUGIN_ARCHIVE_FILE_COUNT} file limit"
         )
     if end_record[zipfile._ECD_SIZE] > MAX_PLUGIN_ARCHIVE_CENTRAL_DIRECTORY_BYTES:
-        raise ValueError("Plugin archive central directory exceeds the 512 KiB size limit")
+        raise ValueError(
+            "Plugin archive central directory exceeds the 512 KiB size limit"
+        )
 
 
 async def _extract_and_install(
@@ -354,17 +373,22 @@ def _extract_and_install_sync(
                 if item.is_dir():
                     continue
                 if item.file_size > MAX_PLUGIN_ARCHIVE_BYTES:
-                    raise ValueError("A plugin archive file exceeds the 50 MiB size limit")
+                    raise ValueError(
+                        "A plugin archive file exceeds the 50 MiB size limit"
+                    )
                 if item.file_size and (
                     item.compress_size == 0
-                    or item.file_size / item.compress_size > MAX_PLUGIN_ARCHIVE_COMPRESSION_RATIO
+                    or item.file_size / item.compress_size
+                    > MAX_PLUGIN_ARCHIVE_COMPRESSION_RATIO
                 ):
                     raise ValueError(
                         f"Plugin archive entry exceeds the {MAX_PLUGIN_ARCHIVE_COMPRESSION_RATIO}:1 compression ratio limit"
                     )
                 total_uncompressed_size += item.file_size
                 if total_uncompressed_size > MAX_PLUGIN_ARCHIVE_BYTES:
-                    raise ValueError("Plugin archive exceeds the 50 MiB uncompressed size limit")
+                    raise ValueError(
+                        "Plugin archive exceeds the 50 MiB uncompressed size limit"
+                    )
 
             names = [item.filename for item in members]
 
@@ -399,7 +423,7 @@ def _extract_and_install_sync(
             staging.mkdir(parents=True, exist_ok=True)
 
             for item in members:
-                rel_path = item.filename[len(prefix):]
+                rel_path = item.filename[len(prefix) :]
                 if not rel_path or rel_path.endswith("/"):
                     continue
                 target = staging / rel_path
@@ -419,7 +443,9 @@ def _extract_and_install_sync(
         else:
             dest = target_dir
             if dest.resolve().parent != plugins_dir.resolve():
-                raise ValueError("Plugin update target must be a direct child of the plugins directory")
+                raise ValueError(
+                    "Plugin update target must be a direct child of the plugins directory"
+                )
         if dest.exists():
             shutil.rmtree(dest)
         shutil.move(str(staging), str(dest))

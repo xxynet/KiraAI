@@ -4,20 +4,17 @@ from .base import BaseTag
 
 
 class TagSet:
-    def __init__(self):
+    def __init__(self) -> None:
         self._tags: list[BaseTag] = []
         self._root_tags: list[BaseTag] = []
 
-    def __contains__(self, item):
+    def __contains__(self, item) -> bool:
         for t in self._tags:
             if t.name == item:
                 return True
-        for t in self._root_tags:
-            if t.name == item:
-                return True
-        return False
+        return any(t.name == item for t in self._root_tags)
 
-    def register(self, *tags: BaseTag | type[BaseTag]):
+    def register(self, *tags: BaseTag | type[BaseTag]) -> None:
         for tag in tags:
             tag_inst = tag
             if isinstance(tag_inst, type) and issubclass(tag, BaseTag):
@@ -29,13 +26,13 @@ class TagSet:
                     break
             target.append(tag_inst)
 
-    def unregister(self, *tag_names: str):
+    def unregister(self, *tag_names: str) -> None:
         for lst in (self._tags, self._root_tags):
             for i in range(len(lst) - 1, -1, -1):
                 if lst[i].name in tag_names:
                     lst.pop(i)
 
-    def get(self, name: str):
+    def get(self, name: str) -> BaseTag | None:
         for t in self._tags:
             if t.name == name:
                 return t
@@ -43,21 +40,21 @@ class TagSet:
             if t.name == name:
                 return t
 
-    def get_root(self, name: str):
+    def get_root(self, name: str) -> BaseTag | None:
         for t in self._root_tags:
             if t.name == name:
                 return t
 
-    def get_all(self):
+    def get_all(self) -> list[BaseTag]:
         return self._tags[:]
 
-    def get_all_root(self):
+    def get_all_root(self) -> list[BaseTag]:
         return self._root_tags[:]
 
-    def to_prompt(self):
+    def to_prompt(self) -> str:
         return "\n".join([t.description for t in self._tags])
 
-    def to_root_prompt(self):
+    def to_root_prompt(self) -> str:
         return "\n".join([t.description for t in self._root_tags])
 
 

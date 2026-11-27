@@ -21,7 +21,8 @@ class DefaultIMWorkflow(IMWorkflow):
     def __init__(self, ctx: IMWorkflowContext, max_concurrent_messages: int = 3):
         super().__init__(ctx, max_concurrent_messages=max_concurrent_messages)
         self.event_stages: tuple[BaseStage[IMEventContext], ...] = (
-            ReceiveStage(), RouteStage(),
+            ReceiveStage(),
+            RouteStage(),
         )
         self.batch_stages: tuple[BaseStage[IMBatchContext], ...] = (
             PrepareBatchStage(),

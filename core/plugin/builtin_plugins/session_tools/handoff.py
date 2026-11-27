@@ -4,7 +4,6 @@ import time
 import uuid
 from dataclasses import dataclass, field
 
-
 HANDOFF_KEY = "session_handoff"
 
 
@@ -37,7 +36,11 @@ class SessionHandoff:
                 if isinstance(handoff, cls):
                     inherited.append(handoff)
         # A merged batch follows its most consumed chain rather than resetting it.
-        handoff = max(inherited, key=lambda item: (len(item.chain.transfers), item.hops)) if inherited else cls()
+        handoff = (
+            max(inherited, key=lambda item: (len(item.chain.transfers), item.hops))
+            if inherited
+            else cls()
+        )
         extra[HANDOFF_KEY] = handoff
         return handoff
 
@@ -54,23 +57,33 @@ class SessionHandoff:
             "status": "denied",
         }
 
-    def reserve(self, record: dict, max_transfers: int, repeat_window: int) -> str | None:
+    def reserve(
+        self, record: dict, max_transfers: int, repeat_window: int
+    ) -> str | None:
         """Reserve before any await so concurrent branches share one finite budget."""
         if len(self.chain.transfers) >= max_transfers:
             return f"Cross-session transfer blocked: chain limit of {max_transfers} reached; wait for new user input"
-        fingerprint = (record["source"], record["target"], " ".join(record["description"].split()))
+        fingerprint = (
+            record["source"],
+            record["target"],
+            " ".join(record["description"].split()),
+        )
         now = time.time()
         for previous in self.chain.transfers:
             if previous["status"] not in {"pending", "sent"}:
                 continue
             if now - previous["timestamp"] > repeat_window:
                 continue
-            if fingerprint == (previous["source"], previous["target"], " ".join(previous["description"].split())):
+            if fingerprint == (
+                previous["source"],
+                previous["target"],
+                " ".join(previous["description"].split()),
+            ):
                 return "Cross-session transfer blocked: repeated source, target and description in this chain"
         record["status"] = "pending"
         record["chain_transfer"] = len(self.chain.transfers) + 1
         self.chain.transfers.append(record)
         return None
 
-    def next(self, record: dict):
+    def next(self, record: dict) -> "SessionHandoff":
         return SessionHandoff(self.chain, record["transfer_id"], self.hops + 1)

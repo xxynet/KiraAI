@@ -10,13 +10,13 @@ DEFAULT_CONFIG = {
             "min_message_delay": 2,
             "max_message_delay": 5,
             "dynamic_prompt_position": "latest_user",
-            "memory_prompt_position": "latest_user"
+            "memory_prompt_position": "latest_user",
         },
         "agent": {
             "max_tool_loop": 5,
             "max_tool_calls_per_turn": 5,
             "tool_call_timeout": 60,
-            "max_tool_output_tokens": 10000
+            "max_tool_output_tokens": 10000,
         },
         "subagent": {
             "session_retention_hours": 0,
@@ -26,47 +26,34 @@ DEFAULT_CONFIG = {
             "max_size_mb": 50,
             "max_files": 50,
             "max_age_hours": 24,
-            "check_interval_minutes": 5
+            "check_interval_minutes": 5,
         },
         "message_history_cleanup": {
             "enabled": True,
             "max_age_days": 0,
             "max_messages_per_session": 500,
-            "cleanup_interval_seconds": 3600
+            "cleanup_interval_seconds": 3600,
         },
         "image_compression": {
             "enabled": False,
             "max_size": 1280,
             "quality": 95,
-            "min_file_size_mb": 1
+            "min_file_size_mb": 1,
         },
         "capabilities": {
             "image_recognition": {
                 "enabled": True,
                 "mode": "vlm_description",
-                "desc_prompt": ""
+                "desc_prompt": "",
             },
-            "tts": {
-                "enabled": True
-            },
-            "stt": {
-                "enabled": True
-            },
-            "image_generation": {
-                "enabled": True
-            },
-            "video_generation": {
-                "enabled": False
-            },
-            "forward_parsing": {
-                "enabled": True
-            }
-        }
+            "tts": {"enabled": True},
+            "stt": {"enabled": True},
+            "image_generation": {"enabled": True},
+            "video_generation": {"enabled": False},
+            "forward_parsing": {"enabled": True},
+        },
     },
-    "locale": {
-        "lang": None,
-        "TZ": None
-    },
+    "locale": {"lang": None, "TZ": None},
     "onboarding": {
         "completed": False,
         "version": 1,
@@ -82,25 +69,15 @@ DEFAULT_CONFIG = {
         "default_embedding": None,
         "default_rerank": None,
         "default_video": None,
-        "default_decision": None
+        "default_decision": None,
     },
     "adapters": {},  # ID: Adapter config dict
-    "network": {
-        "pypi_mirror": None,
-        "http_proxy": None
-    },
-    "telemetry": {
-        "enabled": True,
-        "client_uuid": None,
-        "secret_key": None
-    },
-    "database": {
-        "url": None,
-        "echo": False
-    },
+    "network": {"pypi_mirror": None, "http_proxy": None},
+    "telemetry": {"enabled": True, "client_uuid": None, "secret_key": None},
+    "database": {"url": None, "echo": False},
     "logging": {
         "log_level": "INFO",
         "log_file_path": None,  # None = {data_path}/log.log
-        "log_file_max_size": 10  # MB
-    }
+        "log_file_max_size": 10,  # MB
+    },
 }

@@ -1,16 +1,16 @@
 {
-    "name": "ModelScope",
-    "display_name": "ModelScope",
-    "version": "1.0.0",
-    "author": "KiraAI",
-    "description": "ModelScope Provider",
-    "repo": null,
-    "icon": "icon.svg",
-    "icon-dark": "icon-dark.svg",
-    "locales": {
-        "zh": {
-            "display_name": "ModelScope（魔搭）",
-            "description": "ModelScope 提供商"
-        }
+  "name": "ModelScope",
+  "display_name": "ModelScope",
+  "version": "1.0.0",
+  "author": "KiraAI",
+  "description": "ModelScope Provider",
+  "repo": null,
+  "icon": "icon.svg",
+  "icon-dark": "icon-dark.svg",
+  "locales": {
+    "zh": {
+      "display_name": "ModelScope（魔搭）",
+      "description": "ModelScope 提供商"
     }
+  }
 }

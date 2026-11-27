@@ -34,7 +34,7 @@ async def migrate_stickers(db_service: DatabaseService) -> None:
         return
 
     try:
-        with open(sticker_path, "r", encoding="utf-8") as f:
+        with open(sticker_path, encoding="utf-8") as f:
             data = json.load(f)
     except Exception as e:
         logger.error(f"Failed to read sticker JSON: {e}")
@@ -64,7 +64,7 @@ async def migrate_image_desc_cache(db_service: DatabaseService) -> None:
         return
 
     try:
-        with open(cache_path, "r", encoding="utf-8") as f:
+        with open(cache_path, encoding="utf-8") as f:
             data = json.load(f)
     except Exception as e:
         logger.error(f"Failed to read image desc cache JSON: {e}")
@@ -76,7 +76,9 @@ async def migrate_image_desc_cache(db_service: DatabaseService) -> None:
         count_val = entry.get("count", 1)
         last_seen = entry.get("last_seen", 0)
         if description:
-            await db_service.add_image_desc_cache(md5, description, count_val, last_seen)
+            await db_service.add_image_desc_cache(
+                md5, description, count_val, last_seen
+            )
             count += 1
 
     logger.info(f"Migrated {count} image desc cache entries to database")
@@ -100,7 +102,9 @@ async def migrate_persona(db_service: DatabaseService) -> None:
         logger.error(f"Failed to read persona text: {e}")
         return
 
-    await db_service.add_persona("default", "default", content, format="text", is_active=True)
+    await db_service.add_persona(
+        "default", "default", content, format="text", is_active=True
+    )
     logger.info("Migrated default persona to database")
 
 
@@ -130,13 +134,11 @@ async def migrate_persona_is_active(db_service: DatabaseService) -> None:
         # Use raw connection for DDL operations
         async with db_service.db.engine.begin() as conn:
             # Check if is_active column exists
-            result = await conn.execute(
-                text("PRAGMA table_info(personas)")
-            )
+            result = await conn.execute(text("PRAGMA table_info(personas)"))
             columns = [row.name for row in result.fetchall()]
             logger.info(f"Current persona columns: {columns}")
 
-            if 'is_active' not in columns:
+            if "is_active" not in columns:
                 logger.info("Adding is_active column to personas table")
                 await conn.execute(
                     text("ALTER TABLE personas ADD COLUMN is_active BOOLEAN DEFAULT 0")
@@ -150,9 +152,13 @@ async def migrate_persona_is_active(db_service: DatabaseService) -> None:
                 )
                 if result.scalar() == 0:
                     # No active persona, set the first one as active
-                    logger.info("No active persona found, setting first persona as active")
+                    logger.info(
+                        "No active persona found, setting first persona as active"
+                    )
                     await conn.execute(
-                        text("UPDATE personas SET is_active = 1 WHERE id = (SELECT id FROM personas ORDER BY created_at LIMIT 1)")
+                        text(
+                            "UPDATE personas SET is_active = 1 WHERE id = (SELECT id FROM personas ORDER BY created_at LIMIT 1)"
+                        )
                     )
                 else:
                     logger.info("Active persona already exists, skipping activation")
@@ -169,11 +175,15 @@ async def migrate_persona_reference_image_path(db_service: DatabaseService) -> N
     """Add the reference image column without inspecting intermediate image files."""
     async with db_service.db.engine.begin() as conn:
         columns = await conn.run_sync(
-            lambda sync_conn: {column["name"] for column in inspect(sync_conn).get_columns("personas")}
+            lambda sync_conn: {
+                column["name"] for column in inspect(sync_conn).get_columns("personas")
+            }
         )
         if "reference_image_path" in columns:
             return
-        await conn.execute(text("ALTER TABLE personas ADD COLUMN reference_image_path TEXT"))
+        await conn.execute(
+            text("ALTER TABLE personas ADD COLUMN reference_image_path TEXT")
+        )
     logger.info("Added persona reference image path column")
 
 
@@ -181,11 +191,17 @@ async def migrate_persona_chat_rules(db_service: DatabaseService) -> None:
     """Add separate chat rules while preserving existing persona content."""
     async with db_service.db.engine.begin() as conn:
         columns = await conn.run_sync(
-            lambda sync_conn: {column["name"] for column in inspect(sync_conn).get_columns("personas")}
+            lambda sync_conn: {
+                column["name"] for column in inspect(sync_conn).get_columns("personas")
+            }
         )
         for column in ("chat_rules", "private_chat_rules", "group_chat_rules"):
             if column not in columns:
-                await conn.execute(text(f"ALTER TABLE personas ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"))
+                await conn.execute(
+                    text(
+                        f"ALTER TABLE personas ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"
+                    )
+                )
 
 
 def _read_configured_selfie_image(configured_path: str) -> tuple[bytes, str]:
@@ -198,7 +214,9 @@ def _read_configured_selfie_image(configured_path: str) -> tuple[bytes, str]:
         return image.read(MAX_REFERENCE_IMAGE_BYTES + 1), source.name
 
 
-async def migrate_selfie_reference_image(persona_manager: "PersonaManager", config: "KiraConfig") -> None:
+async def migrate_selfie_reference_image(
+    persona_manager: "PersonaManager", config: "KiraConfig"
+) -> None:
     """Copy the legacy configured selfie image to the active persona once."""
     bot_config = config.get("bot_config", {})
     selfie_config = bot_config.get("selfie")
@@ -214,14 +232,20 @@ async def migrate_selfie_reference_image(persona_manager: "PersonaManager", conf
         # Preserve a reference already saved through the persona editor.
         if not persona.reference_image_path:
             try:
-                content, filename = await asyncio.to_thread(_read_configured_selfie_image, configured_path)
+                content, filename = await asyncio.to_thread(
+                    _read_configured_selfie_image, configured_path
+                )
                 await persona_manager.set_reference_image(persona.id, content, filename)
             except Exception as exc:
-                logger.warning("Selfie reference migration deferred (%s)", type(exc).__name__)
+                logger.warning(
+                    "Selfie reference migration deferred (%s)", type(exc).__name__
+                )
                 return
             logger.info("Copied configured selfie reference to the active persona")
 
-    remaining_config = {key: value for key, value in selfie_config.items() if key != "path"}
+    remaining_config = {
+        key: value for key, value in selfie_config.items() if key != "path"
+    }
     if remaining_config:
         bot_config["selfie"] = remaining_config
     else:
@@ -230,7 +254,10 @@ async def migrate_selfie_reference_image(persona_manager: "PersonaManager", conf
         await asyncio.to_thread(config.save_config, raise_on_error=True)
     except Exception as exc:
         bot_config["selfie"] = selfie_config
-        logger.warning("Selfie reference migration config cleanup deferred (%s)", type(exc).__name__)
+        logger.warning(
+            "Selfie reference migration config cleanup deferred (%s)",
+            type(exc).__name__,
+        )
 
 
 async def run_migrations(db_service: DatabaseService) -> None:

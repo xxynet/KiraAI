@@ -34,7 +34,7 @@ def get_default_vlm_prompt(lang: str | None) -> str:
     return DEFAULT_VLM_PROMPTS.get(language_code, DEFAULT_VLM_PROMPTS["en"])
 
 
-async def image_to_base64(image_path: str):
+async def image_to_base64(image_path: str) -> str:
     """
     convert an image to base64
     :param image_path: 图片文件路径或网络URL
@@ -46,10 +46,10 @@ async def image_to_base64(image_path: str):
             resp.raise_for_status()
             image_data = resp.content
         base64_data = base64.b64encode(image_data)
-        return base64_data.decode('utf-8')
+        return base64_data.decode("utf-8")
     image_data = await asyncio.to_thread(Path(image_path).read_bytes)
     base64_data = await asyncio.to_thread(base64.b64encode, image_data)
-    return base64_data.decode('utf-8')
+    return base64_data.decode("utf-8")
 
 
 async def desc_img(
@@ -69,26 +69,22 @@ async def desc_img(
     if prompt is None:
         prompt = get_default_vlm_prompt(lang)
     from core.provider import LLMRequest
-    try:
 
+    try:
         image_url = await image.to_data_url()
 
-        messages = [{
-            "role": "user",
-            "content": [
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": image_url,
-                        "detail": "high"
-                    }
-                },
-                {
-                    "type": "text",
-                    "text": prompt
-                }
-            ]
-        }]
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": image_url, "detail": "high"},
+                    },
+                    {"type": "text", "text": prompt},
+                ],
+            }
+        ]
 
         request = LLMRequest(messages=messages)
         vlm_model = client
@@ -103,14 +99,14 @@ async def desc_img(
 
 
 async def text_to_speech(client: TTSModelClient, text: str) -> Record:
-        tts_client = client
-        provider_name = tts_client.model.provider_name
-        model_name = tts_client.model.model_name
-        logger.info(f"Generating speech using {model_name} ({provider_name})")
-        record = await tts_client.text_to_speech(text)
-        if record:
-            logger.info(f"Generated speech from text {text}")
-        return record
+    tts_client = client
+    provider_name = tts_client.model.provider_name
+    model_name = tts_client.model.model_name
+    logger.info(f"Generating speech using {model_name} ({provider_name})")
+    record = await tts_client.text_to_speech(text)
+    if record:
+        logger.info(f"Generated speech from text {text}")
+    return record
 
 
 async def speech_to_text(client: STTModelClient, record: Record):
@@ -132,7 +128,9 @@ async def generate_image(client: ImageModelClient, prompt: str) -> Image:
         img_res = await image_client.text_to_image(prompt)
         if img_res:
             logger.info(f"Image generated with prompt: {prompt}")
-            logger.debug(f"type={img_res.image_type}, len={len(img_res.image or '')}, prefix={(img_res.image or '')[:200]!r}")
+            logger.debug(
+                f"type={img_res.image_type}, len={len(img_res.image or '')}, prefix={(img_res.image or '')[:200]!r}"
+            )
         else:
             logger.error("Failed to generate image with text: result is None")
         return img_res
@@ -140,18 +138,26 @@ async def generate_image(client: ImageModelClient, prompt: str) -> Image:
         logger.error(f"Failed to generate image with text: {e}")
 
 
-async def image_to_image(client: ImageModelClient, prompt: str, image: Image | list[Image]) -> Image:
+async def image_to_image(
+    client: ImageModelClient, prompt: str, image: Image | list[Image]
+) -> Image:
     image_client = client
     provider_name = image_client.model.provider_name
     model_name = image_client.model.model_name
-    logger.info(f"Generating image using {model_name} ({provider_name}) with a reference image")
+    logger.info(
+        f"Generating image using {model_name} ({provider_name}) with a reference image"
+    )
     try:
         img_res = await image_client.image_to_image(prompt=prompt, image=image)
         if img_res:
             logger.info(f"Image generated (img2img): prompt: {prompt}")
-            logger.debug(f"type={img_res.image_type}, len={len(img_res.image or '')}, prefix={(img_res.image or '')[:200]!r}")
+            logger.debug(
+                f"type={img_res.image_type}, len={len(img_res.image or '')}, prefix={(img_res.image or '')[:200]!r}"
+            )
         else:
-            logger.error("Failed to generate image with a reference image: result is None")
+            logger.error(
+                "Failed to generate image with a reference image: result is None"
+            )
         return img_res
     except Exception as e:
         logger.error(f"Failed to generate image with a reference image: {e}")

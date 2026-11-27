@@ -14,6 +14,7 @@ from .pages import PageMenu, PluginPage
 @dataclass
 class PluginComponents:
     """Typed container for all components registered by a single plugin."""
+
     tools: dict[str, dict] = field(default_factory=dict)
     tool_funcs: dict[str, Callable] = field(default_factory=dict)
     tags: list[dict] = field(default_factory=list)
@@ -35,17 +36,32 @@ class PluginComponents:
     subagents: dict[str, "PluginSubAgentRegistration"] = field(default_factory=dict)
 
     def has_any(self) -> bool:
-        return bool(self.tools or self.tags or self.hooks or self.pages
-                    or self.api_routes or self.ws_routes or self.static_dirs or self.widgets
-                    or self.providers or self.adapters or self.adapter_capabilities or self.subagents)
+        return bool(
+            self.tools
+            or self.tags
+            or self.hooks
+            or self.pages
+            or self.api_routes
+            or self.ws_routes
+            or self.static_dirs
+            or self.widgets
+            or self.providers
+            or self.adapters
+            or self.adapter_capabilities
+            or self.subagents
+        )
 
-    def register_subagent(self, identity: str, registration: "PluginSubAgentRegistration") -> None:
+    def register_subagent(
+        self, identity: str, registration: "PluginSubAgentRegistration"
+    ) -> None:
         self.subagents[identity] = registration
 
     def unregister_subagent(self, identity: str) -> "PluginSubAgentRegistration | None":
         return self.subagents.pop(identity, None)
 
-    def register_tool(self, name: str, description: str, params: dict, func: Callable):
+    def register_tool(
+        self, name: str, description: str, params: dict, func: Callable
+    ) -> None:
         self.tools[name] = {
             "name": name,
             "description": description,
@@ -54,12 +70,15 @@ class PluginComponents:
         }
         self.tool_funcs[name] = func
 
-    def register_tag(self, name: str, description: str, func: Callable, parent: str | None = "msg"):
+    def register_tag(
+        self, name: str, description: str, func: Callable, parent: str | None = "msg"
+    ) -> None:
         self.tags.append({"name": name, "description": description, "parent": parent})
         self.tag_funcs[name] = func
 
-    def register_hook(self, handler: Callable, priority: Priority | int,
-                      event_type: EventType):
+    def register_hook(
+        self, handler: Callable, priority: Priority | int, event_type: EventType
+    ) -> None:
         eh = EventHandler(
             event_type=event_type,
             priority=priority,
@@ -68,64 +87,85 @@ class PluginComponents:
         )
         self.hooks.append(eh)
 
-    def register_page(self, route: str, func: Callable, auth: bool = True,
-                      menu: Union[dict, "PageMenu"] | None = None,
-                      page_obj: Optional["PluginPage"] = None,
-                      returns_plugin_page: bool = False):
+    def register_page(
+        self,
+        route: str,
+        func: Callable,
+        auth: bool = True,
+        menu: Union[dict, "PageMenu"] | None = None,
+        page_obj: Optional["PluginPage"] = None,
+        returns_plugin_page: bool = False,
+    ) -> None:
         if isinstance(menu, dict):
             menu = PageMenu(**menu)
-        self.pages.append({
-            "route": route,
-            "func": func,
-            "auth": auth,
-            "menu": menu,
-            "page": page_obj,
-            "returns_plugin_page": returns_plugin_page,
-        })
+        self.pages.append(
+            {
+                "route": route,
+                "func": func,
+                "auth": auth,
+                "menu": menu,
+                "page": page_obj,
+                "returns_plugin_page": returns_plugin_page,
+            }
+        )
         if func is not None:
             self.page_funcs[func.__name__] = func
 
-    def register_static(self, path: str, directory: str, html: bool = False):
-        self.static_dirs.append({
-            "path": path,
-            "directory": directory,
-            "html": html,
-        })
+    def register_static(self, path: str, directory: str, html: bool = False) -> None:
+        self.static_dirs.append(
+            {
+                "path": path,
+                "directory": directory,
+                "html": html,
+            }
+        )
 
-    def register_api(self, method: str, path: str, func: Callable,
-                     auth: bool = True, **kwargs):
-        self.api_routes.append({
-            "method": method.upper(),
-            "path": path,
-            "func": func,
-            "auth": auth,
-            "kwargs": kwargs,
-        })
+    def register_api(
+        self, method: str, path: str, func: Callable, auth: bool = True, **kwargs
+    ) -> None:
+        self.api_routes.append(
+            {
+                "method": method.upper(),
+                "path": path,
+                "func": func,
+                "auth": auth,
+                "kwargs": kwargs,
+            }
+        )
         self.api_route_funcs[func.__name__] = func
 
-    def register_ws(self, path: str, func: Callable, auth: bool = True):
-        self.ws_routes.append({
-            "path": path,
-            "func": func,
-            "auth": auth,
-        })
+    def register_ws(self, path: str, func: Callable, auth: bool = True) -> None:
+        self.ws_routes.append(
+            {
+                "path": path,
+                "func": func,
+                "auth": auth,
+            }
+        )
         self.ws_route_funcs[func.__name__] = func
 
-    def register_widget(self, widget_id: str, label: str | dict[str, str],
-                        icon: str,
-                        color: Literal["blue", "green", "purple", "yellow", "red", "gray"],
-                        order: int,
-                        size: Literal["small", "wide"],
-                        func: Callable):
-        self.widgets.append({
-            "widget_id": widget_id,
-            "label": label,
-            "icon": icon,
-            "color": color,
-            "order": order,
-            "size": size,
-        })
+    def register_widget(
+        self,
+        widget_id: str,
+        label: str | dict[str, str],
+        icon: str,
+        color: Literal["blue", "green", "purple", "yellow", "red", "gray"],
+        order: int,
+        size: Literal["small", "wide"],
+        func: Callable,
+    ) -> None:
+        self.widgets.append(
+            {
+                "widget_id": widget_id,
+                "label": label,
+                "icon": icon,
+                "color": color,
+                "order": order,
+                "size": size,
+            }
+        )
         self.widget_funcs[widget_id] = func
+
     def register_provider(self, provider_format: str, metadata: dict) -> None:
         self.providers[provider_format] = metadata
 

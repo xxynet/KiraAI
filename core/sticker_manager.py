@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import inspect
 import os
 import re
@@ -15,7 +16,7 @@ logger = get_logger("sticker", "orange")
 
 
 class StickerManager:
-    def __init__(self, db: DatabaseService):
+    def __init__(self, db: DatabaseService) -> None:
         self.db = db
         self.sticker_folder = f"{get_data_path()}/sticker"
         self._sticker_cache: dict = {}
@@ -23,21 +24,19 @@ class StickerManager:
         self._sticker_index: int = 0
         self._on_registered_callbacks: list[Callable] = []
 
-    async def init(self):
+    async def init(self) -> None:
         """Load stickers from database into memory cache."""
         os.makedirs(self.sticker_folder, exist_ok=True)
         await self._load_from_db()
 
-    def on_sticker_registered(self, callback: Callable):
+    def on_sticker_registered(self, callback: Callable) -> None:
         self._on_registered_callbacks.append(callback)
 
-    def off_sticker_registered(self, callback: Callable):
-        try:
+    def off_sticker_registered(self, callback: Callable) -> None:
+        with contextlib.suppress(ValueError):
             self._on_registered_callbacks.remove(callback)
-        except ValueError:
-            pass
 
-    async def _fire_registered(self, sid: str, info: dict):
+    async def _fire_registered(self, sid: str, info: dict) -> None:
         for cb in self._on_registered_callbacks:
             try:
                 if inspect.iscoroutinefunction(cb):
@@ -47,9 +46,10 @@ class StickerManager:
             except Exception as e:
                 logger.error(f"Sticker registered callback error: {e}")
 
-    async def _load_from_db(self):
+    async def _load_from_db(self) -> None:
         try:
             rows = await self.db.list_stickers()
+
             # Sort by numeric id so stickers display in creation order
             def _sort_key(row):
                 sid = row["id"]
@@ -57,6 +57,7 @@ class StickerManager:
                     return (0, int(sid))
                 except ValueError:
                     return (1, sid)
+
             rows.sort(key=_sort_key)
 
             self._sticker_cache = {}
@@ -86,7 +87,9 @@ class StickerManager:
     def sticker_paths(self) -> list:
         return self._sticker_paths
 
-    async def register_sticker(self, filename: str, desc: str, sticker_id: str | None = None):
+    async def register_sticker(
+        self, filename: str, desc: str, sticker_id: str | None = None
+    ):
         if sticker_id:
             sid = str(sticker_id)
         else:
@@ -98,7 +101,9 @@ class StickerManager:
         self._sticker_cache[sid] = {"desc": desc, "path": filename, "extra": {}}
         self._sticker_paths.append(filename)
 
-        asyncio.create_task(self._fire_registered(sid, {"desc": desc, "path": filename}))
+        asyncio.create_task(
+            self._fire_registered(sid, {"desc": desc, "path": filename})
+        )
 
     async def update_sticker_desc(self, sticker_id: str, desc: str):
         sid = str(sticker_id)
@@ -149,7 +154,13 @@ class StickerManager:
         value = sticker_info_dict.get("extra", {}).get(key)
         return deepcopy(value)
 
-    async def add_sticker(self, file_bytes: bytes, original_filename: str, sticker_id: str | None = None, desc: str | None = None):
+    async def add_sticker(
+        self,
+        file_bytes: bytes,
+        original_filename: str,
+        sticker_id: str | None = None,
+        desc: str | None = None,
+    ):
         if not original_filename:
             raise ValueError("File name is required")
         base_name = os.path.basename(original_filename)

@@ -13,14 +13,14 @@ llm_logger = get_logger("llm", "purple")
 
 
 class DefaultCommentPlugin(BasePlugin):
-    async def initialize(self):
+    async def initialize(self) -> None:
         pass
 
-    async def terminate(self):
+    async def terminate(self) -> None:
         pass
 
     @on.comment(priority=Priority.SYS_LOW)
-    async def handle_comment(self, msg: KiraCommentEvent):
+    async def handle_comment(self, msg: KiraCommentEvent) -> None:
         """Provide the default reply only when no earlier plugin owns the event."""
         if msg.is_stopped:
             return
@@ -30,7 +30,9 @@ class DefaultCommentPlugin(BasePlugin):
         comment_text = "".join(element.repr for element in msg.comment_content)
         if msg.root_comment_content is not None:
             root_text = "".join(element.repr for element in msg.root_comment_content)
-            comment_content = f"You: {root_text}\n{msg.commenter_nickname}: {comment_text}"
+            comment_content = (
+                f"You: {root_text}\n{msg.commenter_nickname}: {comment_text}"
+            )
         else:
             comment_content = f"{msg.commenter_nickname}: {comment_text}"
 
@@ -42,10 +44,14 @@ class DefaultCommentPlugin(BasePlugin):
             llm_logger.error(f"Failed to get default LLM client: {exc}")
             return
         if not client:
-            llm_logger.error("Default LLM model not configured, please configure it in Configuration")
+            llm_logger.error(
+                "Default LLM model not configured, please configure it in Configuration"
+            )
             return
 
-        llm_req = LLMRequest(messages=[OpenAIMessage(role="user", content=comment_prompt)])
+        llm_req = LLMRequest(
+            messages=[OpenAIMessage(role="user", content=comment_prompt)]
+        )
 
         llm_resp = await client.chat(llm_req)
 
@@ -54,15 +60,19 @@ class DefaultCommentPlugin(BasePlugin):
         if response:
             adapter = self.ctx.adapter_mgr.get_adapter(msg.adapter_name)
             await adapter.get_capability(FeedCapability).send_comment(
-                message=MessageChain([Text(response)]), target=msg.target,
-                root=msg.root_comment_id, parent=msg.comment_id,
+                message=MessageChain([Text(response)]),
+                target=msg.target,
+                root=msg.root_comment_id,
+                parent=msg.comment_id,
             )
         else:
             logger.warning("Blank LLM response")
 
-    async def _build_comment_prompt(self, comment_content):
+    async def _build_comment_prompt(self, comment_content) -> str:
         persona = await self.ctx.persona_mgr.get_persona()
 
         return build_comment_prompt(
-            persona=persona.content, comment_content=comment_content, lang=self.ctx.get_lang(),
+            persona=persona.content,
+            comment_content=comment_content,
+            lang=self.ctx.get_lang(),
         )

@@ -78,7 +78,6 @@ def is_dist_complete(ignore_webui_version_check: bool = False) -> bool:
     return True
 
 
-
 # ─── Download + verify ─────
 
 
@@ -144,14 +143,16 @@ def _extract_dist_to_directory(zip_bytes: bytes, dist_dir: Path) -> None:
             # Strip common prefix so files land directly in dist_dir
             out_name = member.filename
             if strip_prefix and out_name.startswith(strip_prefix):
-                out_name = out_name[len(strip_prefix):]
+                out_name = out_name[len(strip_prefix) :]
             if not out_name:
                 continue
 
             out_path = dist_dir / out_name
             # Reject members whose path escapes dist_dir (Zip-Slip).
             if not is_within_directory(dist_dir, out_path):
-                raise ValueError(f"Unsafe path in dist archive (zip-slip blocked): {member.filename}")
+                raise ValueError(
+                    f"Unsafe path in dist archive (zip-slip blocked): {member.filename}"
+                )
             out_path.parent.mkdir(parents=True, exist_ok=True)
             with zf.open(member) as src, open(out_path, "wb") as dst:
                 dst.write(src.read())
@@ -166,7 +167,9 @@ async def download_dist_archive(version: str, proxy: str | None = None) -> bytes
 
     expected_sha = await _fetch_asset_digest(version, proxy)
     for index, download_url in enumerate(ranked_urls):
-        logger.info(f"Downloading {ASSET_NAME} (source {index + 1}/{len(ranked_urls)}) ...")
+        logger.info(
+            f"Downloading {ASSET_NAME} (source {index + 1}/{len(ranked_urls)}) ..."
+        )
         try:
             content = await get_file_content(download_url, proxy=proxy, timeout=30.0)
         except Exception as exc:
@@ -212,7 +215,9 @@ def apply_dist_archive(
 # ─── Main entry point ────────────────────────────────────────────────────────
 
 
-async def ensure_dist(proxy: str | None = None, ignore_webui_version_check: bool = False) -> None:
+async def ensure_dist(
+    proxy: str | None = None, ignore_webui_version_check: bool = False
+) -> None:
     """
     Ensure data/dist is present and up-to-date.
     Called from the launcher before WebUI starts.

@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import wraps
-from typing import TYPE_CHECKING, Literal, overload
+from typing import TYPE_CHECKING, Any, Literal, overload
 
 from deprecated import deprecated
 
@@ -57,13 +57,13 @@ class KiraIMMessage:
     native_content: list[dict] | None = field(default=None, init=False)
     message_repr: str | None = field(default=None, init=False)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.bot is None:
             self.bot = User(self.self_id)
         else:
             self.self_id = self.bot.user_id
 
-    def is_group_message(self):
+    def is_group_message(self) -> bool:
         return self.group is not None
 
 
@@ -85,20 +85,23 @@ class KiraStepResult:
 @dataclass
 class KiraFinalResult:
     """Aggregated output of one complete message turn, spanning all agent steps."""
+
     # Per-step results in execution order, so plugins can tell a single-step turn from
     # a multi-step (tool-calling) one. Sent messages and raw output live on each entry.
     step_results: list[KiraStepResult]
 
 
-def _accept_legacy_message_types(cls):
+def _accept_legacy_message_types(cls) -> Any:
     """Accept the deprecated constructor keyword without adding a second field."""
     original_init = cls.__init__
 
     @wraps(original_init)
-    def initialize(self, *args, **kwargs):
+    def initialize(self, *args, **kwargs) -> None:
         if "message_types" in kwargs:
             if args or "supported_elements" in kwargs:
-                raise TypeError("Specify only supported_elements or deprecated message_types")
+                raise TypeError(
+                    "Specify only supported_elements or deprecated message_types"
+                )
             warnings.warn(
                 "message_types is deprecated; use supported_elements instead",
                 DeprecationWarning,
@@ -123,7 +126,9 @@ class KiraMessageEvent:
     message_repr: str | None = field(default=None, init=False)
     _is_stopped: bool = False
     _is_forced: bool = False
-    _flush_filter_fn: Callable[[KiraMessageEvent], bool] | None = field(default=None, init=False, repr=False)
+    _flush_filter_fn: Callable[[KiraMessageEvent], bool] | None = field(
+        default=None, init=False, repr=False
+    )
 
     @property
     @deprecated("message_types is deprecated; use supported_elements instead")
@@ -136,16 +141,20 @@ class KiraMessageEvent:
     def message_types(self, value: list[str]) -> None:
         self.supported_elements = value
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.message_repr = " ".join(ele.repr for ele in self.message.chain)
         self.session = Session(
             adapter_name=self.adapter.name,
             session_type="gm" if self.message.group else "dm",
-            session_id=self.message.group.group_id if self.message.group else self.message.sender.user_id,
-            session_title=self.message.group.group_name if self.message.group else self.message.sender.nickname
+            session_id=self.message.group.group_id
+            if self.message.group
+            else self.message.sender.user_id,
+            session_title=self.message.group.group_name
+            if self.message.group
+            else self.message.sender.nickname,
         )
 
-    def get_log_info(self):
+    def get_log_info(self) -> str:
         self.message_repr = " ".join(ele.repr for ele in self.message.chain)
         if self.is_group_message():
             return f"[{self.adapter.name} | {self.message.message_id}] [{self.message.group.group_name} | {self.message.sender.nickname}]: {self.message_repr}"
@@ -157,40 +166,42 @@ class KiraMessageEvent:
         return self.message.group is not None
 
     @property
-    def extra(self):
+    def extra(self) -> dict[Any, Any] | None:
         return self.message.extra
 
     @property
-    def raw_message(self):
+    def raw_message(self) -> dict[Any, Any] | None:
         return self.message.raw_message
 
     @property
-    def is_mentioned(self):
+    def is_mentioned(self) -> bool | None:
         return self.message.is_mentioned
 
     @property
-    def is_notice(self):
+    def is_notice(self) -> bool:
         return self.message.is_notice
 
     @property
-    def is_stopped(self):
+    def is_stopped(self) -> bool:
         return self._is_stopped
 
     @property
-    def process_strategy(self):
+    def process_strategy(
+        self,
+    ):
         return self._process_strategy
 
-    def stop(self):
+    def stop(self) -> None:
         self._is_stopped = True
 
-    def trigger(self, force: bool = False):
+    def trigger(self, force: bool = False) -> bool:
         if self._is_forced:
             return False
         self._process_strategy = "trigger"
         self._is_forced = force
         return True
 
-    def buffer(self, force: bool = False):
+    def buffer(self, force: bool = False) -> bool:
         if self._is_forced:
             return False
         self._process_strategy = "buffer"
@@ -218,7 +229,7 @@ class KiraMessageEvent:
         self._flush_filter_fn = filter_fn
         return True
 
-    def discard(self, force: bool = False):
+    def discard(self, force: bool = False) -> bool:
         if self._is_forced:
             return False
         self._process_strategy = "discard"
@@ -261,10 +272,10 @@ class KiraMessageBatchEvent:
     def message_types(self, value: list[str]) -> None:
         self.supported_elements = value
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.event_id = uuid.uuid4().hex
 
-    def is_group_message(self):
+    def is_group_message(self) -> bool:
         return self.messages[-1].group is not None
 
     @property
@@ -272,18 +283,18 @@ class KiraMessageBatchEvent:
         return self.messages[-1].bot
 
     @property
-    def self_id(self):
+    def self_id(self) -> str:
         return self.messages[-1].self_id
 
     @property
-    def sid(self):
+    def sid(self) -> str:
         return self.session.sid
 
     @property
-    def is_stopped(self):
+    def is_stopped(self) -> bool:
         return self._is_stopped
 
-    def stop(self):
+    def stop(self) -> None:
         self._is_stopped = True
 
 
@@ -318,12 +329,14 @@ class KiraCommentEvent:
         """Stop propagation; claim processing before awaiting external operations."""
         self._is_stopped = True
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.root_comment_id is None:
             self.root_comment_id = self.comment_id
         if not isinstance(self.comment_content, MessageChain):
             self.comment_content = MessageChain(self.comment_content)
-        if self.root_comment_content is not None and not isinstance(self.root_comment_content, MessageChain):
+        if self.root_comment_content is not None and not isinstance(
+            self.root_comment_content, MessageChain
+        ):
             self.root_comment_content = MessageChain(self.root_comment_content)
         self.message_str = "".join(element.repr for element in self.comment_content)
 
@@ -350,7 +363,7 @@ class KiraExceptionEvent:
 
     extra: dict = field(default_factory=dict)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         pass
 
 
@@ -369,7 +382,7 @@ class MessageChain:
     def __iter__(self) -> Iterator[BaseMessageElement]:
         return iter(self.message_list)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.message_list)
 
     @overload
@@ -378,22 +391,24 @@ class MessageChain:
     @overload
     def __getitem__(self, index: slice) -> list[BaseMessageElement]: ...
 
-    def __getitem__(self, index: int | slice) -> BaseMessageElement | list[BaseMessageElement]:
+    def __getitem__(
+        self, index: int | slice
+    ) -> BaseMessageElement | list[BaseMessageElement]:
         return self.message_list[index]
 
-    def __setitem__(self, index, value):
+    def __setitem__(self, index, value) -> None:
         self.message_list[index] = value
 
-    def __delitem__(self, index):
+    def __delitem__(self, index) -> None:
         del self.message_list[index]
 
-    def __bool__(self):
+    def __bool__(self) -> bool:
         return bool(self.message_list)
 
-    def __contains__(self, item):
+    def __contains__(self, item) -> bool:
         return item in self.message_list
 
-    def __copy__(self):
+    def __copy__(self) -> MessageChain:
         return MessageChain(self.message_list.copy())
 
     def __add__(self, other):
@@ -417,13 +432,13 @@ class MessageChain:
             return self
         return NotImplemented
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.message_list})"
 
-    def append(self, item):
+    def append(self, item) -> None:
         self.message_list.append(item)
 
-    def extend(self, iterable):
+    def extend(self, iterable) -> None:
         self.message_list.extend(iterable)
 
     def is_empty(self) -> bool:

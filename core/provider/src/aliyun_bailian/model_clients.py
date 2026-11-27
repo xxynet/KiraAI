@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import contextlib
 import multiprocessing
 import os
 import queue as std_queue
@@ -9,6 +10,7 @@ import threading
 import time
 from dataclasses import dataclass
 from math import gcd, sqrt
+from typing import Any
 
 import httpx
 from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI
@@ -67,8 +69,12 @@ def _cosyvoice_synth_worker(payload: dict, result_queue: multiprocessing.Queue) 
             "voice": payload["voice"],
             "format": fmt,
             "volume": max(0, min(100, int(payload.get("volume", 50) or 50))),
-            "speech_rate": max(0.5, min(2.0, float(payload.get("speech_rate", 1.0) or 1.0))),
-            "pitch_rate": max(0.5, min(2.0, float(payload.get("pitch_rate", 1.0) or 1.0))),
+            "speech_rate": max(
+                0.5, min(2.0, float(payload.get("speech_rate", 1.0) or 1.0))
+            ),
+            "pitch_rate": max(
+                0.5, min(2.0, float(payload.get("pitch_rate", 1.0) or 1.0))
+            ),
         }
         language_hints = payload.get("language_hints") or []
         mid = (model_id or "").lower()
@@ -113,7 +119,9 @@ def _cosyvoice_synth_worker(payload: dict, result_queue: multiprocessing.Queue) 
         try:
             result_queue.put(("err", f"{type(e).__name__}: {e}"))
         except Exception as put_err:
-            logger.debug(f"Bailian CosyVoice worker: failed to enqueue error: {put_err}")
+            logger.debug(
+                f"Bailian CosyVoice worker: failed to enqueue error: {put_err}"
+            )
     finally:
         # Close the queue; do NOT call cancel_join_thread() — we rely on the
         # normal feeder-thread flush so the parent can drain the result before
@@ -122,6 +130,7 @@ def _cosyvoice_synth_worker(payload: dict, result_queue: multiprocessing.Queue) 
             result_queue.close()
         except Exception as close_err:
             logger.debug(f"Bailian CosyVoice worker: queue close failed: {close_err}")
+
 
 # region -> OpenAI compatible base_url (default public endpoints)
 _REGION_COMPAT_URL = {
@@ -177,7 +186,9 @@ def resolve_compatible_base_url(provider_config: dict) -> str:
     region = _region(mp)
     workspace_id = _workspace_id(mp)
     if workspace_id:
-        template = _REGION_COMPAT_URL_WORKSPACE.get(region, _REGION_COMPAT_URL_WORKSPACE["beijing"])
+        template = _REGION_COMPAT_URL_WORKSPACE.get(
+            region, _REGION_COMPAT_URL_WORKSPACE["beijing"]
+        )
         return template.format(workspace_id=workspace_id)
     return _REGION_COMPAT_URL.get(region, _REGION_COMPAT_URL["beijing"])
 
@@ -188,14 +199,18 @@ def resolve_http_base_url(provider_config: dict) -> str:
     region = _region(mp)
     workspace_id = _workspace_id(mp)
     if workspace_id:
-        template = _REGION_HTTP_URL_WORKSPACE.get(region, _REGION_HTTP_URL_WORKSPACE["beijing"])
+        template = _REGION_HTTP_URL_WORKSPACE.get(
+            region, _REGION_HTTP_URL_WORKSPACE["beijing"]
+        )
         return template.format(workspace_id=workspace_id)
     return _REGION_HTTP_URL.get(region, _REGION_HTTP_URL["beijing"])
 
 
 def _resolve_ws_url(region: str, workspace_id: str) -> str:
     if workspace_id:
-        template = _REGION_WS_URL_WORKSPACE.get(region, _REGION_WS_URL_WORKSPACE["beijing"])
+        template = _REGION_WS_URL_WORKSPACE.get(
+            region, _REGION_WS_URL_WORKSPACE["beijing"]
+        )
         return template.format(workspace_id=workspace_id)
     return _REGION_WS_URL.get(region, _REGION_WS_URL["beijing"])
 
@@ -256,7 +271,9 @@ class BailianEmbeddingClient(EmbeddingModelClient):
                     f"(threshold: {slow_threshold}s, model: {self.model.model_name})"
                 )
             if not isinstance(getattr(response, "data", None), list):
-                raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
+                raise ProviderAPIError(
+                    f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}"
+                )
             return [item.embedding for item in response.data]
         except (APIStatusError, APITimeoutError, APIConnectionError) as e:
             logger.error(f"Bailian Embedding API error: {e}")
@@ -313,7 +330,9 @@ class BailianRerankClient(RerankModelClient):
                 # public fallback
                 region = _region(mp)
                 if region == "singapore":
-                    url = "https://dashscope-intl.aliyuncs.com/compatible-api/v1/reranks"
+                    url = (
+                        "https://dashscope-intl.aliyuncs.com/compatible-api/v1/reranks"
+                    )
                 else:
                     url = "https://dashscope.aliyuncs.com/compatible-api/v1/reranks"
 
@@ -378,13 +397,14 @@ class BailianRerankClient(RerankModelClient):
                 text = doc.get("text") or text
             elif isinstance(doc, str) and doc:
                 text = doc
-            results.append(RerankResult(index=idx, score=float(score or 0.0), text=text))
+            results.append(
+                RerankResult(index=idx, score=float(score or 0.0), text=text)
+            )
 
         return results
 
 
 # ───────────────────────────── Image ─────────────────────────────
-
 
 
 # ───────────────────────────── Image size helpers ─────────────────────────────
@@ -409,16 +429,10 @@ _ASPECT_RATIOS: dict[str, tuple[int, int]] = {
 }
 
 # Explicit pixel patterns (support up to 5 digits for 4K+/8K)
-_SIZE_EXPLICIT_RE = re.compile(
-    r"(?P<w>\d{3,5})\s*[xX*×]\s*(?P<h>\d{3,5})"
-)
-_ASPECT_RE = re.compile(
-    r"(?<!\d)(?P<a>\d{1,2})\s*[:：/]\s*(?P<b>\d{1,2})(?!\d)"
-)
+_SIZE_EXPLICIT_RE = re.compile(r"(?P<w>\d{3,5})\s*[xX*×]\s*(?P<h>\d{3,5})")
+_ASPECT_RE = re.compile(r"(?<!\d)(?P<a>\d{1,2})\s*[:：/]\s*(?P<b>\d{1,2})(?!\d)")
 # 1K / 2k / 4K / 8K / 16k ... (1–99)
-_K_TOKEN_RE = re.compile(
-    r"(?<![A-Za-z0-9])(\d{1,2})\s*[Kk](?![A-Za-z0-9])"
-)
+_K_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9])(\d{1,2})\s*[Kk](?![A-Za-z0-9])")
 
 
 @dataclass(frozen=True, slots=True)
@@ -684,7 +698,11 @@ def _clamp_wh(w: int, h: int, limits: _ImageSizeLimits) -> tuple[int, int]:
 
     # 5) re-clamp after rounding (total may slightly exceed)
     for _ in range(4):
-        if wi * hi <= limits.max_total and wi <= limits.max_side and hi <= limits.max_side:
+        if (
+            wi * hi <= limits.max_total
+            and wi <= limits.max_side
+            and hi <= limits.max_side
+        ):
             break
         scale = min(
             1.0,
@@ -720,7 +738,9 @@ def _format_wh(w: int, h: int) -> str:
     return f"{int(w)}*{int(h)}"
 
 
-def _maybe_k_token(w: int, h: int, k_level: float | None, limits: _ImageSizeLimits) -> str | None:
+def _maybe_k_token(
+    w: int, h: int, k_level: float | None, limits: _ImageSizeLimits
+) -> str | None:
     """Only for models that officially accept 1K/2K/4K AND request is square-ish.
 
     User wants real proportions; non-square always returns pixels.
@@ -837,8 +857,14 @@ def _detect_aspect_from_prompt(prompt: str) -> str | None:
 
     rules = [
         (r"21\s*[:：/]\s*9|超宽|带鱼屏|电影宽屏", "21:9"),
-        (r"16\s*[:：/]\s*9|横版|横图|横屏|宽屏|landscape|widescreen|桌面壁纸|电脑壁纸", "16:9"),
-        (r"9\s*[:：/]\s*16|竖版|竖图|竖屏|手机壁纸|全面屏|portrait|story|短视频封面", "9:16"),
+        (
+            r"16\s*[:：/]\s*9|横版|横图|横屏|宽屏|landscape|widescreen|桌面壁纸|电脑壁纸",
+            "16:9",
+        ),
+        (
+            r"9\s*[:：/]\s*16|竖版|竖图|竖屏|手机壁纸|全面屏|portrait|story|短视频封面",
+            "9:16",
+        ),
         (r"4\s*[:：/]\s*3", "4:3"),
         (r"3\s*[:：/]\s*4", "3:4"),
         (r"3\s*[:：/]\s*2", "3:2"),
@@ -945,7 +971,9 @@ def _resolve_image_size(
                 editing=editing,
                 interleave=interleave,
             )
-        m = _SIZE_EXPLICIT_RE.fullmatch(cfg.replace("×", "*").replace("x", "*").replace("X", "*"))
+        m = _SIZE_EXPLICIT_RE.fullmatch(
+            cfg.replace("×", "*").replace("x", "*").replace("X", "*")
+        )
         if m:
             return _build_size_pixels(
                 aspect=None,
@@ -1115,7 +1143,9 @@ class BailianImageClient(ImageModelClient):
         """Convert KiraAI Image to a DashScope-accepted image URI (url or data-url)."""
         if image is None:
             return None
-        file_type = getattr(image, "file_type", None) or getattr(image, "image_type", None)
+        file_type = getattr(image, "file_type", None) or getattr(
+            image, "image_type", None
+        )
         file_val = getattr(image, "file", None) or getattr(image, "image", None)
         if file_type == "url" and file_val:
             return self._normalize_ref_uri(str(file_val))
@@ -1123,7 +1153,9 @@ class BailianImageClient(ImageModelClient):
         if hasattr(image, "to_data_url"):
             try:
                 data_url = await image.to_data_url()
-                normalized = self._normalize_ref_uri(str(data_url) if data_url else None)
+                normalized = self._normalize_ref_uri(
+                    str(data_url) if data_url else None
+                )
                 if normalized:
                     return normalized
             except Exception as e:
@@ -1171,7 +1203,9 @@ class BailianImageClient(ImageModelClient):
             tr.raise_for_status()
             tdata = tr.json()
             output = (tdata.get("output") or {}) if isinstance(tdata, dict) else {}
-            status = (output.get("task_status") or tdata.get("task_status") or "").upper()
+            status = (
+                output.get("task_status") or tdata.get("task_status") or ""
+            ).upper()
             if status == "SUCCEEDED":
                 url = self._extract_image_url(output, tdata)
                 if not url:
@@ -1234,7 +1268,9 @@ class BailianImageClient(ImageModelClient):
                     return tdata.get(key)
         return None
 
-    def _build_payload(self, prompt: str, size: str | None = None, model_id: str | None = None) -> dict:
+    def _build_payload(
+        self, prompt: str, size: str | None = None, model_id: str | None = None
+    ) -> dict:
         mc = self.model.model_config or {}
         model_id = model_id or self.model.model_name
         n = int(mc.get("n", 1) or 1)
@@ -1250,9 +1286,7 @@ class BailianImageClient(ImageModelClient):
             # Text-only wan2.6-image is treated as generation (not edit).
             # Without enable_interleave the API may reject prompt-only calls.
             text_only_wan26_image = (
-                mid.startswith("wan2.6")
-                and "t2i" not in mid
-                and "image" in mid
+                mid.startswith("wan2.6") and "t2i" not in mid and "image" in mid
             )
             # size: None means omit (API model default); never force 1024*1024
             if size is None:
@@ -1272,10 +1306,8 @@ class BailianImageClient(ImageModelClient):
             if negative_prompt:
                 parameters["negative_prompt"] = negative_prompt
             if seed is not None and str(seed).strip() != "":
-                try:
+                with contextlib.suppress(TypeError, ValueError):
                     parameters["seed"] = int(seed)
-                except (TypeError, ValueError):
-                    pass
             # wan2.7 supports thinking_mode; keep optional from config
             if "thinking_mode" in mc and mid.startswith("wan2.7"):
                 parameters["thinking_mode"] = bool(mc.get("thinking_mode"))
@@ -1312,10 +1344,8 @@ class BailianImageClient(ImageModelClient):
         if negative_prompt:
             payload["input"]["negative_prompt"] = negative_prompt
         if seed is not None and str(seed).strip() != "":
-            try:
+            with contextlib.suppress(TypeError, ValueError):
                 payload["parameters"]["seed"] = int(seed)
-            except (TypeError, ValueError):
-                pass
         # style only for wanx-v1 (underscore already normalized to dot)
         style = (mc.get("style") or "").strip()
         if style and mid in ("wanx-v1", "wanx.v1"):
@@ -1395,10 +1425,7 @@ class BailianImageClient(ImageModelClient):
           - pure t2i with auto_route=True: remap to wan2.6-image
           - if no usable ref URI: fall back to text_to_image(prompt)
         """
-        if isinstance(image, Image):
-            images = [image]
-        else:
-            images = list(image or [])
+        images = [image] if isinstance(image, Image) else list(image or [])
 
         mp = self.model.provider_config or {}
         mc = self.model.model_config or {}
@@ -1431,10 +1458,9 @@ class BailianImageClient(ImageModelClient):
             )
 
         # Configured model cannot take refs and auto_route is off
-        if (
-            not self._supports_messages_img2img(model_id)
-            and not self._supports_legacy_ref_img(model_id)
-        ):
+        if not self._supports_messages_img2img(
+            model_id
+        ) and not self._supports_legacy_ref_img(model_id):
             raise RuntimeError(
                 f"Bailian Image2Image: model {model_id!r} does not support reference images. "
                 f"Use wan2.6-image / wan2.7-image, or enable model_config.auto_route "
@@ -1469,8 +1495,7 @@ class BailianImageClient(ImageModelClient):
         if self._supports_messages_img2img(model_id):
             create_url = f"{http_base}/services/aigc/image-generation/generation"
             content: list[dict] = [{"text": prompt}]
-            for uri in ref_uris:
-                content.append({"image": uri})
+            content.extend({"image": uri} for uri in ref_uris)
 
             parameters: dict = {
                 "n": 1,
@@ -1483,10 +1508,8 @@ class BailianImageClient(ImageModelClient):
             if negative_prompt:
                 parameters["negative_prompt"] = negative_prompt
             if seed is not None and str(seed).strip() != "":
-                try:
+                with contextlib.suppress(TypeError, ValueError):
                     parameters["seed"] = int(seed)
-                except (TypeError, ValueError):
-                    pass
             if "thinking_mode" in mc and str(model_id).lower().startswith("wan2.7"):
                 parameters["thinking_mode"] = bool(mc.get("thinking_mode"))
 
@@ -1549,10 +1572,10 @@ class BailianImageClient(ImageModelClient):
             ref_mode = (mc.get("ref_mode") or "repaint").strip()
             payload["parameters"]["ref_mode"] = ref_mode
             if mc.get("ref_strength") is not None:
-                try:
-                    payload["parameters"]["ref_strength"] = float(mc.get("ref_strength"))
-                except (TypeError, ValueError):
-                    pass
+                with contextlib.suppress(TypeError, ValueError):
+                    payload["parameters"]["ref_strength"] = float(
+                        mc.get("ref_strength")
+                    )
             if negative_prompt:
                 payload["input"]["negative_prompt"] = negative_prompt
 
@@ -1598,7 +1621,7 @@ class BailianSTTClient(STTModelClient):
     Speech-to-text via Paraformer / Fun-ASR realtime Recognition.call(local file).
     """
 
-    def __init__(self, model: ModelInfo):
+    def __init__(self, model: ModelInfo) -> None:
         super().__init__(model)
 
     async def speech_to_text(self, record: Record, **kwargs) -> str:
@@ -1617,7 +1640,9 @@ class BailianSTTClient(STTModelClient):
         audio_format = (mc.get("audio_format") or "wav").lower().strip()
         language_hints_raw = (mc.get("language_hints") or "zh,en").strip()
         language_hints = [
-            h.strip() for h in language_hints_raw.replace("，", ",").split(",") if h.strip()
+            h.strip()
+            for h in language_hints_raw.replace("，", ",").split(",")
+            if h.strip()
         ] or ["zh", "en"]
         timeout = int(mc.get("timeout", 120) or 120)
 
@@ -1625,7 +1650,11 @@ class BailianSTTClient(STTModelClient):
         tmp_path = None
         try:
             # Prefer existing local path
-            if getattr(record, "file_type", None) == "path" and record.file and os.path.isfile(record.file):
+            if (
+                getattr(record, "file_type", None) == "path"
+                and record.file
+                and os.path.isfile(record.file)
+            ):
                 file_path = record.file
                 # Guess format from extension
                 ext = os.path.splitext(file_path)[1].lstrip(".").lower()
@@ -1674,10 +1703,8 @@ class BailianSTTClient(STTModelClient):
             return ""
         finally:
             if tmp_path and os.path.exists(tmp_path):
-                try:
+                with contextlib.suppress(OSError):
                     os.remove(tmp_path)
-                except OSError:
-                    pass
 
     def _recognize_sync(
         self,
@@ -1752,7 +1779,7 @@ class BailianSTTClient(STTModelClient):
 # ───────────────────────────── TTS (CosyVoice) ─────────────────────────────
 
 
-def _resolve_audio_format(audio_format: str):
+def _resolve_audio_format(audio_format: str) -> Any:
     """Map config string to dashscope AudioFormat enum. Import lazily."""
     from dashscope.audio.tts_v2 import AudioFormat
 
@@ -1777,8 +1804,6 @@ def _resolve_mime(audio_format: str) -> str:
 def _is_v1_model(model_id: str) -> bool:
     mid = (model_id or "").lower().strip()
     return mid == "cosyvoice-v1" or mid.endswith("-v1")
-
-
 
 
 # CosyVoice v3.5 声音复刻音色支持的中文方言（官方文档）
@@ -1898,7 +1923,9 @@ def _dialect_instruction(dialect: str) -> str:
     return f"请用{d}表达。"
 
 
-def _merge_instruction(dialect: str, user_instruction: str, language_hints: list[str] | None = None) -> str:
+def _merge_instruction(
+    dialect: str, user_instruction: str, language_hints: list[str] | None = None
+) -> str:
     """Merge dialect instruction with user custom instruction.
 
     - dialect=auto: do not force dialect (CosyVoice default / sample accent)
@@ -1923,11 +1950,14 @@ def _merge_instruction(dialect: str, user_instruction: str, language_hints: list
 
     # Avoid duplicating if user already wrote dialect instruction
     if user_instruction:
-        if dialect_part.rstrip("。.") in user_instruction or "请用" in user_instruction and "表达" in user_instruction:
+        if (
+            dialect_part.rstrip("。.") in user_instruction
+            or "请用" in user_instruction
+            and "表达" in user_instruction
+        ):
             return user_instruction
         return f"{dialect_part}{user_instruction}"
     return dialect_part
-
 
 
 def _detect_language_hint(text: str) -> str:
@@ -1974,10 +2004,13 @@ def _detect_language_hint(text: str) -> str:
         return "ko"
 
     # Mixed CJK + Latin: prefer Chinese when there is meaningful CJK content
-    if counts["zh"] > 0 and counts["en"] > 0:
+    if (
+        counts["zh"] > 0
+        and counts["en"] > 0
+        and (counts["zh"] >= 2 or counts["zh"] >= counts["en"] * 0.3)
+    ):
         # e.g. Chinese sentence mixed with a few English words -> zh
-        if counts["zh"] >= 2 or counts["zh"] >= counts["en"] * 0.3:
-            return "zh"
+        return "zh"
 
     # Prefer the script with the highest count among remaining
     ranked = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
@@ -2010,7 +2043,6 @@ def _resolve_language_hints(raw: str, text: str) -> list[str]:
     return [first]
 
 
-
 class BailianCosyVoiceTTSClient(TTSModelClient):
     """
     Alibaba Cloud Bailian (DashScope) CosyVoice TTS client.
@@ -2019,7 +2051,7 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
     - voice: system voice (longanyang) or cloned voice ID from Bailian console
     """
 
-    def __init__(self, model: ModelInfo):
+    def __init__(self, model: ModelInfo) -> None:
         super().__init__(model)
 
     async def text_to_speech(self, text: str, **kwargs) -> Record | None:
@@ -2063,7 +2095,9 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
         if not isinstance(section_advanced, dict):
             section_advanced = {}
         timeout = int(section_advanced.get("timeout", 60) or 60)
-        enable_markdown_filter = bool(section_advanced.get("enable_markdown_filter", False))
+        enable_markdown_filter = bool(
+            section_advanced.get("enable_markdown_filter", False)
+        )
 
         language_hints = _resolve_language_hints(language_hints_raw, text)
         instruction = _merge_instruction(dialect_raw, instruction_raw, language_hints)
@@ -2197,12 +2231,12 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
             get_timeout = max(0.01, deadline - time.monotonic())
             try:
                 status, data = queue.get(timeout=get_timeout)
-            except std_queue.Empty:
+            except std_queue.Empty as err:
                 self._terminate_cosyvoice_worker(proc)
                 raise TimeoutError(
                     f"CosyVoice SpeechSynthesizer.call timed out after {call_timeout}s "
                     f"(including connect/startup)"
-                )
+                ) from err
 
             # Result already received — wait briefly for clean worker exit.
             join_timeout = max(0.01, min(5.0, deadline - time.monotonic() + 0.5))
@@ -2223,14 +2257,10 @@ class BailianCosyVoiceTTSClient(TTSModelClient):
                             queue.get_nowait()
                     except Exception:
                         pass
-                    try:
+                    with contextlib.suppress(Exception):
                         queue.close()
-                    except Exception:
-                        pass
-                    try:
+                    with contextlib.suppress(Exception):
                         queue.join_thread()
-                    except Exception:
-                        pass
             finally:
                 if proc is not None and proc.is_alive():
                     self._terminate_cosyvoice_worker(proc)

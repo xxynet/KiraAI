@@ -27,7 +27,20 @@ class PersonaMixin:
         if created_at is None:
             created_at = int(time.time())
         async with self.db.transaction() as session:
-            session.add(Persona(id=persona_id, name=name, format=format, content=content, created_at=created_at, is_active=is_active, reference_image_path=reference_image_path, chat_rules=chat_rules, private_chat_rules=private_chat_rules, group_chat_rules=group_chat_rules))
+            session.add(
+                Persona(
+                    id=persona_id,
+                    name=name,
+                    format=format,
+                    content=content,
+                    created_at=created_at,
+                    is_active=is_active,
+                    reference_image_path=reference_image_path,
+                    chat_rules=chat_rules,
+                    private_chat_rules=private_chat_rules,
+                    group_chat_rules=group_chat_rules,
+                )
+            )
 
     async def get_persona(self, persona_id: str) -> dict | None:
         stmt = select(Persona).where(Persona.id == persona_id)
@@ -35,7 +48,18 @@ class PersonaMixin:
         if row is None:
             return None
         item = row["Persona"]
-        return {"id": item.id, "name": item.name, "format": item.format, "content": item.content, "created_at": item.created_at, "is_active": item.is_active, "reference_image_path": item.reference_image_path, "chat_rules": item.chat_rules, "private_chat_rules": item.private_chat_rules, "group_chat_rules": item.group_chat_rules}
+        return {
+            "id": item.id,
+            "name": item.name,
+            "format": item.format,
+            "content": item.content,
+            "created_at": item.created_at,
+            "is_active": item.is_active,
+            "reference_image_path": item.reference_image_path,
+            "chat_rules": item.chat_rules,
+            "private_chat_rules": item.private_chat_rules,
+            "group_chat_rules": item.group_chat_rules,
+        }
 
     async def update_persona(
         self,
@@ -80,7 +104,9 @@ class PersonaMixin:
         """Clear the reference path without changing other persona fields."""
         async with self.db.transaction() as session:
             result = await session.execute(
-                update(Persona).where(Persona.id == persona_id).values(reference_image_path=None)
+                update(Persona)
+                .where(Persona.id == persona_id)
+                .values(reference_image_path=None)
             )
             return result.rowcount > 0
 
@@ -96,9 +122,7 @@ class PersonaMixin:
                 return False
 
             # Deactivate all personas (including the target, for a clean reset)
-            result = await session.execute(
-                select(Persona).where(Persona.is_active)
-            )
+            result = await session.execute(select(Persona).where(Persona.is_active))
             for row in result.scalars().all():
                 row.is_active = False
 
@@ -113,7 +137,18 @@ class PersonaMixin:
         if row is None:
             return None
         item = row["Persona"]
-        return {"id": item.id, "name": item.name, "format": item.format, "content": item.content, "created_at": item.created_at, "is_active": item.is_active, "reference_image_path": item.reference_image_path, "chat_rules": item.chat_rules, "private_chat_rules": item.private_chat_rules, "group_chat_rules": item.group_chat_rules}
+        return {
+            "id": item.id,
+            "name": item.name,
+            "format": item.format,
+            "content": item.content,
+            "created_at": item.created_at,
+            "is_active": item.is_active,
+            "reference_image_path": item.reference_image_path,
+            "chat_rules": item.chat_rules,
+            "private_chat_rules": item.private_chat_rules,
+            "group_chat_rules": item.group_chat_rules,
+        }
 
     async def delete_persona(self, persona_id: str) -> bool:
         async with self.db.transaction() as session:
@@ -130,6 +165,17 @@ class PersonaMixin:
         stmt = select(Persona).order_by(Persona.id)
         rows = await self.db.fetch_all(stmt)
         return [
-            {"id": r["Persona"].id, "name": r["Persona"].name, "format": r["Persona"].format, "content": r["Persona"].content, "created_at": r["Persona"].created_at, "is_active": r["Persona"].is_active, "reference_image_path": r["Persona"].reference_image_path, "chat_rules": r["Persona"].chat_rules, "private_chat_rules": r["Persona"].private_chat_rules, "group_chat_rules": r["Persona"].group_chat_rules}
+            {
+                "id": r["Persona"].id,
+                "name": r["Persona"].name,
+                "format": r["Persona"].format,
+                "content": r["Persona"].content,
+                "created_at": r["Persona"].created_at,
+                "is_active": r["Persona"].is_active,
+                "reference_image_path": r["Persona"].reference_image_path,
+                "chat_rules": r["Persona"].chat_rules,
+                "private_chat_rules": r["Persona"].private_chat_rules,
+                "group_chat_rules": r["Persona"].group_chat_rules,
+            }
             for r in rows
         ]

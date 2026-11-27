@@ -56,19 +56,28 @@ class _FeedCursor:
 
 
 class BiliBiliFeedCapability(FeedCapability["BiliBiliAdapter"]):
-    def __init__(self, adapter: BiliBiliAdapter):
+    def __init__(self, adapter: BiliBiliAdapter) -> None:
         super().__init__(adapter)
         emojis = load_emoji_mapping(Path(__file__).with_name("emoji.json"))
-        self._comment_metadata = MessageFormatMetadata(["text", "img", "emoji"], emojis=emojis)
-        self._post_metadata = MessageFormatMetadata(["text", "img", "emoji", "at"], emojis=emojis)
+        self._comment_metadata = MessageFormatMetadata(
+            ["text", "img", "emoji"], emojis=emojis
+        )
+        self._post_metadata = MessageFormatMetadata(
+            ["text", "img", "emoji", "at"], emojis=emojis
+        )
         self.last_process_ts = int(time.time())
         self._cursors: OrderedDict[str, _FeedCursor] = OrderedDict()
 
     async def get_comment_metadata(self) -> MessageFormatMetadata:
-        return MessageFormatMetadata(self._comment_metadata.supported_elements, emojis=self._comment_metadata.emojis)
+        return MessageFormatMetadata(
+            self._comment_metadata.supported_elements,
+            emojis=self._comment_metadata.emojis,
+        )
 
     async def get_post_metadata(self) -> MessageFormatMetadata:
-        return MessageFormatMetadata(self._post_metadata.supported_elements, emojis=self._post_metadata.emojis)
+        return MessageFormatMetadata(
+            self._post_metadata.supported_elements, emojis=self._post_metadata.emojis
+        )
 
     def clear_cursors(self) -> None:
         self._cursors.clear()
@@ -82,8 +91,14 @@ class BiliBiliFeedCapability(FeedCapability["BiliBiliAdapter"]):
         if token is None:
             return _FeedCursor(key)
         state = self._cursors.get(token) if isinstance(token, str) else None
-        if state is None or state.key != key or time.monotonic() - state.created_at > 600:
-            raise ValueError("Feed cursor is invalid, expired, or belongs to another query or account")
+        if (
+            state is None
+            or state.key != key
+            or time.monotonic() - state.created_at > 600
+        ):
+            raise ValueError(
+                "Feed cursor is invalid, expired, or belongs to another query or account"
+            )
         return deepcopy(state)
 
     def _page(self, state: _FeedCursor, count: int) -> FeedPage:
@@ -112,11 +127,20 @@ class BiliBiliFeedCapability(FeedCapability["BiliBiliAdapter"]):
         self._validate_query_extra(query.extra)
         if query.source not in {"recommended", "following", "user"}:
             raise ValueError("Unsupported Bilibili feed source")
-        if not isinstance(query.kinds, tuple) or any(kind not in {"post", "video", "article", "audio", "unknown"} for kind in query.kinds):
+        if not isinstance(query.kinds, tuple) or any(
+            kind not in {"post", "video", "article", "audio", "unknown"}
+            for kind in query.kinds
+        ):
             raise ValueError("Unsupported feed content kind")
-        if query.source == "recommended" and any(kind != "video" for kind in query.kinds):
+        if query.source == "recommended" and any(
+            kind != "video" for kind in query.kinds
+        ):
             raise ValueError("Bilibili recommendations only support videos")
-        author_id = str(self._resource_id(query.author_id)) if query.author_id is not None else None
+        author_id = (
+            str(self._resource_id(query.author_id))
+            if query.author_id is not None
+            else None
+        )
         if query.source == "user" and author_id is None:
             raise ValueError("Bilibili user feed requires author_id")
         key = ("feed", query.source, author_id, query.kinds, deepcopy(query.extra))
@@ -129,9 +153,13 @@ class BiliBiliFeedCapability(FeedCapability["BiliBiliAdapter"]):
             items = [video_item(item) for item in data.get("item") or []]
         else:
             if query.source == "following":
-                data = await client.get_dynamic_page(offset=state.offset, page=state.page)
+                data = await client.get_dynamic_page(
+                    offset=state.offset, page=state.page
+                )
             else:
-                data = await client.get_user_dynamics(self._resource_id(query.author_id), offset=state.offset)
+                data = await client.get_user_dynamics(
+                    self._resource_id(query.author_id), offset=state.offset
+                )
             items = [dynamic_item(item) for item in data.get("items") or []]
             state.has_more = bool(data.get("has_more"))
             next_offset = str(data.get("next_offset") or data.get("offset") or "")
@@ -140,7 +168,8 @@ class BiliBiliFeedCapability(FeedCapability["BiliBiliAdapter"]):
             state.offset = next_offset
             state.page += 1
         state.items = [
-            item for item in items
+            item
+            for item in items
             if (not query.kinds or item.kind in query.kinds)
             and (author_id is None or item.author.id == author_id)
         ]
@@ -158,21 +187,40 @@ class BiliBiliFeedCapability(FeedCapability["BiliBiliAdapter"]):
         self._validate_query_extra(query.extra)
         if not isinstance(query.keyword, str) or not query.keyword.strip():
             raise ValueError("Bilibili feed search requires a non-empty keyword")
-        types = {"video": search.SearchObjectType.VIDEO, "article": search.SearchObjectType.ARTICLE}
+        types = {
+            "video": search.SearchObjectType.VIDEO,
+            "article": search.SearchObjectType.ARTICLE,
+        }
         if not isinstance(query.kind, str) or query.kind not in types:
             raise ValueError("Bilibili feed search only supports videos and articles")
-        author_id = str(self._resource_id(query.author_id)) if query.author_id is not None else None
-        state = self._resume(query.cursor, (
-            "search", query.keyword, query.kind, author_id, deepcopy(query.extra),
-        ))
+        author_id = (
+            str(self._resource_id(query.author_id))
+            if query.author_id is not None
+            else None
+        )
+        state = self._resume(
+            query.cursor,
+            (
+                "search",
+                query.keyword,
+                query.kind,
+                author_id,
+                deepcopy(query.extra),
+            ),
+        )
         if state.items:
             return self._page(state, query.count)
         result = await self.adapter.get_client().search_by_type(
-            query.keyword, types[query.kind], page=state.page, page_size=20,
+            query.keyword,
+            types[query.kind],
+            page=state.page,
+            page_size=20,
         )
         normalize = video_item if query.kind == "video" else article_item
         items = [normalize(item) for item in result.get("result") or []]
-        state.items = [item for item in items if author_id is None or item.author.id == author_id]
+        state.items = [
+            item for item in items if author_id is None or item.author.id == author_id
+        ]
         state.has_more = state.page < int(result.get("numPages") or 0)
         state.page += 1
         return self._page(state, query.count)
@@ -186,7 +234,13 @@ class BiliBiliFeedCapability(FeedCapability["BiliBiliAdapter"]):
 
     @staticmethod
     def _resource_id(value: AdapterTargetId | None) -> int:
-        if isinstance(value, bool) or not isinstance(value, (str, int)) or not str(value).isascii() or not str(value).isdecimal() or int(value) <= 0:
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (str, int))
+            or not str(value).isascii()
+            or not str(value).isdecimal()
+            or int(value) <= 0
+        ):
             raise ValueError("Bilibili resource IDs must be positive integers")
         return int(value)
 
@@ -213,22 +267,35 @@ class BiliBiliFeedCapability(FeedCapability["BiliBiliAdapter"]):
         if not isinstance(post.extra, dict):
             raise TypeError("FeedPost.extra must be a dictionary")
         supported = {
-            "topic_id", "vote_id", "live_reserve_id", "send_time",
-            "up_choose_comment", "close_comment",
+            "topic_id",
+            "vote_id",
+            "live_reserve_id",
+            "send_time",
+            "up_choose_comment",
+            "close_comment",
         }
         if post.extra.keys() - supported:
             raise ValueError("Unsupported Bilibili post option")
         for key in ("topic_id", "vote_id", "live_reserve_id"):
-            if key in post.extra and (type(post.extra[key]) is not int or post.extra[key] <= 0):
-                raise ValueError(f"Bilibili post option {key} must be a positive integer")
+            if key in post.extra and (
+                type(post.extra[key]) is not int or post.extra[key] <= 0
+            ):
+                raise ValueError(
+                    f"Bilibili post option {key} must be a positive integer"
+                )
         for key in ("up_choose_comment", "close_comment"):
             if key in post.extra and type(post.extra[key]) is not bool:
                 raise ValueError(f"Bilibili post option {key} must be a boolean")
         if "send_time" in post.extra:
             value = post.extra["send_time"]
             if not isinstance(value, datetime) or value.utcoffset() is None:
-                raise ValueError("Bilibili post send_time must be a timezone-aware datetime")
-        if not BiliBiliFeedCapability._validate_content(post.content, mentions=True) and "vote_id" not in post.extra:
+                raise ValueError(
+                    "Bilibili post send_time must be a timezone-aware datetime"
+                )
+        if (
+            not BiliBiliFeedCapability._validate_content(post.content, mentions=True)
+            and "vote_id" not in post.extra
+        ):
             raise ValueError("Bilibili post content must not be empty")
 
     @staticmethod
@@ -302,8 +369,12 @@ class BiliBiliFeedCapability(FeedCapability["BiliBiliAdapter"]):
         return "".join(parts), pictures
 
     async def send_comment(
-        self, message: MessageChain, target: FeedItem | FeedRef, *,
-        root: AdapterTargetId | None = None, parent: AdapterTargetId | None = None,
+        self,
+        message: MessageChain,
+        target: FeedItem | FeedRef,
+        *,
+        root: AdapterTargetId | None = None,
+        parent: AdapterTargetId | None = None,
     ) -> dict[str, Any]:
         """Send a Text/Emoji/Image chain to a feed item, resource, or comment thread.
 
@@ -311,7 +382,9 @@ class BiliBiliFeedCapability(FeedCapability["BiliBiliAdapter"]):
         Feed items use their comment target, falling back to their primary reference.
         """
 
-        has_comment_target = isinstance(target, FeedItem) and target.comment_target is not None
+        has_comment_target = (
+            isinstance(target, FeedItem) and target.comment_target is not None
+        )
         if isinstance(target, FeedItem):
             target = target.comment_target if has_comment_target else target.ref
         if not isinstance(target, FeedRef):
@@ -329,10 +402,17 @@ class BiliBiliFeedCapability(FeedCapability["BiliBiliAdapter"]):
             resource = comment_target(detail.get("item") or {})
             if resource is None:
                 raise ValueError("Bilibili dynamic has no supported comment resource")
-        types = {name: comment.CommentResourceType(value) for value, name in COMMENT_RESOURCES.items()}
+        types = {
+            name: comment.CommentResourceType(value)
+            for value, name in COMMENT_RESOURCES.items()
+        }
         if resource.resource_type not in types:
             raise ValueError("Unsupported Bilibili comment resource type")
-        if resource.resource_type == "video" and isinstance(resource.id, str) and resource.id.startswith("BV"):
+        if (
+            resource.resource_type == "video"
+            and isinstance(resource.id, str)
+            and resource.id.startswith("BV")
+        ):
             try:
                 oid = bvid2aid(resource.id)
             except Exception:
@@ -340,12 +420,18 @@ class BiliBiliFeedCapability(FeedCapability["BiliBiliAdapter"]):
         else:
             oid = self._resource_id(resource.id)
         try:
-            text, pictures = await asyncio.wait_for(self._build_comment(message), timeout=60.0)
+            text, pictures = await asyncio.wait_for(
+                self._build_comment(message), timeout=60.0
+            )
         except asyncio.TimeoutError:
             raise TimeoutError("Bilibili comment preparation timed out") from None
         result = await client.send_comment(
-            text=text, oid=oid, type_=types[resource.resource_type],
-            root=root_id, parent=parent_id, pic=pictures or None,
+            text=text,
+            oid=oid,
+            type_=types[resource.resource_type],
+            root=root_id,
+            parent=parent_id,
+            pic=pictures or None,
         )
         self.adapter.logger.debug(f"回复成功: {result.get('rpid')}")
         return result
@@ -387,41 +473,51 @@ class BiliBiliFeedCapability(FeedCapability["BiliBiliAdapter"]):
             "like": reply.get("like", 0),
         }
 
-    def _comment_events(self, comments: list[dict[str, Any]], target: FeedRef) -> list[KiraCommentEvent]:
+    def _comment_events(
+        self, comments: list[dict[str, Any]], target: FeedRef
+    ) -> list[KiraCommentEvent]:
         events = []
         for cmt in comments:
             if str(cmt["uid"]) != str(self.adapter.bot_uid):
-                events.append(KiraCommentEvent(
-                    target=target,
-                    platform=self.adapter.info.platform,
-                    adapter_name=self.adapter.info.name,
-                    commenter_id=cmt["uid"],
-                    commenter_nickname=cmt["user"],
-                    comment_id=cmt["comment_id"],
-                    self_id=self.adapter.bot_uid,
-                    comment_content=MessageChain([Text(cmt["message"])]),
-                    timestamp=cmt["ctime"],
-                ))
+                events.append(
+                    KiraCommentEvent(
+                        target=target,
+                        platform=self.adapter.info.platform,
+                        adapter_name=self.adapter.info.name,
+                        commenter_id=cmt["uid"],
+                        commenter_nickname=cmt["user"],
+                        comment_id=cmt["comment_id"],
+                        self_id=self.adapter.bot_uid,
+                        comment_content=MessageChain([Text(cmt["message"])]),
+                        timestamp=cmt["ctime"],
+                    )
+                )
             else:
-                for sub in cmt["sub_replies"]:
-                    if str(sub["uid"]) != str(self.adapter.bot_uid):
-                        events.append(KiraCommentEvent(
-                            target=target,
-                            platform=self.adapter.info.platform,
-                            adapter_name=self.adapter.info.name,
-                            commenter_id=sub["uid"],
-                            commenter_nickname=sub["user"],
-                            comment_id=sub["comment_id"],
-                            comment_content=MessageChain([Text(sub["message"])]),
-                            root_comment_id=cmt["comment_id"],
-                            root_comment_content=MessageChain([Text(cmt["message"])]),
-                            self_id=self.adapter.bot_uid,
-                            timestamp=sub["ctime"],
-                        ))
+                events.extend(
+                    KiraCommentEvent(
+                        target=target,
+                        platform=self.adapter.info.platform,
+                        adapter_name=self.adapter.info.name,
+                        commenter_id=sub["uid"],
+                        commenter_nickname=sub["user"],
+                        comment_id=sub["comment_id"],
+                        comment_content=MessageChain([Text(sub["message"])]),
+                        root_comment_id=cmt["comment_id"],
+                        root_comment_content=MessageChain([Text(cmt["message"])]),
+                        self_id=self.adapter.bot_uid,
+                        timestamp=sub["ctime"],
+                    )
+                    for sub in cmt["sub_replies"]
+                    if str(sub["uid"]) != str(self.adapter.bot_uid)
+                )
         return events
 
-    async def _handle_new_comments(self, comments: list[dict[str, Any]], target: FeedRef) -> None:
-        interval = max(0.0, float(self.adapter.config.get("message_process_interval", 5.0) or 0))
+    async def _handle_new_comments(
+        self, comments: list[dict[str, Any]], target: FeedRef
+    ) -> None:
+        interval = max(
+            0.0, float(self.adapter.config.get("message_process_interval", 5.0) or 0)
+        )
         poll_start_ts = self.last_process_ts
         newest_process_ts = poll_start_ts
         for event in self._comment_events(comments, target):

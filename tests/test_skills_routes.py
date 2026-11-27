@@ -14,7 +14,6 @@ from webui.models import SkillFileUpdateRequest
 from webui.routes.auth import require_auth
 from webui.routes.skills import MAX_EDITABLE_FILE_BYTES, SkillsRoutes
 
-
 ORIGINAL = '---\nname: demo\ndescription: Original description\n---\n# Hello\n\nSkill instructions.\n'
 UPDATED = ORIGINAL.replace('Original description', 'Updated description').replace('Hello', '你好')
 FILE_URL = '/api/skills/demo/file'

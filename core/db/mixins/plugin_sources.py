@@ -1,6 +1,5 @@
 """Database operations for plugin_sources."""
 
-
 from sqlalchemy import select
 
 from ..db_mgr import DatabaseManager
@@ -24,7 +23,7 @@ class PluginSourceMixin:
             if is_current:
                 # Unset all other current flags
                 result = await session.execute(
-                    select(PluginStoreSource).where(PluginStoreSource.is_current == True)
+                    select(PluginStoreSource).where(PluginStoreSource.is_current)
                 )
                 for row in result.scalars().all():
                     row.is_current = False
@@ -117,7 +116,7 @@ class PluginSourceMixin:
                     # Unset all other current flags
                     others = await session.execute(
                         select(PluginStoreSource).where(
-                            PluginStoreSource.is_current == True,
+                            PluginStoreSource.is_current,
                             PluginStoreSource.id != source_id,
                         )
                     )

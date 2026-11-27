@@ -1,5 +1,5 @@
 from copy import deepcopy
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -41,13 +41,13 @@ class OpenAIMessage(BaseModel):
             d["name"] = self.name
         return d
 
-    def __getitem__(self, key: str):
+    def __getitem__(self, key: str) -> Any:
         try:
             return getattr(self, key)
-        except AttributeError:
-            raise KeyError(key)
+        except AttributeError as err:
+            raise KeyError(key) from err
 
-    def __setitem__(self, key: str, value):
+    def __setitem__(self, key: str, value) -> None:
         setattr(self, key, value)
 
 

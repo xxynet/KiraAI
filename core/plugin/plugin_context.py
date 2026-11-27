@@ -4,6 +4,7 @@ import inspect
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from core.agent.base_agent_executor import (
@@ -27,6 +28,7 @@ from core.chat import (
     User,
 )
 from core.chat.message_router import MessageRouter
+from core.chat.session_buffer import SessionBuffer
 from core.chat.session_manager import SessionManager
 from core.config import KiraConfig
 from core.event_bus import EventBus
@@ -60,6 +62,7 @@ if TYPE_CHECKING:
     from core.prompt_manager import PromptManager
     from core.workflow.src.im.message_delivery import MessageDeliveryService
 
+    from .base import BasePlugin
     from .manager import PluginManager
 
 
@@ -113,7 +116,7 @@ class PluginContext:
         """Compatibility alias for plugins using the original attribute name."""
         return self.sticker_mgr
 
-    def get_plugin_data_dir(self):
+    def get_plugin_data_dir(self) -> Path | None:
         base_dir = get_data_path() / "plugin_data"
         frame = inspect.currentframe()
         if frame is None:
@@ -131,19 +134,20 @@ class PluginContext:
         plugin_dir.mkdir(parents=True, exist_ok=True)
         return plugin_dir
 
-    def get_plugin_inst(self, plugin_id: str):
+    def get_plugin_inst(self, plugin_id: str) -> BasePlugin | None:
         inst = self.plugin_mgr.get_plugin_inst(plugin_id)
         return inst
 
-    def get_buffer(self, sid: str):
+    def get_buffer(self, sid: str) -> SessionBuffer:
         buffer = self.session_buffer_mgr.get_buffer(sid)
         return buffer
 
     async def get_session_capabilities(self, sid: str) -> dict:
         global_capabilities = self.config.get_config("bot_config.capabilities", {})
-        return await self.session_mgr.get_effective_capabilities(sid, global_capabilities)
+        return await self.session_mgr.get_effective_capabilities(
+            sid, global_capabilities
+        )
 
-    
     async def flush_session_messages(
         self,
         sid: str,
@@ -155,10 +159,15 @@ class PluginContext:
         Publication does not imply processing has completed. Errors propagate.
         """
         return await publish_buffered_messages(
-            self.session_buffer_mgr, self.event_bus, sid, filter_fn=filter_fn,
+            self.session_buffer_mgr,
+            self.event_bus,
+            sid,
+            filter_fn=filter_fn,
         )
 
-    def steer_main_agent(self, target: Session | str, message: str | OpenAIMessage) -> bool:
+    def steer_main_agent(
+        self, target: Session | str, message: str | OpenAIMessage
+    ) -> bool:
         """Queue a user instruction for the unique active IM turn of a session.
 
         A string may be a SID or internal ID. A Session uses its internal ID when
@@ -172,7 +181,9 @@ class PluginContext:
         return self._main_agent_runs.steer(target, message)
 
     def create_agent_executor(
-        self, model_group: list[LLMModelClient] | None = None, *,
+        self,
+        model_group: list[LLMModelClient] | None = None,
+        *,
         tools: Sequence[BaseTool] | ToolSet | None = None,
         context: BaseAgentExecutionContext | None = None,
         request: LLMRequest | None = None,
@@ -191,9 +202,14 @@ class PluginContext:
                 raise ValueError("No default LLM is available for agent execution")
             model_group = [client]
         return PluginAgentExecutor(
-            model_group, tools=tools, context=context, request=request, hooks=hooks,
+            model_group,
+            tools=tools,
+            context=context,
+            request=request,
+            hooks=hooks,
             tool_executor=tool_executor,
-            config=config, on_result=on_result,
+            config=config,
+            on_result=on_result,
         )
 
     async def run_agent(
@@ -207,7 +223,7 @@ class PluginContext:
         max_tool_calls_per_step: int = ToolExecutionConfig.max_tool_calls_per_step,
         tool_call_timeout: float | None = ToolExecutionConfig.tool_call_timeout,
         max_tool_output_tokens: int = ToolExecutionConfig.max_tool_output_tokens,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> LLMResponse:
         """Run a prompt in a fresh conversation and return the final LLM response.
 
@@ -224,7 +240,9 @@ class PluginContext:
             ),
         )
         executor = self.create_agent_executor(
-            model_group, tools=tools, config=config,
+            model_group,
+            tools=tools,
+            config=config,
         )
         task = executor.queue(prompt)
         if task is None:
@@ -233,7 +251,9 @@ class PluginContext:
         if result is None:
             raise RuntimeError("Agent execution produced no result")
         if result.state != "success":
-            raise RuntimeError(result.err or f"Agent execution ended with state: {result.state}")
+            raise RuntimeError(
+                result.err or f"Agent execution ended with state: {result.state}"
+            )
         if not result.is_final or result.has_tool_calls or result.llm_response is None:
             raise RuntimeError("Agent execution ended without a final reply")
         return result.llm_response
@@ -250,7 +270,9 @@ class PluginContext:
         client = self.get_llm_client(llm_type="fast")
         return client
 
-    def get_llm_client(self, model_uuid: str | None = None, llm_type: str | None = None) -> LLMModelClient | None:
+    def get_llm_client(
+        self, model_uuid: str | None = None, llm_type: str | None = None
+    ) -> LLMModelClient | None:
         """
         Get LLMModelClient object by model uuid
         :param model_uuid: provider_id:model_id
@@ -270,7 +292,9 @@ class PluginContext:
             parts = model_uuid.split(":")
             provider_id = parts[0]
             model_id = ":".join(parts[1:])
-            client = self.provider_mgr.get_model_client(provider_id, model_id, ModelType.LLM)
+            client = self.provider_mgr.get_model_client(
+                provider_id, model_id, ModelType.LLM
+            )
         except Exception:
             return
         if isinstance(client, LLMModelClient):
@@ -341,7 +365,9 @@ class PluginContext:
             plugin_id = self.plugin_mgr.get_plugin_id_for_module(module_name)
         if not plugin_id:
             raise RuntimeError("Plugin context is not associated with a loaded plugin")
-        return await self.plugin_mgr.unregister_plugin_provider(plugin_id, provider_format)
+        return await self.plugin_mgr.unregister_plugin_provider(
+            plugin_id, provider_format
+        )
 
     async def register_adapter(self, relative_path: str) -> str:
         """Register an Adapter directory for the calling plugin."""
@@ -366,7 +392,10 @@ class PluginContext:
         return await self.plugin_mgr.unregister_plugin_adapter(plugin_id, platform)
 
     async def register_adapter_capability(
-        self, *, platform: str, capability_type: type[BaseCapability],
+        self,
+        *,
+        platform: str,
+        capability_type: type[BaseCapability],
         factory: Callable[[BaseAdapter], BaseCapability],
     ) -> None:
         """Attach a plugin-owned capability to existing and future platform accounts.
@@ -385,11 +414,17 @@ class PluginContext:
         if not plugin_id:
             raise RuntimeError("Plugin context is not associated with a loaded plugin")
         await self.plugin_mgr.register_plugin_adapter_capability(
-            plugin_id, platform, capability_type, factory,
+            plugin_id,
+            platform,
+            capability_type,
+            factory,
         )
 
     async def unregister_adapter_capability(
-        self, *, platform: str, capability_type: type[BaseCapability],
+        self,
+        *,
+        platform: str,
+        capability_type: type[BaseCapability],
     ) -> bool:
         """Withdraw only the calling plugin's binding and close its instances."""
         frame = inspect.currentframe().f_back
@@ -401,7 +436,9 @@ class PluginContext:
         if not plugin_id:
             raise RuntimeError("Plugin context is not associated with a loaded plugin")
         return await self.plugin_mgr.unregister_plugin_adapter_capability(
-            plugin_id, platform, capability_type,
+            plugin_id,
+            platform,
+            capability_type,
         )
 
     def get_default_embedding_client(self) -> EmbeddingModelClient | None:
@@ -409,7 +446,9 @@ class PluginContext:
         if isinstance(client, EmbeddingModelClient):
             return client
 
-    def get_embedding_client(self, model_uuid: str, default: bool = False) -> EmbeddingModelClient | None:
+    def get_embedding_client(
+        self, model_uuid: str, default: bool = False
+    ) -> EmbeddingModelClient | None:
         if default:
             client = self.provider_mgr.get_default_embedding()
             if isinstance(client, EmbeddingModelClient):
@@ -419,7 +458,9 @@ class PluginContext:
             parts = model_uuid.split(":")
             provider_id = parts[0]
             model_id = ":".join(parts[1:])
-            client = self.provider_mgr.get_model_client(provider_id, model_id, ModelType.EMBEDDING)
+            client = self.provider_mgr.get_model_client(
+                provider_id, model_id, ModelType.EMBEDDING
+            )
         except Exception:
             return
         if isinstance(client, EmbeddingModelClient):
@@ -446,8 +487,12 @@ class PluginContext:
         return event
 
     async def publish_notice(
-        self, session: Session | str, chain: MessageChain, is_mentioned: bool = True,
-        *, extra: dict | None = None,
+        self,
+        session: Session | str,
+        chain: MessageChain,
+        is_mentioned: bool = True,
+        *,
+        extra: dict | None = None,
     ):
         """Publish an IM system notice, preserving internal extra metadata through batching."""
         target = await self.session_mgr.resolve_session(session)
@@ -459,7 +504,9 @@ class PluginContext:
         except ValueError:
             supported_elements = []
         else:
-            supported_elements = list((await im.get_message_metadata()).supported_elements)
+            supported_elements = list(
+                (await im.get_message_metadata()).supported_elements
+            )
         now = int(time.time())
         event = KiraMessageEvent(
             adapter=adapter.info,
@@ -467,10 +514,14 @@ class PluginContext:
             message=KiraIMMessage(
                 timestamp=now,
                 sender=User(
-                    user_id=target.session_id if target.session_type == "dm" else "unknown",
+                    user_id=target.session_id
+                    if target.session_type == "dm"
+                    else "unknown",
                     nickname="system",
                 ),
-                group=Group(group_id=target.session_id) if target.session_type == "gm" else None,
+                group=Group(group_id=target.session_id)
+                if target.session_type == "gm"
+                else None,
                 message_id="system_message",
                 self_id=adapter.config.get("self_id"),
                 is_notice=True,
@@ -482,8 +533,10 @@ class PluginContext:
         )
         event.session = target
         await self.event_bus.publish(event)
-    
-    async def send_message_chain(self, session: Session | str, chain: MessageChain, *, bot: User | None = None) -> KiraIMSentResult:
+
+    async def send_message_chain(
+        self, session: Session | str, chain: MessageChain, *, bot: User | None = None
+    ) -> KiraIMSentResult:
         """
         Send a message chain to the specified session.
         :param session: Full Session object, stored internal ID, or routing SID.

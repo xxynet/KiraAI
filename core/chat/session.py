@@ -73,19 +73,25 @@ class Session:
         if len(parts) != 3:
             raise ValueError("Invalid session routing key")
         return cls(
-            adapter_name=parts[0], session_type=parts[1], session_id=parts[2],
-            session_title=record["title"], session_description=record["description"],
-            timestamp=record["updated_at"], internal_id=record["id"],
-            created_at=record["created_at"], updated_at=record["updated_at"],
-            content=deepcopy(record.get("content", [])), data=deepcopy(record["data"]),
+            adapter_name=parts[0],
+            session_type=parts[1],
+            session_id=parts[2],
+            session_title=record["title"],
+            session_description=record["description"],
+            timestamp=record["updated_at"],
+            internal_id=record["id"],
+            created_at=record["created_at"],
+            updated_at=record["updated_at"],
+            content=deepcopy(record.get("content", [])),
+            data=deepcopy(record["data"]),
             kind=record.get("kind", "im"),
             parent_id=record.get("parent_id"),
         )
 
     @property
-    def sid(self):
+    def sid(self) -> str:
         """unique session identifier"""
         return f"{self.adapter_name}:{self.session_type}:{self.session_id}"
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.adapter_name}:{self.session_type}:{self.session_id}"

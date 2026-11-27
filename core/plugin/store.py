@@ -79,7 +79,9 @@ class PluginStore:
 
     def __init__(self, source: StoreSource, cache_dir: Path | None = None):
         self.source = source
-        self.cache_dir = cache_dir if cache_dir is not None else get_data_path() / "plugin_src"
+        self.cache_dir = (
+            cache_dir if cache_dir is not None else get_data_path() / "plugin_src"
+        )
 
     async def read_cache(self, *, strict: bool = False) -> Any | None:
         return await asyncio.to_thread(self._read_cache, self.source.cache_file, strict)
@@ -147,13 +149,17 @@ class PluginStore:
             if data is None:
                 raise
             logger.warning(
-                "Failed to refresh plugin store %s; using local cache: %s", self.source.url, error
+                "Failed to refresh plugin store %s; using local cache: %s",
+                self.source.url,
+                error,
             )
             return StoreFetchResult(data, fetch_error=error)
 
         result = StoreFetchResult(data)
         if persist_cache:
-            result.cache_file = await asyncio.to_thread(self._write_cache, data, self.source.cache_file)
+            result.cache_file = await asyncio.to_thread(
+                self._write_cache, data, self.source.cache_file
+            )
             result.updated_at = int(time.time())
         return result
 
@@ -163,7 +169,9 @@ class PluginStore:
             result = await self.fetch(force_refresh=True, persist_cache=True)
             return result.cache_file
         except Exception as error:
-            logger.warning(f"Failed to fetch/cache plugin store data from {self.source.url}: {error}")
+            logger.warning(
+                f"Failed to fetch/cache plugin store data from {self.source.url}: {error}"
+            )
             return None
 
     async def delete_cache(self) -> None:
@@ -221,9 +229,15 @@ def extract_plugins(raw_data: Any) -> list[PluginStoreItemResponse]:
         author = raw.get("author", "")
         description = raw.get("description", "")
         category = raw.get("category")
-        category_info = category_catalog.get(category) if isinstance(category, str) else None
-        category_name = category_info.get("name") if isinstance(category_info, dict) else None
-        category_locales = category_info.get("locales") if isinstance(category_info, dict) else None
+        category_info = (
+            category_catalog.get(category) if isinstance(category, str) else None
+        )
+        category_name = (
+            category_info.get("name") if isinstance(category_info, dict) else None
+        )
+        category_locales = (
+            category_info.get("locales") if isinstance(category_info, dict) else None
+        )
         repo = raw.get("repo") or raw.get("repo_url")
         raw_commit_sha = raw.get("commit_sha")
         if raw_commit_sha is None:
@@ -242,7 +256,9 @@ def extract_plugins(raw_data: Any) -> list[PluginStoreItemResponse]:
         icon = raw.get("icon")
         icon_dark = raw.get("icon_dark") or raw.get("icon-dark")
         github_data = raw.get("github_data")
-        github_stars = github_data.get("stars", 0) if isinstance(github_data, dict) else 0
+        github_stars = (
+            github_data.get("stars", 0) if isinstance(github_data, dict) else 0
+        )
         stars = raw.get("stars", raw.get("star_count", github_stars))
         updated_at = raw.get("updated_at", raw.get("updatedAt"))
 
@@ -250,25 +266,33 @@ def extract_plugins(raw_data: Any) -> list[PluginStoreItemResponse]:
         tags = raw.get("tags")
         core_version = raw.get("core_version")
 
-        result.append(PluginStoreItemResponse(
-            id=str(plugin_id),
-            name=str(display_name),
-            version=str(version) if version else "",
-            author=str(author),
-            description=str(description),
-            category=str(category) if category else None,
-            category_name=str(category_name) if category_name else None,
-            category_locales=category_locales if isinstance(category_locales, dict) else {},
-            repo=str(repo) if repo else None,
-            commit_sha=commit_sha,
-            release_tag=str(release_tag) if isinstance(release_tag, str) else None,
-            icon=str(icon) if isinstance(icon, str) else None,
-            icon_dark=str(icon_dark) if isinstance(icon_dark, str) else None,
-            locales=locales if isinstance(locales, dict) else {},
-            tags=[str(tag) for tag in tags if tag] if isinstance(tags, list) else [],
-            core_version=str(core_version) if core_version else None,
-            stars=int(stars) if isinstance(stars, (int, float, str)) and str(stars).isdigit() else 0,
-            updated_at=updated_at if isinstance(updated_at, (int, str)) else None,
-        ))
+        result.append(
+            PluginStoreItemResponse(
+                id=str(plugin_id),
+                name=str(display_name),
+                version=str(version) if version else "",
+                author=str(author),
+                description=str(description),
+                category=str(category) if category else None,
+                category_name=str(category_name) if category_name else None,
+                category_locales=category_locales
+                if isinstance(category_locales, dict)
+                else {},
+                repo=str(repo) if repo else None,
+                commit_sha=commit_sha,
+                release_tag=str(release_tag) if isinstance(release_tag, str) else None,
+                icon=str(icon) if isinstance(icon, str) else None,
+                icon_dark=str(icon_dark) if isinstance(icon_dark, str) else None,
+                locales=locales if isinstance(locales, dict) else {},
+                tags=[str(tag) for tag in tags if tag]
+                if isinstance(tags, list)
+                else [],
+                core_version=str(core_version) if core_version else None,
+                stars=int(stars)
+                if isinstance(stars, (int, float, str)) and str(stars).isdigit()
+                else 0,
+                updated_at=updated_at if isinstance(updated_at, (int, str)) else None,
+            )
+        )
 
     return result

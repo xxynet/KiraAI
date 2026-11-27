@@ -8,7 +8,7 @@ if TYPE_CHECKING:
 
 
 class BaseTool(ABC):
-    def __init__(self, *args, ctx: PluginContext | None = None, **kwargs):
+    def __init__(self, *args, ctx: PluginContext | None = None, **kwargs) -> None:
         self.ctx = ctx
         self.args = args
         self.kwargs = kwargs
@@ -28,5 +28,5 @@ class BaseTool(ABC):
         return {
             "name": cls.name,
             "description": cls.description,
-            "parameters": cls.parameters
+            "parameters": cls.parameters,
         }

@@ -8,11 +8,19 @@ def format_search_results(results: list, *, source: str = "", timezone=None) -> 
     for index, result in enumerate(results, 1):
         title = result.get("title") or result.get("url") or "Untitled"
         lines = [f"### {index}. {title}"]
-        providers = ", ".join(sorted(result.get("sources", ()))) or result.get("source") or source
+        providers = (
+            ", ".join(sorted(result.get("sources", ())))
+            or result.get("source")
+            or source
+        )
         published = result.get("published_date")
         if isinstance(published, (int, float)):
             published = format_timestamp(published, timezone)
-        for label, value in (("URL", result.get("url")), ("Source", providers), ("Published", published)):
+        for label, value in (
+            ("URL", result.get("url")),
+            ("Source", providers),
+            ("Published", published),
+        ):
             if value:
                 lines.append(f"{label}: {value}")
         if result.get("fusion_score") is not None:
@@ -55,7 +63,10 @@ def format_anysearch_domains(data: dict) -> str:
             if params:
                 lines.append("")
                 lines.append("**参数：**")
-                entries = sorted(params.items(), key=lambda item: (item[1] or {}).get("sort_order", 0))
+                entries = sorted(
+                    params.items(),
+                    key=lambda item: (item[1] or {}).get("sort_order", 0),
+                )
                 for name, info in entries:
                     info = info or {}
                     required = "（必填）" if info.get("required") else ""

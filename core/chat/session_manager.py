@@ -5,7 +5,7 @@ import copy
 import json
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, overload
+from typing import TYPE_CHECKING, Any, Literal, overload
 from uuid import uuid4
 
 from core.config import KiraConfig
@@ -33,7 +33,7 @@ class SessionManager:
         db: DatabaseService,
         kira_config: KiraConfig,
         event_bus: EventBus | None = None,
-    ):
+    ) -> None:
         self.db = db
         self.kira_config = kira_config
         self.event_bus = event_bus
@@ -45,7 +45,9 @@ class SessionManager:
         """Import once, preserving the legacy file; later starts use only the database."""
         async with self._write_lock:
             if not await self.db.is_chat_memory_imported():
-                records = await asyncio.to_thread(self._load_legacy_memory, self.chat_memory_path)
+                records = await asyncio.to_thread(
+                    self._load_legacy_memory, self.chat_memory_path
+                )
                 await self.db.import_chat_sessions(records)
 
     @staticmethod
@@ -58,56 +60,86 @@ class SessionManager:
         try:
             records = json.loads(content) if content.strip() else {}
         except (ValueError, TypeError):
-            raise ValueError("Unable to import legacy chat memory: invalid JSON") from None
+            raise ValueError(
+                "Unable to import legacy chat memory: invalid JSON"
+            ) from None
         if not isinstance(records, dict):
-            raise ValueError("Unable to import legacy chat memory: expected a session object")
+            raise ValueError(
+                "Unable to import legacy chat memory: expected a session object"
+            )
         for index, (key, data) in enumerate(records.items(), start=1):
             if isinstance(data, list):
-                data = {"title": "", "description": "", "timestamp": None, "memory": data}
+                data = {
+                    "title": "",
+                    "description": "",
+                    "timestamp": None,
+                    "memory": data,
+                }
                 records[key] = data
             if not isinstance(data, dict):
-                logger.warning("Skipping malformed session entry %d; preserving raw data", index)
+                logger.warning(
+                    "Skipping malformed session entry %d; preserving raw data", index
+                )
                 continue
             try:
                 data["memory"] = normalize_memory(data.get("memory", []))
             except (ValueError, TypeError) as exc:
                 logger.warning(
                     "Unable to normalize memory for session entry %d (%s); preserving raw memory",
-                    index, type(exc).__name__,
+                    index,
+                    type(exc).__name__,
                 )
         return records
 
     async def get_sessions(
-        self, *, include_content: bool = True, kind: str | None = None,
+        self,
+        *,
+        include_content: bool = True,
+        kind: str | None = None,
     ) -> list[Session]:
         """Query session snapshots, optionally filtering by kind or omitting content."""
         rows = await self.db.list_chat_sessions(
             include_content=include_content,
             kind=kind,
         )
-        return [Session.from_record(row) for row in rows
-                if len(row["session_key"].split(":", 2)) == 3]
+        return [
+            Session.from_record(row)
+            for row in rows
+            if len(row["session_key"].split(":", 2)) == 3
+        ]
 
     @overload
     async def get_session(
-        self, session: str, *, ensure_session: Literal[True],
+        self,
+        session: str,
+        *,
+        ensure_session: Literal[True],
         include_content: bool = True,
     ) -> Session: ...
 
     @overload
     async def get_session(
-        self, session: str, *, ensure_session: Literal[False] = False,
+        self,
+        session: str,
+        *,
+        ensure_session: Literal[False] = False,
         include_content: bool = True,
     ) -> Session | None: ...
 
     @overload
     async def get_session(
-        self, session: str, *, ensure_session: bool,
+        self,
+        session: str,
+        *,
+        ensure_session: bool,
         include_content: bool = True,
     ) -> Session | None: ...
 
     async def get_session(
-        self, session: str, *, ensure_session: bool = False,
+        self,
+        session: str,
+        *,
+        ensure_session: bool = False,
         include_content: bool = True,
     ) -> Session | None:
         """Query a snapshot, optionally creating a missing session under the write lock."""
@@ -115,20 +147,33 @@ class SessionManager:
             if len(session.split(":", 2)) != 3:
                 raise ValueError("Invalid session routing key")
             async with self._write_lock:
-                row = await self.db.get_chat_session(session, include_content=include_content)
+                row = await self.db.get_chat_session(
+                    session, include_content=include_content
+                )
                 if row is None:
-                    row = await self._save_session(session, {
-                        "title": "", "description": "", "content": [], "data": {},
-                    })
+                    row = await self._save_session(
+                        session,
+                        {
+                            "title": "",
+                            "description": "",
+                            "content": [],
+                            "data": {},
+                        },
+                    )
         else:
-            row = await self.db.get_chat_session(session, include_content=include_content)
+            row = await self.db.get_chat_session(
+                session, include_content=include_content
+            )
         record = Session.from_record(row) if row is not None else None
         if record is not None and not isinstance(record.data, dict):
             raise ValueError("Session data must be an object")
         return record
 
     async def resolve_session(
-        self, target: Session | str, *, include_content: bool = True,
+        self,
+        target: Session | str,
+        *,
+        include_content: bool = True,
     ) -> Session:
         """Resolve delivery targets without creating or changing stored sessions.
 
@@ -142,7 +187,9 @@ class SessionManager:
         if not isinstance(target, str) or not target:
             raise ValueError("Session target must be a Session, SID, or internal ID")
         if ":" not in target:
-            row = await self.db.get_chat_session_by_id(target, include_content=include_content)
+            row = await self.db.get_chat_session_by_id(
+                target, include_content=include_content
+            )
             if row is None:
                 raise ValueError(f"Session not found: {target}")
             record = Session.from_record(row)
@@ -164,7 +211,10 @@ class SessionManager:
     ) -> Session:
         """Create an independent child or root session with one stable identity."""
         async with self._write_lock:
-            if parent_id is not None and await self.db.get_chat_session_by_id(parent_id) is None:
+            if (
+                parent_id is not None
+                and await self.db.get_chat_session_by_id(parent_id) is None
+            ):
                 raise ValueError(f"Parent session not found: {parent_id}")
             identity = f"sess_{uuid4().hex}"
             record = await self.db.save_chat_session(
@@ -177,7 +227,9 @@ class SessionManager:
             )
         return Session.from_record(record)
 
-    async def get_session_message_counts(self, session: str | None = None) -> dict[str, int]:
+    async def get_session_message_counts(
+        self, session: str | None = None
+    ) -> dict[str, int]:
         """Return chunk counts for one routing SID, or all sessions when omitted."""
         if session is None:
             return await self.db.get_chat_session_message_counts()
@@ -197,12 +249,23 @@ class SessionManager:
         async with self._write_lock:
             yield
 
-    async def _save_session(self, session: str, data: dict, event_type: str | None = None, payload: dict | None = None) -> dict:
+    async def _save_session(
+        self,
+        session: str,
+        data: dict,
+        event_type: str | None = None,
+        payload: dict | None = None,
+    ) -> dict:
         """Finish the transaction before publishing events, even if the caller is cancelled."""
-        async def persist():
+
+        async def persist() -> dict[Any, Any]:
             record = await self.db.save_chat_session(
-                session, **{key: data[key] for key in ("title", "description", "content", "data")
-                            if key in data},
+                session,
+                **{
+                    key: data[key]
+                    for key in ("title", "description", "content", "data")
+                    if key in data
+                },
             )
             if event_type:
                 self._publish_session_event(event_type, payload)
@@ -216,27 +279,57 @@ class SessionManager:
             raise
 
     async def update_session(
-        self, session: str, *, title=_FIELD_UNSET, description=_FIELD_UNSET,
-        content=_FIELD_UNSET, data=_FIELD_UNSET, capabilities=_FIELD_UNSET,
+        self,
+        session: str,
+        *,
+        title=_FIELD_UNSET,
+        description=_FIELD_UNSET,
+        content=_FIELD_UNSET,
+        data=_FIELD_UNSET,
+        capabilities=_FIELD_UNSET,
         llm_model=_FIELD_UNSET,
     ) -> None:
         """Update supplied fields and apply session overrides in one write."""
-        changes = {name: value for name, value in (
-            ("title", title), ("description", description), ("content", content), ("data", data),
-        ) if value is not _FIELD_UNSET}
-        overrides = {name: value for name, value in (
-            ("capabilities", capabilities), ("llm_model", llm_model),
-        ) if value is not _FIELD_UNSET}
+        changes = {
+            name: value
+            for name, value in (
+                ("title", title),
+                ("description", description),
+                ("content", content),
+                ("data", data),
+            )
+            if value is not _FIELD_UNSET
+        }
+        overrides = {
+            name: value
+            for name, value in (
+                ("capabilities", capabilities),
+                ("llm_model", llm_model),
+            )
+            if value is not _FIELD_UNSET
+        }
         if not changes and not overrides:
             return
         for name in ("title", "description"):
-            if name in changes and changes[name] is not None and not isinstance(changes[name], str):
+            if (
+                name in changes
+                and changes[name] is not None
+                and not isinstance(changes[name], str)
+            ):
                 raise ValueError(f"Session {name} must be a string or null")
         if data is not _FIELD_UNSET and not isinstance(data, dict):
             raise ValueError("Session data must be an object")
-        if "capabilities" in overrides and capabilities is not None and not isinstance(capabilities, dict):
+        if (
+            "capabilities" in overrides
+            and capabilities is not None
+            and not isinstance(capabilities, dict)
+        ):
             raise ValueError("Session capabilities must be an object or null")
-        if "llm_model" in overrides and llm_model is not None and not isinstance(llm_model, str):
+        if (
+            "llm_model" in overrides
+            and llm_model is not None
+            and not isinstance(llm_model, str)
+        ):
             raise ValueError("Session LLM model must be a string or null")
         if content is not _FIELD_UNSET:
             normalize_memory(content)
@@ -248,7 +341,9 @@ class SessionManager:
                 previous = await self._session_data(session)
             if overrides:
                 if "llm_model" in overrides and previous.get("kind") == "subagent":
-                    raise ValueError("Session LLM selection is only available for chat sessions")
+                    raise ValueError(
+                        "Session LLM selection is only available for chat sessions"
+                    )
                 session_data = changes.setdefault("data", previous["data"])
                 for name, value in overrides.items():
                     if value is None:
@@ -257,10 +352,13 @@ class SessionManager:
                         session_data[name] = value
             if content is not _FIELD_UNSET:
                 old_memory = previous["content"]
-                changes["content"] = normalize_memory(changes["content"], previous=old_memory)
+                changes["content"] = normalize_memory(
+                    changes["content"], previous=old_memory
+                )
                 event_type = "session_memory_written"
                 payload = {
-                    "session": session, "old_memory": copy.deepcopy(old_memory),
+                    "session": session,
+                    "old_memory": copy.deepcopy(old_memory),
                     "new_memory": copy.deepcopy(changes["content"]),
                 }
             await self._save_session(session, changes, event_type, payload)
@@ -275,8 +373,14 @@ class SessionManager:
                 merged[key] = copy.deepcopy(value)
         return merged
 
-    async def get_effective_capabilities(self, session: str, global_capabilities: dict) -> dict:
-        global_config = copy.deepcopy(global_capabilities) if isinstance(global_capabilities, dict) else {}
+    async def get_effective_capabilities(
+        self, session: str, global_capabilities: dict
+    ) -> dict:
+        global_config = (
+            copy.deepcopy(global_capabilities)
+            if isinstance(global_capabilities, dict)
+            else {}
+        )
         row = await self.db.get_chat_session(session)
         data = row["data"] if row else {}
         overrides = data.get("capabilities") if isinstance(data, dict) else None
@@ -284,7 +388,9 @@ class SessionManager:
             return global_config
         return self._merge_capabilities(global_config, overrides)
 
-    async def update_session_capabilities(self, session: str, capabilities: dict | None):
+    async def update_session_capabilities(
+        self, session: str, capabilities: dict | None
+    ):
         await self.update_session(session, capabilities=capabilities)
 
     async def update_memory(
@@ -294,10 +400,17 @@ class SessionManager:
         *,
         metadata: dict | None = None,
         require_existing: bool = False,
-    ):
+    ) -> bool:
         from core.agent.message import OpenAIMessage
 
-        new_chunk = normalize_memory([[m.to_memory_dict() if isinstance(m, OpenAIMessage) else m for m in new_chunk]])[0]
+        new_chunk = normalize_memory(
+            [
+                [
+                    m.to_memory_dict() if isinstance(m, OpenAIMessage) else m
+                    for m in new_chunk
+                ]
+            ]
+        )[0]
         async with self._write_lock:
             if require_existing:
                 data = await self.db.get_chat_session(session)
@@ -315,16 +428,25 @@ class SessionManager:
                 discard_count = overflow_count + self.memory_overflow_discard_count - 1
                 discarded_memory = copy.deepcopy(data["content"][:discard_count])
                 data["content"] = data["content"][discard_count:]
-            await self._save_session(session, data, "session_memory_updated", {
-                "session": session, "new_chunk": copy.deepcopy(new_chunk), "discarded_memory": discarded_memory,
-            })
+            await self._save_session(
+                session,
+                data,
+                "session_memory_updated",
+                {
+                    "session": session,
+                    "new_chunk": copy.deepcopy(new_chunk),
+                    "discarded_memory": discarded_memory,
+                },
+            )
         logger.info(f"Memory updated for {session}")
         return True
 
     @property
     def max_memory_length(self) -> int:
         """Read the current maximum number of memory chunks."""
-        return int(self.kira_config["bot_config"].get("bot", {}).get("max_memory_length"))
+        return int(
+            self.kira_config["bot_config"].get("bot", {}).get("max_memory_length")
+        )
 
     @property
     def memory_overflow_discard_count(self) -> int:
@@ -340,7 +462,9 @@ class SessionManager:
         from core.event_bus import SystemEvent
 
         publish_coro = self.event_bus.publish(
-            SystemEvent(event_type=event_type, payload=payload, source="session_manager")
+            SystemEvent(
+                event_type=event_type, payload=payload, source="session_manager"
+            )
         )
         try:
             task = asyncio.create_task(
@@ -351,17 +475,25 @@ class SessionManager:
             task.add_done_callback(self._background_tasks.discard)
         except RuntimeError:
             publish_coro.close()
-            logger.warning("Unable to publish session lifecycle event outside a running event loop")
+            logger.warning(
+                "Unable to publish session lifecycle event outside a running event loop"
+            )
 
-    async def delete_session(self, session: str):
+    async def delete_session(self, session: str) -> None:
         """Delete context and notify archive/media subscribers after committing."""
         async with self._write_lock:
             row = await self.db.get_chat_session(session)
-            old_memory = (row["content"] or []) if row is not None and isinstance(row["data"], dict) else []
+            old_memory = (
+                (row["content"] or [])
+                if row is not None and isinstance(row["data"], dict)
+                else []
+            )
 
-            async def remove():
+            async def remove() -> None:
                 await self.db.delete_chat_session(session)
-                self._publish_session_event("session_deleted", {"session": session, "old_memory": old_memory})
+                self._publish_session_event(
+                    "session_deleted", {"session": session, "old_memory": old_memory}
+                )
 
             task = asyncio.create_task(remove())
             try:

@@ -8,7 +8,7 @@ class GptSovitsProvider(BaseProvider):
         ModelType.TTS: GptSovitsTTSClient,
     }
 
-    def __init__(self, provider_id, provider_name, provider_config):
+    def __init__(self, provider_id, provider_name, provider_config) -> None:
         super().__init__(provider_id, provider_name, provider_config)
 
     async def get_llm_list(self) -> list[dict]:

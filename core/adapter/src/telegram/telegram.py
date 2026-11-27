@@ -10,6 +10,7 @@ from core.adapter.base import BaseAdapter
 from core.adapter.capabilities import IMCapability
 from core.adapter.context import AdapterContext
 from core.chat import MessageChain
+from core.chat.message_utils import KiraIMSentResult
 from core.logging_manager import get_logger
 
 from .im import MessageSender, TelegramIMCapability
@@ -32,7 +33,7 @@ class _TelegramShutdownCancellationFilter(logging.Filter):
 class TelegramAdapter(BaseAdapter):
     """Telegram adapter"""
 
-    def __init__(self, ctx: AdapterContext):
+    def __init__(self, ctx: AdapterContext) -> None:
         super().__init__(ctx)
         self.logger = get_logger(self.info.name, "green")
 
@@ -44,7 +45,9 @@ class TelegramAdapter(BaseAdapter):
         if not base_url:
             base_url = "https://api.telegram.org/bot"
 
-        base_file_url = self.config.get("base_file_url", "https://api.telegram.org/file/bot")
+        base_file_url = self.config.get(
+            "base_file_url", "https://api.telegram.org/file/bot"
+        )
         if not base_file_url:
             base_file_url = "https://api.telegram.org/file/bot"
 
@@ -80,7 +83,9 @@ class TelegramAdapter(BaseAdapter):
                 self._shutdown_event.clear()
                 self._resources_started = True
                 await self._start()
-                self._run_task = asyncio.create_task(self._run(), name=f"telegram:{self.info.name}")
+                self._run_task = asyncio.create_task(
+                    self._run(), name=f"telegram:{self.info.name}"
+                )
             task = self._run_task
         if existing:
             await asyncio.shield(task)
@@ -99,7 +104,7 @@ class TelegramAdapter(BaseAdapter):
             async with self._lifecycle_lock:
                 await self._stop()
 
-    async def _start(self):
+    async def _start(self) -> None:
         """Start the Telegram adapter asynchronously"""
         if not self.bot_token:
             logger.error("Telegram bot_token is not set")
@@ -116,10 +121,14 @@ class TelegramAdapter(BaseAdapter):
             # Start polling, drop any pending updates that accumulated while the bot was offline
             await self.app.updater.start_polling(
                 drop_pending_updates=True,
-                error_callback=lambda e: logger.error("[%s] Polling error (%s)", self.info.name, type(e).__name__)
+                error_callback=lambda e: logger.error(
+                    "[%s] Polling error (%s)", self.info.name, type(e).__name__
+                ),
             )
 
-            logger.info(f"start listening incoming messages for {self.config.get('bot_pid', 'your bot account')}")
+            logger.info(
+                f"start listening incoming messages for {self.config.get('bot_pid', 'your bot account')}"
+            )
         except asyncio.CancelledError:
             await self._stop()
             raise
@@ -137,7 +146,7 @@ class TelegramAdapter(BaseAdapter):
         if task and task is not asyncio.current_task():
             await asyncio.gather(task, return_exceptions=True)
 
-    async def _stop(self):
+    async def _stop(self) -> None:
         """Stop the Telegram adapter asynchronously"""
         if not getattr(self, "_resources_started", True):
             return
@@ -182,14 +191,18 @@ class TelegramAdapter(BaseAdapter):
                     else:
                         shutdown_task.result()
                 except Exception as e:
-                    logger.error("Error stopping Telegram %s (%s)", component, type(e).__name__)
+                    logger.error(
+                        "Error stopping Telegram %s (%s)", component, type(e).__name__
+                    )
         finally:
             application_logger.removeFilter(cancellation_filter)
 
         self._resources_started = False
-        logger.info(f"Stopped listening messages for {self.config.get('bot_pid', 'your bot account')}")
+        logger.info(
+            f"Stopped listening messages for {self.config.get('bot_pid', 'your bot account')}"
+        )
 
-    async def _on_message(self, update, context):
+    async def _on_message(self, update, context) -> None:
         if not self._accepting_messages:
             return
         task = asyncio.current_task()
@@ -199,8 +212,10 @@ class TelegramAdapter(BaseAdapter):
         finally:
             self._message_tasks.discard(task)
 
-    async def _cancel_message_tasks(self):
-        tasks = [task for task in self._message_tasks if task is not asyncio.current_task()]
+    async def _cancel_message_tasks(self) -> None:
+        tasks = [
+            task for task in self._message_tasks if task is not asyncio.current_task()
+        ]
         for task in tasks:
             task.cancel()
         if tasks:
@@ -220,19 +235,27 @@ class TelegramAdapter(BaseAdapter):
                 permission=f"im.{scope}.receive",
                 policy=ListAccessPolicy.from_lists(
                     mode if valid_mode else "allow_list",
-                    allow_list=allow_list if valid_mode and isinstance(allow_list, list) else [],
-                    deny_list=deny_list if valid_mode and isinstance(deny_list, list) else [],
+                    allow_list=allow_list
+                    if valid_mode and isinstance(allow_list, list)
+                    else [],
+                    deny_list=deny_list
+                    if valid_mode and isinstance(deny_list, list)
+                    else [],
                 ),
             )
 
-    async def send_group_message(self, group_id: int | str, send_message_obj: MessageChain):
+    async def send_group_message(
+        self, group_id: int | str, send_message_obj: MessageChain
+    ) -> KiraIMSentResult | None:
         """Deprecated compatibility wrapper; use the IM capability directly.
 
         await adapter.get_capability(IMCapability).send_group_message(group_id, message)
         """
         return await self.im.send_group_message(group_id, send_message_obj)
 
-    async def send_direct_message(self, user_id: int | str, send_message_obj: MessageChain):
+    async def send_direct_message(
+        self, user_id: int | str, send_message_obj: MessageChain
+    ) -> KiraIMSentResult | None:
         """Deprecated compatibility wrapper; use the IM capability directly.
 
         await adapter.get_capability(IMCapability).send_direct_message(user_id, message)

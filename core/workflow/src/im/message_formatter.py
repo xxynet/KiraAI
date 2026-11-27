@@ -60,22 +60,35 @@ class MessageFormatter:
             logger.warning(f"Failed to save {label.lower()}: {e}")
             return f"[{label} {element.caption!s}]"
 
-    async def format_to_text(self, message_chain: MessageChain, session_id: str | None = None, capabilities: dict | None = None):
+    async def format_to_text(
+        self,
+        message_chain: MessageChain,
+        session_id: str | None = None,
+        capabilities: dict | None = None,
+    ):
         """将平台使用标准消息格式封装的消息转换为LLM可以接收的字符串"""
         message_str = ""
         if capabilities is None:
-            global_capabilities = self.kira_config.get_config("bot_config.capabilities", {})
+            global_capabilities = self.kira_config.get_config(
+                "bot_config.capabilities", {}
+            )
             if not isinstance(global_capabilities, dict):
                 global_capabilities = {}
-            capabilities = await self.session_manager.get_effective_capabilities(
-                session_id, global_capabilities
-            ) if session_id and self.session_manager is not None else global_capabilities
+            capabilities = (
+                await self.session_manager.get_effective_capabilities(
+                    session_id, global_capabilities
+                )
+                if session_id and self.session_manager is not None
+                else global_capabilities
+            )
         if not isinstance(capabilities, dict):
             capabilities = {}
         image_recognition = capabilities.get("image_recognition", {})
         if not isinstance(image_recognition, dict) or not image_recognition:
             image_recognition = {
-                "mode": self.kira_config.get_config("bot_config.capabilities.image_recognition.mode", "vlm_description")
+                "mode": self.kira_config.get_config(
+                    "bot_config.capabilities.image_recognition.mode", "vlm_description"
+                )
             }
         for ele in message_chain:
             if isinstance(ele, Text):
@@ -118,12 +131,15 @@ class MessageFormatter:
                                     client=vlm_model,
                                     image=ele,
                                     prompt=img_prompt,
-                                    lang=self.kira_config.get_config("locale.lang") or "en",
+                                    lang=self.kira_config.get_config("locale.lang")
+                                    or "en",
                                 )
                             else:
                                 img_desc = ""
                         except Exception as e:
-                            logger.error(f"Failed to get default VLM model for image description: {e}")
+                            logger.error(
+                                f"Failed to get default VLM model for image description: {e}"
+                            )
                             img_desc = ""
 
                         if md5 and img_desc:
@@ -164,17 +180,22 @@ class MessageFormatter:
                             # Check if image recognition is enabled
                             caps = image_recognition
                             if caps.get("enabled", True):
-                                sticker_prompt = caps.get("desc_prompt", "").strip() or None
+                                sticker_prompt = (
+                                    caps.get("desc_prompt", "").strip() or None
+                                )
                                 sticker_desc = await desc_img(
                                     client=vlm_model,
                                     image=ele,
                                     prompt=sticker_prompt,
-                                    lang=self.kira_config.get_config("locale.lang") or "en",
+                                    lang=self.kira_config.get_config("locale.lang")
+                                    or "en",
                                 )
                             else:
                                 sticker_desc = ""
                         except Exception as e:
-                            logger.error(f"Failed to get default VLM model for sticker description: {e}")
+                            logger.error(
+                                f"Failed to get default VLM model for sticker description: {e}"
+                            )
                             sticker_desc = ""
 
                         if md5 and sticker_desc:
@@ -194,11 +215,19 @@ class MessageFormatter:
                 message_str += await self._format_image_with_path(ele, "Sticker")
             elif isinstance(ele, Reply):
                 if ele.chain:
-                    ele.chain.message_list = [x for x in ele.chain if not isinstance(x, Reply)]
-                    reply_content = await self.format_to_text(ele.chain, session_id, capabilities)
-                    message_str += f"[Reply ID: {ele.message_id} content: {reply_content}]"
+                    ele.chain.message_list = [
+                        x for x in ele.chain if not isinstance(x, Reply)
+                    ]
+                    reply_content = await self.format_to_text(
+                        ele.chain, session_id, capabilities
+                    )
+                    message_str += (
+                        f"[Reply ID: {ele.message_id} content: {reply_content}]"
+                    )
                 elif ele.message_content:
-                    message_str += f"[Reply ID: {ele.message_id} content: {ele.message_content}]"
+                    message_str += (
+                        f"[Reply ID: {ele.message_id} content: {ele.message_content}]"
+                    )
                 else:
                     message_str += f"[Reply ID: {ele.message_id}]"
             elif isinstance(ele, Forward):
@@ -208,8 +237,12 @@ class MessageFormatter:
                 elif ele.chains:
                     forward_contents = ""
                     for i, chain in enumerate(ele.chains):
-                        ele.chains[i].message_list = [x for x in chain if not isinstance(x, Forward)]
-                        forward_content = await self.format_to_text(ele.chains[i], session_id, capabilities)
+                        ele.chains[i].message_list = [
+                            x for x in chain if not isinstance(x, Forward)
+                        ]
+                        forward_content = await self.format_to_text(
+                            ele.chains[i], session_id, capabilities
+                        )
                         forward_contents += f"\n{forward_content}\n"
                     message_str += f"[Forward {forward_contents.strip()}]"
             elif isinstance(ele, Record):
@@ -218,10 +251,14 @@ class MessageFormatter:
                     if caps.get("enabled", True):
                         stt_client = self.provider_mgr.get_default_stt()
                         if not stt_client:
-                            logger.error("Failed to get STT client, please set default STT model in Configuration")
+                            logger.error(
+                                "Failed to get STT client, please set default STT model in Configuration"
+                            )
                             record_text = "[Speech recognition unavailable]"
                         else:
-                            record_text = await speech_to_text(client=stt_client, record=ele)
+                            record_text = await speech_to_text(
+                                client=stt_client, record=ele
+                            )
                     else:
                         record_text = "[Speech recognition disabled]"
                 except Exception as e:
@@ -245,7 +282,9 @@ class MessageFormatter:
 
                 # TODO Make it customizable
                 if not file_size or file_size > 10 * 1024 * 1024:
-                    message_str += f"[File name: {ele.name} (File size over 10MB, not cached)]"
+                    message_str += (
+                        f"[File name: {ele.name} (File size over 10MB, not cached)]"
+                    )
                     continue
 
                 try:
@@ -269,7 +308,9 @@ class MessageFormatter:
 
                 # TODO Make it customizable
                 if not video_file_size or video_file_size > 10 * 1024 * 1024:
-                    message_str += f"[Video name: {ele.name} (Video size over 10MB, not cached)]"
+                    message_str += (
+                        f"[Video name: {ele.name} (Video size over 10MB, not cached)]"
+                    )
                     continue
 
                 try:

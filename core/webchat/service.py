@@ -1,23 +1,27 @@
 """Bridge the admin UI to the same event queue used by other IM adapters."""
+
 from __future__ import annotations
 
 import asyncio
 
 from core.adapter.builtin.webchat.im import WebChatIMCapability
 from core.chat.message_elements import BaseMediaElement, Reply, Text
-from core.chat.message_history import _deserialize_message_chain, serialize_message_chain
+from core.chat.message_history import (
+    _deserialize_message_chain,
+    serialize_message_chain,
+)
 from core.chat.message_utils import MessageChain
 
 
 class WebChatService:
-    def __init__(self, adapter, session_manager):
+    def __init__(self, adapter, session_manager) -> None:
         self.adapter = adapter
         self.store = adapter.store
         self.sessions = session_manager
         self._lock = asyncio.Lock()
         self._closed = False
 
-    async def initialize(self):
+    async def initialize(self) -> None:
         config = await self.store.get_setting("adapter_config")
         if config is not None:
             self.adapter.config.update(config)
@@ -25,7 +29,7 @@ class WebChatService:
         if profile is not None:
             await self._apply_profile(profile)
 
-    async def _apply_profile(self, profile):
+    async def _apply_profile(self, profile) -> None:
         await self.sessions.update_session(
             self.adapter.SID,
             title=profile["nickname"],
@@ -48,8 +52,13 @@ class WebChatService:
             await self._apply_profile(profile)
         return profile
 
-    async def submit(self, request_id: str, text: str, attachments: list[BaseMediaElement] | None = None,
-                     reply_to: str | None = None):
+    async def submit(
+        self,
+        request_id: str,
+        text: str,
+        attachments: list[BaseMediaElement] | None = None,
+        reply_to: str | None = None,
+    ):
         async with self._lock:
             if self._closed:
                 raise ValueError("unavailable")
@@ -59,7 +68,9 @@ class WebChatService:
             chain = MessageChain(([Text(text)] if text else []) + (attachments or []))
             if not list(chain):
                 raise ValueError("empty_message")
-            elements = await serialize_message_chain(chain, archive_root=self.store.media_dir)
+            elements = await serialize_message_chain(
+                chain, archive_root=self.store.media_dir
+            )
             if any(item.get("file_type") == "unavailable" for item in elements):
                 raise ValueError("attachment_failed")
             persisted = await self.store.get_message(request_id)
@@ -68,7 +79,9 @@ class WebChatService:
                 saved_chain = persisted["chain"]
                 if saved_chain and saved_chain[0].get("type") == "reply":
                     snapshot = saved_chain[0]
-                if (snapshot.get("message_id") if snapshot is not None else None) != reply_to:
+                if (
+                    snapshot.get("message_id") if snapshot is not None else None
+                ) != reply_to:
                     raise ValueError("request_conflict")
             retry_elements = [snapshot, *elements] if snapshot is not None else elements
             existing = await self.store.get_request(request_id, text, retry_elements)
@@ -79,15 +92,24 @@ class WebChatService:
                 if original is None:
                     raise ValueError("reply_not_found")
                 quoted = await asyncio.to_thread(
-                    _deserialize_message_chain, original["chain"], depth=1, archive_root=self.store.media_dir,
+                    _deserialize_message_chain,
+                    original["chain"],
+                    depth=1,
+                    archive_root=self.store.media_dir,
                 )
                 chain = MessageChain([Reply(reply_to, chain=quoted), *chain])
-                elements = await serialize_message_chain(chain, archive_root=self.store.media_dir)
+                elements = await serialize_message_chain(
+                    chain, archive_root=self.store.media_dir
+                )
             await self._apply_profile(profile)
-            request, created = await self.store.accept(request_id, text, profile["nickname"], elements)
+            request, created = await self.store.accept(
+                request_id, text, profile["nickname"], elements
+            )
             if created:
                 try:
-                    self.adapter.get_capability(WebChatIMCapability).receive_message(request_id, chain, profile)
+                    self.adapter.get_capability(WebChatIMCapability).receive_message(
+                        request_id, chain, profile
+                    )
                 except Exception:
                     await self.store.finish(request_id, "failed")
                     raise ValueError("unavailable") from None
