@@ -1,3 +1,4 @@
+import asyncio
 from datetime import timedelta
 from math import ceil
 from pathlib import Path
@@ -347,6 +348,31 @@ class AuthRoutes(Routes):
         """
         if self.disable_auth:
             raise HTTPException(status_code=400, detail="Cannot change token when auth is disabled")
+        # Serialize with backup/restore: a restore re-applies the token it
+        # snapshotted at start, which must not land after this rotation.
+        # A restore may hold the lock for minutes, so fail fast instead of
+        # hanging the setup form. webui.routes.settings imports this module,
+        # hence the local import.
+        from webui.routes.settings import (
+            MAINTENANCE_LOCK_TIMEOUT_SECONDS,
+            SettingsRoutes,
+        )
+
+        try:
+            await asyncio.wait_for(
+                SettingsRoutes._maintenance_lock.acquire(),
+                timeout=MAINTENANCE_LOCK_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=409, detail="Backup or restore is in progress"
+            ) from None
+        try:
+            return self._apply_onboarding_token(payload, request)
+        finally:
+            SettingsRoutes._maintenance_lock.release()
+
+    def _apply_onboarding_token(self, payload: OnboardingTokenSetupRequest, request: Request):
         if self._get_onboarding_config().get("completed", False):
             raise HTTPException(status_code=400, detail="Onboarding already completed")
         if _load_webui_config().get("token_setup_done", False):

@@ -95,6 +95,27 @@ async def test_retry_after_covers_both_failure_budgets(clock):
 
 
 @pytest.mark.anyio
+async def test_retry_after_waits_for_the_later_of_the_two_windows(clock):
+    routes, app = make_routes()
+
+    # Global window starts first...
+    for index in range(auth_routes.LOGIN_GLOBAL_FAILURE_LIMIT - auth_routes.LOGIN_FAILURE_LIMIT):
+        assert (await fail_login(routes, make_request(app, host=f"198.51.100.{index + 1}"))).status_code == 401
+
+    # ...the per-client window starts ten seconds later.
+    clock["now"] = 1010.0
+    first = make_request(app, host="203.0.113.10")
+    for _ in range(auth_routes.LOGIN_FAILURE_LIMIT):
+        assert (await fail_login(routes, first)).status_code == 401
+
+    clock["now"] = 1015.0
+    limited = await fail_login(routes, first)
+    assert limited.status_code == 429
+    # The client bucket clears at 1070, the global one at 1060: report the later.
+    assert limited.headers["Retry-After"] == "55"
+
+
+@pytest.mark.anyio
 async def test_successful_login_clears_failure_budget(clock):
     routes, app = make_routes()
     request = make_request(app)

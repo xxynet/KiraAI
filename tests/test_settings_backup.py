@@ -16,7 +16,8 @@ import pytest
 from fastapi import FastAPI, HTTPException
 
 from webui import utils as webui_utils
-from webui.models import ChangeTokenRequest
+from webui.models import ChangeTokenRequest, OnboardingTokenSetupRequest
+from webui.routes import auth as auth_routes
 from webui.routes import settings
 from webui.routes.auth import require_auth
 
@@ -916,6 +917,109 @@ async def test_change_access_token_persists_and_updates_runtime_token(backup_rou
     assert exc_info.value.status_code == 400
 
 
+@pytest.mark.anyio
+async def test_change_access_token_returns_409_when_maintenance_lock_is_held(backup_routes, monkeypatch):
+    routes, _ = backup_routes
+    routes.app.state.access_token = "current-token"
+    routes.app.state.disable_auth = False
+    monkeypatch.setattr(settings, "MAINTENANCE_LOCK_TIMEOUT_SECONDS", 0.05)
+    saved = []
+    monkeypatch.setattr(settings, "_update_webui_config", lambda **changes: saved.append(changes))
+    request = SimpleNamespace(app=routes.app)
+
+    await routes._maintenance_lock.acquire()
+    try:
+        with pytest.raises(HTTPException) as exc_info:
+            # Fail fast if the lock wait regresses into blocking forever.
+            await asyncio.wait_for(
+                routes.change_access_token(
+                    ChangeTokenRequest(old_token="current-token", new_token="new-token"), request
+                ),
+                timeout=2,
+            )
+        assert exc_info.value.status_code == 409
+        assert routes.app.state.access_token == "current-token"
+        assert saved == []
+        assert routes._maintenance_lock.locked()
+    finally:
+        routes._maintenance_lock.release()
+
+    # Once the restore finishes, the token change goes through.
+    assert await routes.change_access_token(
+        ChangeTokenRequest(old_token="current-token", new_token="new-token"), request
+    ) == {"success": True}
+    assert routes.app.state.access_token == "new-token"
+
+
+@pytest.mark.anyio
+async def test_change_access_token_waits_for_in_flight_restore(backup_routes, monkeypatch):
+    routes, _ = backup_routes
+    routes.app.state.access_token = "current-token"
+    routes.app.state.disable_auth = False
+    monkeypatch.setattr(settings, "MAINTENANCE_LOCK_TIMEOUT_SECONDS", 1.0)
+    monkeypatch.setattr(settings, "_update_webui_config", lambda **changes: None)
+    request = SimpleNamespace(app=routes.app)
+
+    await routes._maintenance_lock.acquire()
+    released = asyncio.Event()
+
+    async def finish_restore():
+        await asyncio.sleep(0.05)
+        released.set()
+        routes._maintenance_lock.release()
+
+    restore = asyncio.create_task(finish_restore())
+    try:
+        assert await routes.change_access_token(
+            ChangeTokenRequest(old_token="current-token", new_token="new-token"), request
+        ) == {"success": True}
+        # Without taking the lock the token change would finish before the
+        # in-flight restore task ever runs.
+        assert released.is_set()
+        assert routes.app.state.access_token == "new-token"
+    finally:
+        await restore
+
+
+@pytest.mark.anyio
+async def test_onboarding_token_setup_returns_409_while_restore_runs(backup_routes, monkeypatch):
+    routes, _ = backup_routes
+    updates = []
+    monkeypatch.setattr(auth_routes, "_load_webui_config", lambda: {"token_setup_done": False})
+    monkeypatch.setattr(auth_routes, "_update_webui_config", lambda **changes: updates.append(changes))
+    monkeypatch.setattr(settings, "MAINTENANCE_LOCK_TIMEOUT_SECONDS", 0.05)
+    auth = auth_routes.AuthRoutes(
+        FastAPI(), SimpleNamespace(kira_config={"onboarding": {}}), "token", Path(".")
+    )
+    request = SimpleNamespace(app=auth.app)
+    request.app.state.access_token = "old-token"
+
+    await routes._maintenance_lock.acquire()
+    try:
+        with pytest.raises(HTTPException) as exc_info:
+            # Fail fast instead of hanging the setup form behind a restore.
+            await asyncio.wait_for(
+                auth.setup_onboarding_token(OnboardingTokenSetupRequest(token="new-token"), request),
+                timeout=2,
+            )
+        assert exc_info.value.status_code == 409
+        assert updates == []
+        assert request.app.state.access_token == "old-token"
+        assert routes._maintenance_lock.locked()
+    finally:
+        routes._maintenance_lock.release()
+
+    # Once the restore finishes, the rotation goes through.
+    response = await auth.setup_onboarding_token(
+        OnboardingTokenSetupRequest(token="new-token"), request
+    )
+    assert json.loads(response.body)["skipped"] is False
+    assert updates == [{"access_token": "new-token", "token_setup_done": True}]
+    assert request.app.state.access_token == "new-token"
+    # The endpoint must release the shared lock, not just the test's hold.
+    assert not routes._maintenance_lock.locked()
+
+
 def test_restore_drops_archive_signing_key_when_env_supplies_it(backup_routes, monkeypatch):
     routes, data_path = backup_routes
     monkeypatch.setenv("JWT_SECRET", "env-secret")
@@ -932,6 +1036,73 @@ def test_restore_drops_archive_signing_key_when_env_supplies_it(backup_routes, m
     # archive's substitute.
     assert not (data_path / ".jwt_secret").exists()
     assert (data_path / "ordinary.txt").read_text(encoding="utf-8") == "restored"
+
+
+def test_restore_drops_archive_signing_key_directory_when_env_supplies_it(backup_routes, monkeypatch):
+    routes, data_path = backup_routes
+    monkeypatch.setenv("JWT_SECRET", "env-secret")
+    (data_path / "webui.json").write_text(json.dumps({"access_token": "current-token"}), encoding="utf-8")
+    archive_path = data_path / "restore.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr(".jwt_secret/", b"")
+        archive.writestr("ordinary.txt", "restored")
+
+    result = routes._do_restore(archive_path)
+
+    assert result.success
+    # A directory left at this path would block key persistence on every
+    # later start that has no JWT_SECRET.
+    assert not (data_path / ".jwt_secret").exists()
+    assert (data_path / "ordinary.txt").read_text(encoding="utf-8") == "restored"
+
+
+def test_restore_replaces_archive_signing_key_directory_with_running_key(backup_routes):
+    routes, data_path = backup_routes
+    (data_path / "webui.json").write_text(json.dumps({"access_token": "current-token"}), encoding="utf-8")
+    archive_path = data_path / "restore.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr(".jwt_secret/", b"")
+        archive.writestr("ordinary.txt", "restored")
+
+    assert routes._do_restore(archive_path).success
+
+    assert (data_path / ".jwt_secret").read_text(encoding="utf-8") == webui_utils._JWT_SECRET
+    assert (data_path / "ordinary.txt").read_text(encoding="utf-8") == "restored"
+
+
+def test_restore_preserves_preexisting_directory_at_signing_key_path(backup_routes):
+    routes, data_path = backup_routes
+    (data_path / "webui.json").write_text(json.dumps({"access_token": "current-token"}), encoding="utf-8")
+    secret_dir = data_path / ".jwt_secret"
+    secret_dir.mkdir()
+    (secret_dir / "user_notes.txt").write_text("keep me", encoding="utf-8")
+    # The archive never touches the credential path, so nothing may delete it.
+    archive_path = data_path / "restore.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("ordinary.txt", "restored")
+
+    result = routes._do_restore(archive_path)
+
+    assert result.success is False
+    assert "active credentials could not be preserved" in result.message
+    assert (secret_dir / "user_notes.txt").read_text(encoding="utf-8") == "keep me"
+
+
+def test_restore_preserves_preexisting_directory_at_live_config_path(backup_routes):
+    routes, data_path = backup_routes
+    routes.app.state.access_token = "current-token"
+    config_dir = data_path / "webui.json"
+    config_dir.mkdir()
+    (config_dir / "user_notes.txt").write_text("keep me", encoding="utf-8")
+    archive_path = data_path / "restore.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("ordinary.txt", "restored")
+
+    result = routes._do_restore(archive_path)
+
+    assert result.success is False
+    assert "active credentials could not be preserved" in result.message
+    assert (config_dir / "user_notes.txt").read_text(encoding="utf-8") == "keep me"
 
 
 def test_restore_keeps_credentials_when_copy_fails_midway(backup_routes, monkeypatch):
@@ -1036,6 +1207,14 @@ def test_read_live_credentials_prefers_disk_token_over_disabled_sentinel(backup_
 
 def test_restore_keeps_credentials_despite_case_variant_entry_names(backup_routes):
     routes, data_path = backup_routes
+    probe = data_path / "case_probe"
+    probe.write_text("", encoding="utf-8")
+    try:
+        case_insensitive = (data_path / "CASE_PROBE").exists()
+    finally:
+        probe.unlink()
+    if not case_insensitive:
+        pytest.skip("needs a case-insensitive filesystem to alias the credential paths")
     (data_path / "webui.json").write_text(json.dumps({"access_token": "current-token"}), encoding="utf-8")
     (data_path / ".jwt_secret").write_text("current-secret", encoding="utf-8")
     archive_path = data_path / "restore.zip"

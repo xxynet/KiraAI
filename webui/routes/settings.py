@@ -41,6 +41,7 @@ from webui.utils import _is_usable_access_token, _tokens_match, _update_webui_co
 # Backup directory lives inside the data directory
 BACKUP_DIR_NAME = "backups"
 MAX_LINK_TARGET_BYTES = 128 * 1024
+MAINTENANCE_LOCK_TIMEOUT_SECONDS = 5
 SQLITE_HEADER = b"SQLite format 3\0"
 SQLITE_SIDECAR_SUFFIXES = ("-wal", "-shm", "-journal")
 logger = get_logger("webui", "blue")
@@ -109,17 +110,25 @@ def _restore_live_credentials(
     errors: list[str] = []
     if secret_from_env:
         try:
-            (data_path / ".jwt_secret").unlink(missing_ok=True)
+            secret_path = data_path / ".jwt_secret"
+            if os.path.lexists(secret_path):
+                # An empty directory here would otherwise survive and break key
+                # persistence on every later start without JWT_SECRET.
+                _remove_credential_path(secret_path)
+                logger.warning("Removed an entry at the signing-key path; the key comes from JWT_SECRET")
         except OSError as exc:
             errors.append(f"signing key file: {exc}")
     elif secret is not None:
         try:
+            secret_path = data_path / ".jwt_secret"
+            if secret_path.is_dir() and not secret_path.is_symlink():
+                _remove_credential_path(secret_path)
             try:
-                current_secret = (data_path / ".jwt_secret").read_bytes()
+                current_secret = secret_path.read_bytes()
             except OSError:
                 current_secret = None
             if current_secret != secret:
-                _write_bytes_atomic(data_path / ".jwt_secret", secret)
+                _write_bytes_atomic(secret_path, secret)
                 logger.warning("Restore attempted to replace the JWT signing key; kept the active one")
         except OSError as exc:
             errors.append(f"signing key: {exc}")
@@ -150,12 +159,26 @@ def _restore_live_credentials(
                 config["token_setup_done"] = True
                 changed = True
             if changed:
+                if config_path.is_dir() and not config_path.is_symlink():
+                    _remove_credential_path(config_path)
                 _write_bytes_atomic(config_path, json.dumps(config, indent=2, ensure_ascii=False).encode("utf-8"))
                 logger.warning("Restore replaced webui.json credentials; restored the active ones")
         except (OSError, ValueError, RecursionError) as exc:
             errors.append(f"access token: {exc}")
     if errors:
         raise OSError("; ".join(errors))
+
+
+def _remove_credential_path(path: Path) -> None:
+    """Remove a file/link, or an empty directory, at a credential path.
+
+    Directories must be empty: a non-empty one may hold data the archive never
+    touched, so it is left in place and the caller reports the failure.
+    """
+    if path.is_dir() and not path.is_symlink():
+        path.rmdir()
+    else:
+        path.unlink(missing_ok=True)
 
 
 def _write_bytes_atomic(path: Path, data: bytes) -> None:
@@ -322,9 +345,10 @@ def _calc_dir_size(path: Path, *, usage: dict[str, int] | None = None) -> tuple[
 
 
 class SettingsRoutes(Routes):
-    # Serializes backup creation and restore jobs so concurrent maintenance
-    # requests cannot overlap (same-second backups share a timestamped path,
-    # and restores copy into the same data directory).
+    # Serializes backup creation, restore jobs and token rotations so concurrent
+    # maintenance requests cannot overlap (same-second backups share a
+    # timestamped path, restores copy into the same data directory, and a
+    # restore could otherwise re-apply the token it snapshotted).
     _maintenance_lock = asyncio.Lock()
 
     def __init__(self, app, lifecycle=None):
@@ -949,7 +973,7 @@ class SettingsRoutes(Routes):
         # previous token between the config write and the in-memory update.
         # A restore may hold it for minutes; fail fast instead of hanging.
         try:
-            await asyncio.wait_for(self._maintenance_lock.acquire(), timeout=5)
+            await asyncio.wait_for(self._maintenance_lock.acquire(), timeout=MAINTENANCE_LOCK_TIMEOUT_SECONDS)
         except asyncio.TimeoutError:
             raise HTTPException(
                 status_code=409, detail="Backup or restore is in progress"
