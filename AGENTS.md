@@ -40,7 +40,7 @@ docker-compose up
 
 ## Rules
 
-- WebUI changes must include corresponding i18n updates (sync both CN and EN translation files under `webui/frontend/src/i18n/`).
+- WebUI changes involving new or modified localizable text must include corresponding i18n updates (sync both CN and EN translation files under `webui/frontend/src/i18n/`).
 - PR body **must** strictly follow `.github/PULL_REQUEST_TEMPLATE.md` — read it before every `gh pr create`, fill every required section, and never freestyle the body.
 - Always check `core/utils/` for existing reusable interfaces before writing new ones.
 - Use `core/logging_manager.py` for project logging; obtain loggers through `get_logger(name, color)` to keep console, file, and WebUI log output consistent. Plugins should reuse the existing logger via `from core.plugin import logger` for plugin logging.
