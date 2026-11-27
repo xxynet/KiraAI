@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import os
 import re
@@ -36,10 +37,15 @@ from webui.models import (
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
 from webui.routes.releases import update_package_maintenance
-from webui.utils import _is_usable_access_token, _tokens_match, _update_webui_config
+from webui.utils import (
+    BACKUP_DIR_NAME,
+    RESTORE_MARKER_NAME,
+    _is_usable_access_token,
+    _tokens_match,
+    _update_webui_config,
+)
 
-# Backup directory lives inside the data directory
-BACKUP_DIR_NAME = "backups"
+# The backup directory lives inside the data directory.
 MAX_LINK_TARGET_BYTES = 128 * 1024
 MAINTENANCE_LOCK_TIMEOUT_SECONDS = 5
 SQLITE_HEADER = b"SQLite format 3\0"
@@ -130,6 +136,10 @@ def _restore_live_credentials(
             if current_secret != secret:
                 _write_bytes_atomic(secret_path, secret)
                 logger.warning("Restore attempted to replace the JWT signing key; kept the active one")
+            else:
+                # copy2 keeps the archived mode (usually 0644); the atomic
+                # writer used when values differ creates owner-only files.
+                _chmod_owner_only(secret_path)
         except OSError as exc:
             errors.append(f"signing key: {exc}")
     # The running process is authoritative; the snapshot covers restarts where
@@ -161,12 +171,28 @@ def _restore_live_credentials(
             if changed:
                 if config_path.is_dir() and not config_path.is_symlink():
                     _remove_credential_path(config_path)
-                _write_bytes_atomic(config_path, json.dumps(config, indent=2, ensure_ascii=False).encode("utf-8"))
+                try:
+                    config_bytes = json.dumps(config, indent=2, ensure_ascii=False).encode("utf-8")
+                except UnicodeEncodeError:
+                    # json.load accepts lone surrogates; keep them escaped
+                    # instead of failing after the archived config went live.
+                    config_bytes = json.dumps(config, indent=2, ensure_ascii=True).encode("utf-8")
+                _write_bytes_atomic(config_path, config_bytes)
                 logger.warning("Restore replaced webui.json credentials; restored the active ones")
+            elif not config_path.is_symlink():
+                _chmod_owner_only(config_path)
         except (OSError, ValueError, RecursionError) as exc:
             errors.append(f"access token: {exc}")
     if errors:
         raise OSError("; ".join(errors))
+
+
+def _chmod_owner_only(path: Path) -> None:
+    """Best-effort 0600 for credential files restored with equal values."""
+    try:
+        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+    except OSError:
+        pass
 
 
 def _remove_credential_path(path: Path) -> None:
@@ -186,12 +212,83 @@ def _write_bytes_atomic(path: Path, data: bytes) -> None:
     try:
         with os.fdopen(fd, "wb") as target:
             target.write(data)
+            os.fsync(target.fileno())
         os.replace(tmp_name, path)
     finally:
         try:
             os.unlink(tmp_name)
         except OSError:
             pass
+
+
+def _write_restore_marker(live_credentials: tuple):
+    """Record the live credentials before an archive can replace them.
+
+    The marker lives in the backup directory, which restore never writes to,
+    so an archive cannot forge it. It is what lets the next start roll back if
+    this process stops before the credentials are re-asserted; a completed
+    restore removes it. The returned handle holds the OS lock that tells other
+    processes the restore is still running.
+    """
+    token, token_setup_done, _config, secret, secret_from_env = live_credentials
+    payload = {
+        "access_token": token,
+        "token_setup_done": token_setup_done,
+        # An env-supplied key must never be written to disk, and the recovery
+        # branch for it only needs the flag.
+        "jwt_secret": None if secret_from_env or not secret else base64.b64encode(secret).decode("ascii"),
+        "jwt_secret_from_env": secret_from_env,
+    }
+    marker_path = _get_backup_dir() / RESTORE_MARKER_NAME
+    marker_path.parent.mkdir(parents=True, exist_ok=True)
+    _write_bytes_atomic(marker_path, json.dumps(payload).encode("utf-8"))
+    handle = marker_path.open("r+b")
+    try:
+        if not webui_utils._try_lock_restore_marker(handle):
+            raise OSError(f"restore marker {marker_path} is locked")
+    except OSError:
+        handle.close()
+        raise
+    return handle
+
+
+def _release_restore_marker(handle) -> None:
+    if handle is not None:
+        try:
+            handle.close()
+        except OSError:
+            pass
+
+
+def _discard_restore_marker(handle) -> None:
+    _release_restore_marker(handle)
+    try:
+        (_get_backup_dir() / RESTORE_MARKER_NAME).unlink(missing_ok=True)
+    except OSError as exc:
+        logger.warning("Could not remove the restore marker: %s", exc)
+
+
+def _update_restore_marker_token(token: str) -> None:
+    """Stop a pending rollback from reverting a token rotation.
+
+    The signing key is left in the marker: a restore whose key repair failed
+    still needs that repair on the next start. Raises OSError when the marker
+    exists but cannot be updated, so the caller can fail instead of silently
+    letting a restart revert the rotation.
+    """
+    marker_path = _get_backup_dir() / RESTORE_MARKER_NAME
+    try:
+        payload = json.loads(marker_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return
+    except (ValueError, RecursionError):
+        # Recovery cannot use this marker either, so it cannot revert a token.
+        logger.warning("Could not parse the restore marker after a token change")
+        return
+    if not isinstance(payload, dict):
+        return
+    payload["access_token"] = token
+    _write_bytes_atomic(marker_path, json.dumps(payload).encode("utf-8"))
 
 
 def _has_sqlite_header(path: Path) -> bool:
@@ -835,6 +932,7 @@ class SettingsRoutes(Routes):
         result: RestoreResponse | None = None
         pending_error: HTTPException | None = None
         apply_started = False
+        marker_handle = None
         try:
             with tempfile.TemporaryDirectory() as staging_dir:
                 staging_path = Path(staging_dir).resolve()
@@ -885,6 +983,7 @@ class SettingsRoutes(Routes):
                         raise HTTPException(status_code=400, detail="Invalid archive content")
 
                 # Check the live layout before changing any files.
+                backup_root = (data_path / BACKUP_DIR_NAME).resolve()
                 entries = []
                 for src_file in staging_path.rglob("*"):
                     rel = src_file.relative_to(staging_path)
@@ -892,6 +991,15 @@ class SettingsRoutes(Routes):
                     is_link = src_file.is_symlink()
                     is_directory = not is_link and src_file.is_dir()
                     if dst_file.parent.resolve() != dst_file.parent:
+                        raise HTTPException(status_code=400, detail="Invalid archive content")
+                    # The rollback marker lives there, and archives never
+                    # contain backups. Resolving also catches Windows aliases
+                    # (trailing dots, 8.3 names, alternate data streams).
+                    try:
+                        resolved_dst = dst_file.resolve()
+                    except (OSError, RuntimeError):
+                        resolved_dst = dst_file
+                    if resolved_dst.is_relative_to(backup_root):
                         raise HTTPException(status_code=400, detail="Invalid archive content")
                     if is_directory and (dst_file.resolve() != dst_file or dst_file.is_symlink()):
                         raise HTTPException(status_code=400, detail="Invalid archive content")
@@ -901,7 +1009,10 @@ class SettingsRoutes(Routes):
                         entries.append((src_file, dst_file, is_directory))
 
                 # From here on live files change, so credentials must be re-asserted.
+                # Refuse to start without the marker: it is the only rollback if
+                # the process dies before the re-assert below.
                 if entries or links:
+                    marker_handle = _write_restore_marker(live_credentials)
                     apply_started = True
                 for src_file, dst_file, is_directory in entries:
                     if is_directory:
@@ -944,6 +1055,8 @@ class SettingsRoutes(Routes):
                     data_path, *live_credentials, app_state=self.app.state
                 )
             except Exception as exc:
+                # Release the lock but keep the marker for the next start.
+                _release_restore_marker(marker_handle)
                 logger.exception("Could not keep the active credentials after restore")
                 credential_note = (
                     "the active credentials could not be preserved: "
@@ -952,6 +1065,9 @@ class SettingsRoutes(Routes):
                 if result is not None:
                     prefix = "Restore finished, but " if result.success else f"{result.message} Additionally, "
                     result = RestoreResponse(success=False, message=prefix + credential_note)
+            else:
+                # Credentials are back on disk, so a restart has nothing to repair.
+                _discard_restore_marker(marker_handle)
         if pending_error is not None:
             raise pending_error
         return result
@@ -990,6 +1106,14 @@ class SettingsRoutes(Routes):
                 raise HTTPException(status_code=400, detail="New token must be at least 6 characters")
             if new_token == "disabled":
                 raise HTTPException(status_code=400, detail="The token 'disabled' is reserved and cannot be used")
+            # A marker kept after a failed rollback must not revert this rotation.
+            try:
+                _update_restore_marker_token(new_token)
+            except OSError as exc:
+                logger.error("Could not update the restore marker before a token change: %s", exc)
+                raise HTTPException(
+                    status_code=500, detail="Could not update the restore marker"
+                ) from exc
             _update_webui_config(access_token=new_token)
             request.app.state.access_token = new_token
         finally:

@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 from datetime import timedelta
 from math import ceil
 from pathlib import Path
@@ -18,6 +19,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
 from core.config.default import VERSION
+from core.logging_manager import get_logger
 from webui.frontend_unavailable import frontend_unavailable_response
 from webui.models import (
     LoginResponse,
@@ -38,6 +40,8 @@ from webui.utils import (
     verify_session_token,
 )
 
+logger = get_logger("webui", "blue")
+
 # Login-attempt protection: per-client failure budget in a sliding window.
 # The client address comes from request.client: uvicorn's proxy-header handling
 # (enabled by default, trusting 127.0.0.1) supplies the forwarded address for a
@@ -50,6 +54,33 @@ LOGIN_FAILURE_LIMIT = 5
 LOGIN_GLOBAL_FAILURE_LIMIT = 30
 LOGIN_FAILURE_WINDOW_SECONDS = 60
 LOGIN_MAX_TRACKED_CLIENTS = 1024
+
+
+@asynccontextmanager
+async def _maintenance_gate():
+    """Serialize credential writes with backup/restore maintenance jobs.
+
+    webui.routes.settings imports this module, so the lock and its timeout are
+    imported lazily to avoid a module-level cycle.
+    """
+    from webui.routes.settings import (
+        MAINTENANCE_LOCK_TIMEOUT_SECONDS,
+        SettingsRoutes,
+    )
+
+    try:
+        await asyncio.wait_for(
+            SettingsRoutes._maintenance_lock.acquire(),
+            timeout=MAINTENANCE_LOCK_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=409, detail="Backup or restore is in progress"
+        ) from None
+    try:
+        yield
+    finally:
+        SettingsRoutes._maintenance_lock.release()
 
 
 async def require_auth(
@@ -348,29 +379,10 @@ class AuthRoutes(Routes):
         """
         if self.disable_auth:
             raise HTTPException(status_code=400, detail="Cannot change token when auth is disabled")
-        # Serialize with backup/restore: a restore re-applies the token it
-        # snapshotted at start, which must not land after this rotation.
-        # A restore may hold the lock for minutes, so fail fast instead of
-        # hanging the setup form. webui.routes.settings imports this module,
-        # hence the local import.
-        from webui.routes.settings import (
-            MAINTENANCE_LOCK_TIMEOUT_SECONDS,
-            SettingsRoutes,
-        )
-
-        try:
-            await asyncio.wait_for(
-                SettingsRoutes._maintenance_lock.acquire(),
-                timeout=MAINTENANCE_LOCK_TIMEOUT_SECONDS,
-            )
-        except asyncio.TimeoutError:
-            raise HTTPException(
-                status_code=409, detail="Backup or restore is in progress"
-            ) from None
-        try:
+        # A restore re-applies the token it snapshotted at start, which must
+        # not land after this rotation.
+        async with _maintenance_gate():
             return self._apply_onboarding_token(payload, request)
-        finally:
-            SettingsRoutes._maintenance_lock.release()
 
     def _apply_onboarding_token(self, payload: OnboardingTokenSetupRequest, request: Request):
         if self._get_onboarding_config().get("completed", False):
@@ -388,6 +400,17 @@ class AuthRoutes(Routes):
         if new_token == "disabled":
             raise HTTPException(status_code=400, detail="The token 'disabled' is reserved and cannot be used")
 
+        # A marker kept after a failed rollback must not revert this rotation.
+        # Imported here because settings already imports this module.
+        from webui.routes.settings import _update_restore_marker_token
+
+        try:
+            _update_restore_marker_token(new_token)
+        except OSError as exc:
+            logger.error("Could not update the restore marker before a token change: %s", exc)
+            raise HTTPException(
+                status_code=500, detail="Could not update the restore marker"
+            ) from exc
         _update_webui_config(access_token=new_token, token_setup_done=True)
         request.app.state.access_token = new_token
         access_token = _create_jwt_token(
@@ -412,6 +435,12 @@ class AuthRoutes(Routes):
         return resp
 
     async def complete_onboarding(self, payload: OnboardingCompleteRequest):
+        # A restore snapshots onboarding state before copying the archived
+        # config over it, so completion must not interleave with that copy.
+        async with _maintenance_gate():
+            return self._apply_onboarding_completion(payload)
+
+    def _apply_onboarding_completion(self, payload: OnboardingCompleteRequest):
         onboarding = self._get_onboarding_config()
         config = self.lifecycle.kira_config
         locale = config.get("locale", {})

@@ -1328,7 +1328,7 @@ export default {
     restore_uploading: '正在恢复...',
     restore_success: '数据恢复成功，正在重启...',
     restore_failed: '数据恢复失败',
-    restore_confirm: '恢复将覆盖当前数据目录中的文件；当前登录令牌与 JWT 密钥不会被备份中的值替换。是否继续？',
+    restore_confirm: '恢复将覆盖当前数据目录中的文件；当前登录令牌与 JWT 密钥在有效时会保留，否则将使用备份中的值。是否继续？',
     restore_confirm_ok: '开始恢复',
     restore_dropzone_title: '拖拽备份文件到此处，或点击选择',
     restore_dropzone_reselect: '点击或拖拽可重新选择文件',

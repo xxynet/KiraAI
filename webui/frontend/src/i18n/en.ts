@@ -1328,7 +1328,7 @@ export default {
     restore_uploading: 'Restoring...',
     restore_success: 'Data restored. Restarting...',
     restore_failed: 'Failed to restore data',
-    restore_confirm: 'Restoring will overwrite files in the current data directory. The current login token and JWT key will not be replaced by the backup. Continue?',
+    restore_confirm: 'Restoring will overwrite files in the current data directory. The current login token and JWT key are kept when usable; otherwise the backup values are used. Continue?',
     restore_confirm_ok: 'Start Restore',
     restore_dropzone_title: 'Drop backup file here or click to select',
     restore_dropzone_reselect: 'Click or drag to reselect file',

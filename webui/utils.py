@@ -1,6 +1,7 @@
 """
 Shared utility functions for the WebUI.
 """
+import base64
 import hashlib
 import json
 import os
@@ -10,6 +11,7 @@ import string
 import tempfile
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import jwt
 from fastapi import HTTPException, status
@@ -70,12 +72,6 @@ def _load_persisted_jwt_secret() -> str:
     return generated
 
 
-# JWT secret: read from environment variable, fall back to a persisted file,
-# generating one on first use if neither is present. Sharing a stable secret
-# across workers keeps tokens valid between restarts.
-_JWT_SECRET = _load_persisted_jwt_secret()
-
-
 def _is_usable_access_token(token: object) -> bool:
     """Check that the login form can submit this token unchanged."""
     # Match the login form's JavaScript trim(), including the BOM.
@@ -90,6 +86,194 @@ def _is_usable_access_token(token: object) -> bool:
     except UnicodeEncodeError:
         return False
     return True
+
+
+BACKUP_DIR_NAME = "backups"
+RESTORE_MARKER_NAME = ".restore_pending.json"
+
+
+def _restore_marker_path() -> Path:
+    # Kept under the backup directory: restore never writes there and backups
+    # never include it, so an archive cannot forge or capture the marker.
+    return get_data_path() / BACKUP_DIR_NAME / RESTORE_MARKER_NAME
+
+
+def _write_private_file(path: Path, data: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "wb") as target:
+            target.write(data)
+            # The marker must survive a power loss before live files change.
+            os.fsync(target.fileno())
+        os.replace(tmp_name, path)
+    finally:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+
+
+def _try_lock_restore_marker(handle) -> bool:
+    """Take an exclusive OS lock on the marker without waiting."""
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return False
+    return True
+
+
+def _recover_interrupted_restore() -> None:
+    """Roll back credentials when a restore stopped before re-asserting them.
+
+    A restore holds an OS lock on this marker while it runs, so a second
+    process that imports this module mid-restore leaves it alone. After a
+    crash the lock is gone and the marker holds the credentials a restart
+    would otherwise load from the archive.
+    """
+    marker_path = _restore_marker_path()
+    try:
+        handle = marker_path.open("r+b")
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        logger.warning("Could not open the restore marker %s: %s", marker_path, exc)
+        return
+
+    delete_marker = False
+    try:
+        if not _try_lock_restore_marker(handle):
+            # Another process is still running the restore.
+            return
+        delete_marker = _apply_restore_marker(marker_path, handle.read())
+    finally:
+        handle.close()
+
+    if not delete_marker:
+        return
+    try:
+        # Windows cannot unlink a file while it is open; the lock is released.
+        marker_path.unlink(missing_ok=True)
+    except OSError as exc:
+        logger.warning("Could not remove the restore marker %s: %s", marker_path, exc)
+
+
+def _apply_restore_marker(marker_path: Path, raw: bytes) -> bool:
+    """Apply the marker payload; return True when it can be removed."""
+    marker = None
+    try:
+        marker = json.loads(raw)
+    except (ValueError, RecursionError):
+        pass
+    if not isinstance(marker, dict):
+        # Keep it: the archive's credentials may be live and a later start, or
+        # a token rotation, still needs to know the restore never finished.
+        logger.warning("Unreadable restore marker at %s; keeping it", marker_path)
+        return False
+
+    token = marker.get("access_token")
+    if not _is_usable_access_token(token):
+        token = None
+    token_setup_done = marker.get("token_setup_done") is True
+    secret_from_env = marker.get("jwt_secret_from_env") is True
+    secret = None
+    restored = True
+    encoded_secret = marker.get("jwt_secret")
+    if isinstance(encoded_secret, str):
+        try:
+            secret = base64.b64decode(encoded_secret.encode("ascii"), validate=True)
+        except (ValueError, UnicodeEncodeError):
+            # Keep the marker: dropping it would leave the archive's key live.
+            restored = False
+
+    secret_path = get_data_path() / ".jwt_secret"
+    try:
+        if secret_from_env:
+            if os.path.lexists(secret_path):
+                if secret_path.is_dir() and not secret_path.is_symlink():
+                    secret_path.rmdir()
+                else:
+                    secret_path.unlink()
+        elif secret:
+            if secret_path.is_dir() and not secret_path.is_symlink():
+                secret_path.rmdir()
+            try:
+                current_secret = secret_path.read_bytes()
+            except OSError:
+                current_secret = None
+            if current_secret != secret:
+                _write_private_file(secret_path, secret)
+            else:
+                try:
+                    os.chmod(secret_path, stat.S_IRUSR | stat.S_IWUSR)
+                except OSError:
+                    pass
+    except OSError as exc:
+        restored = False
+        logger.warning("Could not restore the JWT signing key after an interrupted restore: %s", exc)
+
+    if token is not None or token_setup_done:
+        config_path = get_data_path() / "webui.json"
+        try:
+            config = None
+            try:
+                with config_path.open(encoding="utf-8") as source:
+                    loaded = json.load(source)
+                if isinstance(loaded, dict):
+                    config = dict(loaded)
+            except (OSError, ValueError, RecursionError):
+                config = None
+            changed = config is None
+            config = config or {}
+            if token is not None and config.get("access_token") != token:
+                config["access_token"] = token
+                changed = True
+            if token_setup_done and not config.get("token_setup_done"):
+                config["token_setup_done"] = True
+                changed = True
+            if changed:
+                if config_path.is_dir() and not config_path.is_symlink():
+                    config_path.rmdir()
+                try:
+                    payload = json.dumps(config, indent=2, ensure_ascii=False).encode("utf-8")
+                except UnicodeEncodeError:
+                    payload = json.dumps(config, indent=2, ensure_ascii=True).encode("utf-8")
+                _write_private_file(config_path, payload)
+            else:
+                try:
+                    os.chmod(config_path, stat.S_IRUSR | stat.S_IWUSR)
+                except OSError:
+                    pass
+        except OSError as exc:
+            restored = False
+            logger.warning(
+                "Could not restore webui.json credentials after an interrupted restore: %s", exc
+            )
+
+    if not restored:
+        # Keep the marker so the next start can retry.
+        return False
+    logger.warning("Restored credentials after an interrupted restore")
+    return True
+
+
+# JWT secret: read from environment variable, fall back to a persisted file,
+# generating one on first use if neither is present. Sharing a stable secret
+# across workers keeps tokens valid between restarts. Recovery must run first
+# so a restore that died half-way cannot leave the archive's key live.
+try:
+    _recover_interrupted_restore()
+except Exception:
+    logger.exception("Could not recover credentials after an interrupted restore")
+_JWT_SECRET = _load_persisted_jwt_secret()
 
 
 def _load_webui_config() -> dict:
