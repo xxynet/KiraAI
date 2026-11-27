@@ -292,10 +292,32 @@ test('unknown language falls back to plain text', () => {
   assert.match(html, /a &lt; b/)
 })
 
-test('inline aligned environments fall back to display mode', () => {
-  const html = renderMath('\\begin{aligned}a&=1\\\\b&=2\\end{aligned}', false)
-  assert.ok(html)
-  assert.match(html, /katex/)
+for (const [environment, body] of [
+  ['smallmatrix', String.raw`1&0\\0&1`],
+  ['pmatrix', String.raw`1&0\\0&1`],
+  ['cases', String.raw`x&x>0\\0&x=0`],
+  ['aligned', String.raw`a&=1\\b&=2`],
+]) {
+  test(`valid ${environment} formulas preserve the requested rendering mode`, () => {
+    const tex = `\\begin{${environment}}${body}\\end{${environment}}`
+    const { render } = setup()
+    const inline = katex.renderToString(tex, {
+      displayMode: false, throwOnError: true, strict: 'ignore', trust: false,
+    })
+    assert.equal(renderMath(tex, false), inline)
+    assert.equal(render(`Before $${tex}$ after`), `<p>Before ${inline} after</p>\n`)
+    assert.doesNotMatch(inline, /katex-display/)
+    assert.match(renderMath(tex, true), /katex-display/)
+  })
+}
+
+test('inline formulas retry display mode only after an inline rendering failure', () => {
+  const tex = String.raw`x=1\tag{1}`
+  assert.throws(() => katex.renderToString(tex, { displayMode: false, throwOnError: true }))
+  const expected = katex.renderToString(tex, {
+    displayMode: true, throwOnError: true, strict: 'ignore', trust: false,
+  })
+  assert.equal(renderMath(tex, false), expected)
 })
 
 test('chemistry formulas render through mhchem', () => {

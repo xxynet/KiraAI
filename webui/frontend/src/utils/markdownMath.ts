@@ -165,21 +165,15 @@ export function renderCodeBlock(code: string, lang?: string | null): string {
   ].join('')
 }
 
-// KaTeX rejects `&`-based environments (aligned / cases / matrix), `\tag` and
-// `\hline` in inline mode: that is the usual reason a formula written inside
-// `$...$` silently fails. Retry those in display mode before giving up.
-const DISPLAY_ONLY = /\\(?:begin\{(?:align|aligned|alignedat|split|gather|gathered|cases|array|matrix|pmatrix|bmatrix|Bmatrix|vmatrix|Vmatrix|smallmatrix)\}|tag\b|hline\b)/
-
 function renderWith(tex: string, displayMode: boolean): string {
   return katex.renderToString(tex, { displayMode, throwOnError: true, strict: 'ignore', trust: false })
 }
 
 export function renderMath(tex: string, displayMode: boolean): string | null {
-  const preferDisplay = displayMode || DISPLAY_ONLY.test(tex)
   try {
-    return renderWith(tex, preferDisplay)
+    return renderWith(tex, displayMode)
   } catch (firstCause) {
-    if (!preferDisplay) {
+    if (!displayMode) {
       try {
         return renderWith(tex, true)
       } catch {
