@@ -40,6 +40,7 @@ docker-compose up
 
 ## Rules
 
+- Always use the full project name `KiraAI` when referring to this project, including in documentation, comments, etc. Do not shorten it to `Kira`.
 - WebUI changes involving new or modified localizable text must include corresponding i18n updates (sync both CN and EN translation files under `webui/frontend/src/i18n/`).
 - PR body **must** strictly follow `.github/PULL_REQUEST_TEMPLATE.md` — read it before every `gh pr create`, fill every required section, and never freestyle the body.
 - Always check `core/utils/` for existing reusable interfaces before writing new ones.
