@@ -1,5 +1,6 @@
 export default {
   common: {
+    code_plain_text: 'text',
     cancel: 'Cancel',
     on: 'On',
     off: 'Off',

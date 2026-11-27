@@ -46,3 +46,240 @@
 .dark .markdown-body th,
 .dark .markdown-body td { border-color: rgb(55 65 81); }
 .dark .markdown-body th { background: rgb(31 41 55); }
+
+/* Fenced code blocks: a labelled header on top, a scrollable body below. */
+.markdown-body .md-code-block {
+  margin: 0.75em 0;
+  border: 1px solid rgb(229 231 235);
+  border-radius: 0.5rem;
+  background: rgb(249 250 251);
+  overflow: hidden;
+}
+
+.markdown-body .md-code-head {
+  display: flex;
+  align-items: center;
+  padding: 0.375em 0.75em;
+  border-bottom: 1px solid rgb(229 231 235);
+  background: rgb(243 244 246);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75em;
+  line-height: 1.6;
+  color: rgb(107 114 128);
+}
+
+.markdown-body .md-code-lang {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+}
+
+.markdown-body .md-code-body {
+  margin: 0;
+  padding: 0.75em;
+  max-height: 480px;
+  overflow: auto;
+  background: transparent;
+  border-radius: 0;
+  color: rgb(31 41 55);
+}
+
+.markdown-body .md-code-body code {
+  padding: 0;
+  background: transparent;
+  white-space: pre;
+  tab-size: 2;
+}
+
+.markdown-body .md-code-body::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.markdown-body .md-code-body::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background: rgb(209 213 219);
+}
+
+.dark .markdown-body .md-code-block {
+  border-color: rgb(55 65 81);
+  background: rgb(17 24 39);
+}
+
+.dark .markdown-body .md-code-head {
+  border-bottom-color: rgb(55 65 81);
+  background: rgb(31 41 55);
+  color: rgb(156 163 175);
+}
+
+.dark .markdown-body .md-code-body {
+  color: rgb(229 231 235);
+}
+
+.dark .markdown-body .md-code-body::-webkit-scrollbar-thumb {
+  background: rgb(75 85 99);
+}
+
+/* Inline display math should never overflow the message bubble. */
+.markdown-body .md-math-inline-block,
+.markdown-body .md-math-block {
+  display: block;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+}
+
+.markdown-body .md-math-inline-block .katex-display {
+  min-width: max-content;
+}
+
+/* Syntax colours follow the JetBrains palette: IntelliJ Light on the light
+   theme, Darcula on the dark theme. */
+.markdown-body .hljs-keyword,
+.markdown-body .hljs-literal,
+.markdown-body .hljs-selector-tag,
+.markdown-body .hljs-built_in {
+  color: #0033b3;
+}
+
+.markdown-body .hljs-string,
+.markdown-body .hljs-regexp,
+.markdown-body .hljs-addition {
+  color: #067d17;
+}
+
+.markdown-body .hljs-comment,
+.markdown-body .hljs-quote {
+  color: #8c8c8c;
+  font-style: italic;
+}
+
+.markdown-body .hljs-number,
+.markdown-body .hljs-symbol,
+.markdown-body .hljs-bullet {
+  color: #1750eb;
+}
+
+.markdown-body .hljs-title,
+.markdown-body .hljs-title.function_ {
+  color: #00627a;
+}
+
+.markdown-body .hljs-title.class_,
+.markdown-body .hljs-type,
+.markdown-body .hljs-class .hljs-title {
+  color: #267f99;
+}
+
+.markdown-body .hljs-attr,
+.markdown-body .hljs-attribute,
+.markdown-body .hljs-property {
+  color: #174ad4;
+}
+
+.markdown-body .hljs-variable,
+.markdown-body .hljs-template-variable,
+.markdown-body .hljs-params,
+.markdown-body .hljs-subst {
+  color: #19191c;
+}
+
+.markdown-body .hljs-meta,
+.markdown-body .hljs-meta .hljs-keyword {
+  color: #9e880d;
+}
+
+.markdown-body .hljs-tag,
+.markdown-body .hljs-name,
+.markdown-body .hljs-selector-id,
+.markdown-body .hljs-selector-class {
+  color: #0033b3;
+}
+
+.markdown-body .hljs-section {
+  color: #00627a;
+  font-weight: 600;
+}
+
+.markdown-body .hljs-deletion {
+  color: #ad141e;
+}
+
+.markdown-body .hljs-addition {
+  color: #067d17;
+}
+
+.dark .markdown-body .hljs-keyword,
+.dark .markdown-body .hljs-literal,
+.dark .markdown-body .hljs-selector-tag {
+  color: #cc7832;
+}
+
+.dark .markdown-body .hljs-built_in {
+  color: #8888c6;
+}
+
+.dark .markdown-body .hljs-string,
+.dark .markdown-body .hljs-regexp {
+  color: #6a8759;
+}
+
+.dark .markdown-body .hljs-comment,
+.dark .markdown-body .hljs-quote {
+  color: #808080;
+}
+
+.dark .markdown-body .hljs-number,
+.dark .markdown-body .hljs-symbol,
+.dark .markdown-body .hljs-bullet {
+  color: #6897bb;
+}
+
+.dark .markdown-body .hljs-title,
+.dark .markdown-body .hljs-title.function_ {
+  color: #ffc66d;
+}
+
+.dark .markdown-body .hljs-title.class_,
+.dark .markdown-body .hljs-type,
+.dark .markdown-body .hljs-class .hljs-title {
+  color: #a9b7c6;
+}
+
+.dark .markdown-body .hljs-attr,
+.dark .markdown-body .hljs-attribute,
+.dark .markdown-body .hljs-property {
+  color: #9876aa;
+}
+
+.dark .markdown-body .hljs-variable,
+.dark .markdown-body .hljs-template-variable,
+.dark .markdown-body .hljs-params,
+.dark .markdown-body .hljs-subst {
+  color: #a9b7c6;
+}
+
+.dark .markdown-body .hljs-meta,
+.dark .markdown-body .hljs-meta .hljs-keyword {
+  color: #bbb529;
+}
+
+.dark .markdown-body .hljs-tag,
+.dark .markdown-body .hljs-name,
+.dark .markdown-body .hljs-selector-id,
+.dark .markdown-body .hljs-selector-class {
+  color: #e8bf6a;
+}
+
+.dark .markdown-body .hljs-section {
+  color: #ffc66d;
+  font-weight: 600;
+}
+
+.dark .markdown-body .hljs-deletion {
+  color: #ff6b68;
+}
+
+.dark .markdown-body .hljs-addition {
+  color: #6a8759;
+}
