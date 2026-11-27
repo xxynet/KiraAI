@@ -47,24 +47,11 @@
     />
 
     <div v-else-if="isBoolLike(field.type)" class="flex items-center">
-      <input
-        :id="'config-switch-' + uid"
-        type="checkbox"
-        class="sr-only"
-        :checked="!!value"
-        @change="update(($event.target as HTMLInputElement).checked)"
-      >
-      <label
-        :for="'config-switch-' + uid"
-        class="relative inline-flex items-center h-5 w-9 rounded-full cursor-pointer transition-colors"
-        :class="value ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'"
-        @click.prevent="update(!value)"
-      >
-        <span
-          class="inline-block h-4 w-4 bg-white rounded-full shadow transform transition-transform"
-          :class="value ? 'translate-x-5' : 'translate-x-0'"
-        />
-      </label>
+      <ToggleSwitch
+        :model-value="!!value"
+        :aria-label="label"
+        @update:model-value="update($event)"
+      />
     </div>
 
     <UiInput
@@ -169,6 +156,7 @@ import {
 } from '@/utils/configFieldTypes'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import CustomMultiSelect from '@/components/common/CustomMultiSelect.vue'
+import ToggleSwitch from '@/components/common/ToggleSwitch.vue'
 import TagInput from '@/components/common/TagInput.vue'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import InfoCallout from '@/components/common/InfoCallout.vue'
@@ -181,8 +169,6 @@ const props = defineProps<{
   field: any
   /** Field key within its scope, used as the label fallback */
   fieldKey: string
-  /** Unique key across the whole form, used for element ids */
-  uid: string
   /** Resolved current value (model value or field default) */
   value: any
   /** Options for model_select fields, loaded by the parent */

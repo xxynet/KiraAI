@@ -54,6 +54,8 @@
           </div>
           <ToggleSwitch
             :model-value="adapter.status === 'active'"
+            show-state
+            :aria-label="adapter.name"
             @update:model-value="toggleStatus(adapter)"
           />
         </div>
@@ -128,7 +130,7 @@
               {{ $t('adapter.modal_status_label') }}
             </label>
             <div class="flex items-center">
-              <ToggleSwitch v-model="formActive" />
+              <ToggleSwitch v-model="formActive" show-state :aria-label="$t('adapter.modal_status_label')" />
             </div>
           </div>
           <div v-if="adapterSchema">

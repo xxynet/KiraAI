@@ -70,20 +70,13 @@
             <p class="mt-1 text-xs text-theme-subtle break-all">{{ preset.plugin_id ? $t('plugin.subagents.plugin_source', { plugin: preset.plugin_id }) : $t('plugin.subagents.user_source') }}</p>
             <p class="mt-1 text-xs text-theme-subtle">{{ $t(preset.max_steps === -1 ? 'plugin.subagents.summary_unlimited' : 'plugin.subagents.summary', { steps: preset.max_steps, mode: $t('plugin.subagents.mode_' + preset.tool_mode) }) }}</p>
           </div>
-          <button
-            type="button"
-            class="ml-2 relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:opacity-50"
-            :class="preset.enabled ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500' : 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600'"
-            :aria-pressed="preset.enabled"
-            :aria-label="$t('plugin.subagents.toggle_label', { name: preset.name })"
+<ToggleSwitch
+            class="ml-2"
+            :model-value="preset.enabled"
             :disabled="operationsBusy || !!preset.plugin_id"
+            :aria-label="$t('plugin.subagents.toggle_label', { name: preset.name })"
             @click.stop="togglePreset(preset)"
-          >
-            <span
-              class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
-              :class="preset.enabled ? 'translate-x-4' : 'translate-x-0'"
-            />
-          </button>
+          />
         </div>
         <p v-if="preset.description" class="text-sm text-theme-supporting line-clamp-3 whitespace-pre-wrap mb-3">{{ preset.description }}</p>
         <div class="mt-auto">
@@ -143,7 +136,7 @@
           </div>
           <div class="flex items-center justify-between gap-4">
             <span class="text-sm text-theme-body">{{ $t('plugin.subagents.enabled') }}</span>
-            <SubagentPresetSwitch
+            <ToggleSwitch
               v-model="form.enabled"
               :aria-label="$t('plugin.subagents.enabled')"
             />
@@ -206,7 +199,7 @@
               <p id="subagent-exclude-tools-label" class="text-sm font-medium text-theme-body">{{ $t('plugin.subagents.exclude_tools_from_main') }}</p>
               <p id="subagent-exclude-tools-hint" class="mt-1 text-xs text-theme-subtle">{{ $t('plugin.subagents.exclude_tools_from_main_hint') }}</p>
             </div>
-            <SubagentPresetSwitch
+            <ToggleSwitch
               v-model="form.exclude_tools_from_main"
               aria-labelledby="subagent-exclude-tools-label"
               aria-describedby="subagent-exclude-tools-hint"
@@ -264,7 +257,7 @@ import CustomSelect from '@/components/common/CustomSelect.vue'
 import CustomMultiSelect from '@/components/common/CustomMultiSelect.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
-import SubagentPresetSwitch from './SubagentPresetSwitch.vue'
+import ToggleSwitch from '@/components/common/ToggleSwitch.vue'
 import SubagentToolPicker from './SubagentToolPicker.vue'
 
 const { t } = useI18n()

@@ -26,7 +26,7 @@
         <div class="space-y-2 border-t border-gray-200 pt-5 dark:border-gray-700">
           <div class="flex items-center justify-between gap-4">
             <span id="webchat-markdown-label" class="text-sm text-theme-body">{{ t('webchat.markdown_render') }}</span>
-            <ToggleSwitch :model-value="chatMarkdownEnabled" role="switch" :aria-checked="chatMarkdownEnabled" aria-labelledby="webchat-markdown-label" aria-describedby="webchat-markdown-hint" @update:model-value="setChatMarkdownEnabled" />
+            <ToggleSwitch :model-value="chatMarkdownEnabled" show-state aria-labelledby="webchat-markdown-label" aria-describedby="webchat-markdown-hint" @update:model-value="setChatMarkdownEnabled" />
           </div>
           <p id="webchat-markdown-hint" class="text-sm text-theme-subtle">{{ t('webchat.markdown_render_desc') }}</p>
         </div>
@@ -34,11 +34,11 @@
           <h5 class="text-sm font-semibold text-theme-strong">{{ t('webchat.tool_permissions') }}</h5>
           <div class="flex items-center justify-between gap-4">
             <span id="webchat-file-tools-label" class="text-sm text-theme-body">{{ t('webchat.allow_file_tools') }}</span>
-            <ToggleSwitch :model-value="adapterConfig.allow_file_tools" :disabled="savingConfig" role="switch" :aria-checked="adapterConfig.allow_file_tools" aria-labelledby="webchat-file-tools-label" @update:model-value="saveConfig('allow_file_tools', $event)" />
+            <ToggleSwitch :model-value="adapterConfig.allow_file_tools" :disabled="savingConfig" show-state aria-labelledby="webchat-file-tools-label" @update:model-value="saveConfig('allow_file_tools', $event)" />
           </div>
           <div class="flex items-center justify-between gap-4">
             <span id="webchat-exec-label" class="text-sm text-theme-body">{{ t('webchat.allow_exec') }}</span>
-            <ToggleSwitch :model-value="adapterConfig.allow_exec" :disabled="savingConfig" role="switch" :aria-checked="adapterConfig.allow_exec" aria-labelledby="webchat-exec-label" @update:model-value="saveConfig('allow_exec', $event)" />
+            <ToggleSwitch :model-value="adapterConfig.allow_exec" :disabled="savingConfig" show-state aria-labelledby="webchat-exec-label" @update:model-value="saveConfig('allow_exec', $event)" />
           </div>
           <p class="text-sm text-theme-subtle" role="status">{{ t(savingConfig ? 'webchat.saving' : 'webchat.tool_permissions_hint') }}</p>
           <p v-if="configError" role="alert" class="text-sm text-red-600 dark:text-red-300">{{ configError }}</p>
