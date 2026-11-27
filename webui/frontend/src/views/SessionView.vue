@@ -142,12 +142,15 @@
           </div>
           <p class="text-xs text-theme-subtle mt-2">{{ capabilityMode === 'global' ? $t('sessions.capabilities_global_hint') : $t('sessions.capabilities_custom_hint') }}</p>
           <div v-if="capabilityMode === 'custom'" class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <button type="button" class="flex items-center justify-between text-left text-theme-body" @click="sessionCapabilities.image_recognition.enabled = !sessionCapabilities.image_recognition.enabled"><span>{{ $t('configuration.message.image_recognition_enabled') }}</span><span class="relative inline-flex h-6 w-11 rounded-full" :class="sessionCapabilities.image_recognition.enabled ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'"><span class="h-4 w-4 bg-white rounded-full mt-1 transition-transform" :class="sessionCapabilities.image_recognition.enabled ? 'translate-x-6' : 'translate-x-1'" /></span></button>
-            <button type="button" class="flex items-center justify-between text-left text-theme-body" @click="sessionCapabilities.stt.enabled = !sessionCapabilities.stt.enabled"><span>{{ $t('configuration.message.stt_enabled') }}</span><span class="relative inline-flex h-6 w-11 rounded-full" :class="sessionCapabilities.stt.enabled ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'"><span class="h-4 w-4 bg-white rounded-full mt-1 transition-transform" :class="sessionCapabilities.stt.enabled ? 'translate-x-6' : 'translate-x-1'" /></span></button>
-            <button type="button" class="flex items-center justify-between text-left text-theme-body" @click="sessionCapabilities.tts.enabled = !sessionCapabilities.tts.enabled"><span>{{ $t('configuration.message.tts_enabled') }}</span><span class="relative inline-flex h-6 w-11 rounded-full" :class="sessionCapabilities.tts.enabled ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'"><span class="h-4 w-4 bg-white rounded-full mt-1 transition-transform" :class="sessionCapabilities.tts.enabled ? 'translate-x-6' : 'translate-x-1'" /></span></button>
-            <button type="button" class="flex items-center justify-between text-left text-theme-body" @click="sessionCapabilities.image_generation.enabled = !sessionCapabilities.image_generation.enabled"><span>{{ $t('configuration.message.image_generation_enabled') }}</span><span class="relative inline-flex h-6 w-11 rounded-full" :class="sessionCapabilities.image_generation.enabled ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'"><span class="h-4 w-4 bg-white rounded-full mt-1 transition-transform" :class="sessionCapabilities.image_generation.enabled ? 'translate-x-6' : 'translate-x-1'" /></span></button>
-            <button type="button" class="flex items-center justify-between text-left text-theme-body" @click="sessionCapabilities.video_generation.enabled = !sessionCapabilities.video_generation.enabled"><span>{{ $t('configuration.message.video_generation_enabled') }}</span><span class="relative inline-flex h-6 w-11 rounded-full" :class="sessionCapabilities.video_generation.enabled ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'"><span class="h-4 w-4 bg-white rounded-full mt-1 transition-transform" :class="sessionCapabilities.video_generation.enabled ? 'translate-x-6' : 'translate-x-1'" /></span></button>
-            <button type="button" class="flex items-center justify-between text-left text-theme-body" @click="sessionCapabilities.forward_parsing.enabled = !sessionCapabilities.forward_parsing.enabled"><span>{{ $t('configuration.message.forward_parsing_enabled') }}</span><span class="relative inline-flex h-6 w-11 rounded-full" :class="sessionCapabilities.forward_parsing.enabled ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'"><span class="h-4 w-4 bg-white rounded-full mt-1 transition-transform" :class="sessionCapabilities.forward_parsing.enabled ? 'translate-x-6' : 'translate-x-1'" /></span></button>
+            <div v-for="cap in capabilitySwitches" :key="cap.key" class="flex items-center justify-between gap-3 text-sm text-theme-body">
+              <span>{{ $t(cap.labelKey) }}</span>
+              <ToggleSwitch
+                size="md"
+                :model-value="sessionCapabilities[cap.key].enabled"
+                :aria-label="$t(cap.labelKey)"
+                @update:model-value="sessionCapabilities[cap.key].enabled = $event"
+              />
+            </div>
             <div>
               <label class="block text-sm text-theme-body mb-1">{{ $t('configuration.message.image_recognition_mode') }}</label>
               <CustomSelect
@@ -220,8 +223,18 @@ import ConfirmModal from '@/components/common/ConfirmModal.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
+import ToggleSwitch from '@/components/common/ToggleSwitch.vue'
 import { IconPlus, IconClose, IconCopy } from '@/components/icons'
 import type { SessionCapabilities, SessionItem } from '@/types'
+
+const capabilitySwitches = [
+  { key: 'image_recognition', labelKey: 'configuration.message.image_recognition_enabled' },
+  { key: 'stt', labelKey: 'configuration.message.stt_enabled' },
+  { key: 'tts', labelKey: 'configuration.message.tts_enabled' },
+  { key: 'image_generation', labelKey: 'configuration.message.image_generation_enabled' },
+  { key: 'video_generation', labelKey: 'configuration.message.video_generation_enabled' },
+  { key: 'forward_parsing', labelKey: 'configuration.message.forward_parsing_enabled' },
+] as const
 
 const { t } = useI18n()
 const sessions = ref<SessionItem[]>([])

@@ -294,11 +294,9 @@
         <ToggleSwitch
           id="sidebar-collapsed-icons"
           v-model="sidebarCollapsedIcons"
-          role="switch"
-          :aria-checked="sidebarCollapsedIcons"
+          show-state
           :aria-label="$t('settings.sidebar_collapsed_icons')"
           aria-describedby="sidebar-collapsed-icons-description"
-          class="sidebar-icons-toggle shrink-0"
         />
       </div>
 
@@ -1027,14 +1025,3 @@ async function handleSave() {
   }
 }
 </script>
-
-<style scoped>
-.sidebar-icons-toggle:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-}
-
-.dark .sidebar-icons-toggle:focus-visible {
-  outline-color: var(--color-accent-strong);
-}
-</style>

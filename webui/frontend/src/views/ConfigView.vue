@@ -264,20 +264,13 @@
             />
 
             <!-- Boolean / Switch -->
-            <button
+            <ToggleSwitch
               v-else-if="field.type === 'boolean'"
-              type="button"
-              class="relative inline-flex items-center h-6 w-11 rounded-full transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-              :class="getFieldValue(field.key) ? 'bg-blue-600 dark:bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'"
-              :aria-checked="getFieldValue(field.key) ? 'true' : 'false'"
-              role="switch"
-              @click="setFieldValue(field.key, !getFieldValue(field.key))"
-            >
-              <span
-                class="inline-block h-4 w-4 bg-white rounded-full shadow transform transition-transform duration-200"
-                :class="getFieldValue(field.key) ? 'translate-x-6' : 'translate-x-1'"
-              />
-            </button>
+              size="md"
+              :model-value="!!getFieldValue(field.key)"
+              :aria-label="$t(field.labelKey, field.labelFallback)"
+              @update:model-value="setFieldValue(field.key, $event)"
+            />
 
             <!-- Select -->
             <CustomSelect
@@ -369,6 +362,7 @@ import { getConfiguration, saveConfiguration } from '@/api/config'
 import CustomSelect from '@/components/common/CustomSelect.vue'
 import InfoCallout from '@/components/common/InfoCallout.vue'
 import UnsavedChangesModal from '@/components/common/UnsavedChangesModal.vue'
+import ToggleSwitch from '@/components/common/ToggleSwitch.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import {
   IconMonitor, IconCog, IconRobot, IconImage, IconDatabase, IconFileText, IconFlask, IconGlobe, IconChat,

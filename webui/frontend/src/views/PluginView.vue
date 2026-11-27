@@ -240,18 +240,12 @@
                 {{ server.type }}
               </div>
             </div>
-            <button
-              type="button"
-              class="ml-2 relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none"
-              :class="server.enabled ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500' : 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600'"
-              :aria-pressed="server.enabled ? 'true' : 'false'"
+            <ToggleSwitch
+              class="ml-2"
+              :model-value="server.enabled"
+              :aria-label="server.name"
               @click.stop="toggleMcp(server)"
-            >
-              <span
-                class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
-                :class="server.enabled ? 'translate-x-4' : 'translate-x-0'"
-              />
-            </button>
+            />
           </div>
           <p v-if="server.description" class="text-sm text-theme-supporting line-clamp-3 mb-3">
             {{ server.description }}
@@ -330,18 +324,12 @@
             <div>
               <div class="text-base font-semibold text-theme-high">{{ skill.name || skill.id }}</div>
             </div>
-            <button
-              type="button"
-              class="ml-2 relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none"
-              :class="skill.enabled ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500' : 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600'"
-              :aria-pressed="skill.enabled ? 'true' : 'false'"
+            <ToggleSwitch
+              class="ml-2"
+              :model-value="skill.enabled"
+              :aria-label="skill.name || skill.id"
               @click.stop="toggleSkillItem(skill)"
-            >
-              <span
-                class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
-                :class="skill.enabled ? 'translate-x-4' : 'translate-x-0'"
-              />
-            </button>
+            />
           </div>
           <p v-if="skill.description" class="text-sm text-theme-supporting line-clamp-3 mb-3">
             {{ skill.description }}
@@ -429,19 +417,12 @@
                 <div v-if="scopeSessions.length" class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5">
                   <div v-for="s in scopeSessions" :key="s.id" class="flex items-center justify-between py-0.5">
                     <span class="text-xs text-theme-supporting truncate mr-2">{{ s.title ? `${s.title} | ${s.id}` : s.id }}</span>
-                    <button
-                      type="button"
+                    <ToggleSwitch
+                      class="ml-2"
+                      :model-value="resource.sessions.has(s.id)"
                       :aria-label="s.title ? `${s.title} | ${s.id}` : s.id"
-                      :aria-pressed="resource.sessions.has(s.id)"
-                      class="ml-2 relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-                      :class="resource.sessions.has(s.id) ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500' : 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600'"
-                      @click="onScopeSessionToggle(resource, s.id)"
-                    >
-                      <span
-                        class="pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
-                        :class="resource.sessions.has(s.id) ? 'translate-x-3.5' : 'translate-x-0'"
-                      />
-                    </button>
+                      @update:model-value="onScopeSessionToggle(resource, s.id)"
+                    />
                   </div>
                 </div>
                 <p v-else class="text-xs text-theme-supporting">{{ $t('plugin.scope_no_sessions') }}</p>
@@ -1121,19 +1102,11 @@
                   <code class="text-sm font-medium text-theme-high">{{ tool.name }}</code>
                   <p v-if="tool.description" class="mt-1 text-sm text-theme-supporting whitespace-pre-wrap">{{ tool.description }}</p>
                 </div>
-                <button
-                  type="button"
-                  class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 ease-in-out focus:outline-none"
-                  :class="tool.enabled ? 'bg-blue-600 border-blue-600 dark:bg-blue-500 dark:border-blue-500' : 'bg-gray-200 border-gray-300 dark:bg-gray-700 dark:border-gray-600'"
-                  :aria-pressed="tool.enabled ? 'true' : 'false'"
+                <ToggleSwitch
+                  :model-value="tool.enabled"
                   :aria-label="$t('plugin.mcp_tool_toggle_label', { name: tool.name })"
-                  @click="toggleMcpToolItem(tool)"
-                >
-                  <span
-                    class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
-                    :class="tool.enabled ? 'translate-x-4' : 'translate-x-0'"
-                  />
-                </button>
+                  @update:model-value="toggleMcpToolItem(tool)"
+                />
               </div>
             </div>
           </div>
@@ -1204,6 +1177,7 @@ import { getScope, updateScope } from '@/api/scope'
 import MonacoEditor from '@/components/common/MonacoEditor.vue'
 import ConfigForm from '@/components/common/ConfigForm.vue'
 import CustomSelect from '@/components/common/CustomSelect.vue'
+import ToggleSwitch from '@/components/common/ToggleSwitch.vue'
 import PluginCard from '@/components/common/PluginCard.vue'
 import SubagentsPanel from '@/components/subagents/SubagentsPanel.vue'
 import {
