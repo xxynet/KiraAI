@@ -329,7 +329,10 @@ def test_session_tools_config_schema_has_matching_english_and_chinese_fields():
 
     root = Path(__file__).resolve().parents[1] / "core/plugin/builtin_plugins/session_tools"
     schema = json.loads((root / "schema.json").read_text(encoding="utf-8"))
-    assert len(build_fields(schema)) == 3
+    assert len(build_fields(schema)) == 4
+    send_fields = schema["cross_session_send"]["fields"]
+    assert send_fields["max_transfers"]["default"] == 8
+    assert send_fields["repeat_window_seconds"]["default"] == 300
     cross_fields = schema["cross_session_read"]["fields"]
     assert cross_fields["permission_mode"]["default"] == "allow_list"
     assert cross_fields["target_permission_mode"]["default"] == "deny_list"

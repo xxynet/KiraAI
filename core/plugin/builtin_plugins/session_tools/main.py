@@ -7,10 +7,11 @@ from core.adapter.capabilities import IMCapability
 from core.chat import MessageChain
 from core.chat.message_elements import Text
 from core.chat.message_utils import KiraMessageBatchEvent
-from core.plugin import BasePlugin, Priority, on, register
+from core.plugin import BasePlugin, Priority, logger, on, register
 from core.provider import LLMRequest
 from core.utils.time_utils import format_timestamp
 
+from .handoff import HANDOFF_KEY, SessionHandoff
 from .tools import ReadMessagesTool, SearchMessagesTool, SessionViewTool
 
 SESSION_VIEW_PROMPT = """
@@ -46,6 +47,7 @@ SESSION_SEND_PROMPT = """
 `description` 是写给目标会话中的自己的内部交接说明，不是直接面向目标用户的聊天正文。
 说明来源会话发生了什么、涉及谁、为什么前往目标会话以及希望在那里做什么；需要原样转达的内容应明确标注为引文。
 到达目标会话后仍可根据交流需要继续前往其他会话，也可回到来源会话；每次调用都应有具体目的，避免无意义地来回转发。
+程序会记录跨会话调用链，并限制每条链的调用总数和短时间内的重复传递。被拦截后请停止自动转发，等待用户的新消息。
 
 `target` 使用完整的会话标识（SID），可以来自「当前存在的会话」列表中逐字复制的完整会话标识、记忆中的记录或用户告知等来源。
 只要能确定 SID 对应目标，即使目标未出现在会话列表中，也可直接调用 `session_send`。
@@ -362,8 +364,29 @@ class SessionPlugin(BasePlugin):
         }
     )
     async def session_send(self, event: KiraMessageBatchEvent, target: str, description: str):
+        handoff = SessionHandoff.for_event(event)
+        record = handoff.new_record(event.sid, target, description)
+        try:
+            result = await self._send_session_handoff(event, target, description, handoff, record)
+            if result == "message sent":
+                record["status"] = "sent"
+            elif result.startswith("Cross-session transfer blocked:"):
+                record["status"] = "blocked"
+            elif result.startswith("failed to send:"):
+                record["status"] = "failed"
+            record["result"] = result
+            return result
+        except asyncio.CancelledError:
+            record["status"] = "cancelled"
+            record["result"] = "Cross-session transfer cancelled"
+            raise
+        finally:
+            logger.info("session_handoff %s", json.dumps(record, ensure_ascii=False))
+
+    async def _send_session_handoff(self, event, target, description, handoff, record):
         try:
             session = await self.ctx.session_mgr.resolve_session(target)
+            record["target"] = session.sid
             if event.sid == session.sid:
                 return "Do not send messages to current session using this tool, output directly to send messages"
             if session.kind == "subagent":
@@ -387,9 +410,21 @@ class SessionPlugin(BasePlugin):
                 )
             if not is_allowed:
                 return f"Permission denied: target session is not allowed by adapter {session.adapter_name}"
+            policy = self.plugin_cfg.get("cross_session_send", {})
+            max_transfers = policy.get("max_transfers", 8)
+            repeat_window = policy.get("repeat_window_seconds", 300)
+            for name, value in (("max_transfers", max_transfers), ("repeat_window_seconds", repeat_window)):
+                if type(value) is not int or value < 1:
+                    raise ValueError(f"cross_session_send.{name} must be a positive integer")
+            blocked = handoff.reserve(record, max_transfers, repeat_window)
+            if blocked:
+                return blocked
             cross_session_prompt = CROSS_SESSION_PROMPT.format(session_id=event.sid, description=description)
 
-            await self.ctx.publish_notice(session, MessageChain([Text(cross_session_prompt)]))
+            await self.ctx.publish_notice(
+                session, MessageChain([Text(cross_session_prompt)]),
+                extra={HANDOFF_KEY: handoff.next(record)},
+            )
             return "message sent"
         except Exception as e:
             return f"failed to send: {e}"

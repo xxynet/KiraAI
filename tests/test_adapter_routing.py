@@ -308,7 +308,7 @@ async def test_cross_session_permission_uses_opaque_id_without_capability_name()
     event = SimpleNamespace(sid="source:dm:1")
     assert await plugin.session_send(event, "example:dm:channel/123", "hello") == "message sent"
     assert ctx.publish_notice.await_args.args[0].sid == "example:dm:channel/123"
-    assert ctx.publish_notice.await_args.kwargs == {}
+    assert "session_handoff" in ctx.publish_notice.await_args.kwargs["extra"]
     assert "Permission denied" in await plugin.session_send(event, "example:dm:123", "hello")
     assert ctx.publish_notice.await_count == 1
 

@@ -445,8 +445,11 @@ class PluginContext:
         await self.event_bus.publish(event)
         return event
 
-    async def publish_notice(self, session: Session | str, chain: MessageChain, is_mentioned: bool = True):
-        """Build an IM system notice and publish it directly to the event bus."""
+    async def publish_notice(
+        self, session: Session | str, chain: MessageChain, is_mentioned: bool = True,
+        *, extra: dict | None = None,
+    ):
+        """Publish an IM system notice, preserving internal extra metadata through batching."""
         target = await self.session_mgr.resolve_session(session)
         adapter = self.adapter_mgr.get_adapter(target.adapter_name)
         if adapter is None:
@@ -472,6 +475,7 @@ class PluginContext:
                 self_id=adapter.config.get("self_id"),
                 is_notice=True,
                 is_mentioned=is_mentioned,
+                extra=dict(extra) if extra is not None else None,
                 chain=chain,
             ),
             timestamp=now,
