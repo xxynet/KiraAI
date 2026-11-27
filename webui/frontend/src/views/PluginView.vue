@@ -420,6 +420,8 @@
                     <ToggleSwitch
                       class="ml-2"
                       :model-value="resource.sessions.has(s.id)"
+                      :width="28"
+                      :height="16"
                       :aria-label="s.title ? `${s.title} | ${s.id}` : s.id"
                       @update:model-value="onScopeSessionToggle(resource, s.id)"
                     />

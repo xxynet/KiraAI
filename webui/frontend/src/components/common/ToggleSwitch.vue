@@ -13,10 +13,11 @@
     <span
       class="relative inline-flex items-center rounded-full transition-colors duration-200 ease-in-out"
       :class="trackClass"
+      :style="{ width: `${trackWidth}px`, height: `${trackHeight}px` }"
     >
       <span
         class="inline-block rounded-full bg-white shadow transition-transform duration-200 ease-in-out"
-        :class="thumbClass"
+        :style="thumbStyle"
       />
     </span>
   </button>
@@ -29,6 +30,8 @@ const props = withDefaults(defineProps<{
   modelValue: boolean
   disabled?: boolean
   size?: 'sm' | 'md'
+  width?: number
+  height?: number
   showState?: boolean
 }>(), {
   size: 'sm',
@@ -39,14 +42,19 @@ const emit = defineEmits<{
   'update:modelValue': [value: boolean]
 }>()
 
-const trackClass = computed(() => [
-  props.size === 'md' ? 'h-6 w-11' : 'h-5 w-9',
-  props.modelValue ? 'bg-blue-600 dark:bg-blue-500' : 'bg-gray-300 dark:bg-gray-600',
-])
+const trackWidth = computed(() => props.width ?? (props.size === 'md' ? 44 : 36))
+const trackHeight = computed(() => props.height ?? (props.size === 'md' ? 24 : 20))
+const trackClass = computed(() => props.modelValue ? 'bg-blue-600 dark:bg-blue-500' : 'bg-gray-300 dark:bg-gray-600')
 
-const thumbClass = computed(() => {
-  if (props.size === 'md') return props.modelValue ? 'h-4 w-4 translate-x-6' : 'h-4 w-4 translate-x-1'
-  return props.modelValue ? 'h-4 w-4 translate-x-5' : 'h-4 w-4 translate-x-0'
+const thumbStyle = computed(() => {
+  const diameter = Math.max(0, Math.min(16, trackHeight.value - 4, trackWidth.value - 4))
+  const inset = (trackHeight.value - diameter) / 2
+  const offset = props.modelValue ? trackWidth.value - diameter - inset : inset
+  return {
+    width: `${diameter}px`,
+    height: `${diameter}px`,
+    transform: `translateX(${offset}px)`,
+  }
 })
 
 function toggle() {

@@ -48,7 +48,6 @@
 
     <div v-else-if="isBoolLike(field.type)" class="flex items-center">
       <ToggleSwitch
-        size="md"
         :model-value="!!value"
         :aria-label="label"
         @update:model-value="update($event)"
