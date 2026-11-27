@@ -5,12 +5,13 @@ import inspect
 from collections.abc import Callable
 from functools import partial
 from typing import TYPE_CHECKING
+from urllib.parse import quote, urlsplit
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import MutableHeaders
-from starlette.requests import Request
+from starlette.types import Scope
 
 from core.logging_manager import get_logger
 from core.plugin.pages import PluginPage, PluginPageSource
@@ -70,6 +71,19 @@ class PluginPageStaticFiles(StaticFiles):
                     await response(scope, receive, send_with_no_store)
                     return
         await super().__call__(scope, receive, send_with_no_store)
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        response = await super().get_response(path, scope)
+        location = response.headers.get("location", "")
+        if location.startswith(("http://", "https://")):
+            # Directory URLs inside a folder page get an absolute Location built
+            # from the request Host. Behind the dev proxy that is the backend
+            # port, so keep the browser on the origin that requested the page.
+            parsed = urlsplit(location)
+            response.headers["location"] = parsed.path + (
+                f"?{parsed.query}" if parsed.query else ""
+            )
+        return response
 
 
 class PluginStaticFiles(StaticFiles):
@@ -287,7 +301,6 @@ class PluginWebBindings:
     def _mount_page(self, plugin_id: str, full_path: str, route_path: str,
                     page: PluginPage, need_auth: bool, deferred: bool) -> bool:
         from fastapi import Depends
-        from starlette.responses import RedirectResponse
 
         from webui.routes.auth import require_auth
 
@@ -323,6 +336,9 @@ class PluginWebBindings:
             except Exception as e:
                 logger.error(f"Plugin {plugin_id}: failed to mount folder page: {e}")
                 return False
+            self._register_folder_page_redirect(
+                plugin_id, full_path if full_path.endswith("/") else full_path + "/",
+            )
             return True
 
         dependencies = [Depends(require_auth)] if need_auth else []
@@ -344,6 +360,36 @@ class PluginWebBindings:
             dependencies=dependencies, tags=[f"plugin:{plugin_id}"],
         )
         return True
+
+    def _register_folder_page_redirect(self, plugin_id: str, page_path: str) -> None:
+        """Add the slash-less folder URL with a *relative* redirect target.
+
+        Mounted static directories only match paths ending in "/", so Starlette's
+        redirect_slashes answers the slash-less URL with an absolute Location
+        built from the Host header. Behind the Vite dev proxy (changeOrigin
+        rewrites Host to the backend port) that moves the iframe to another
+        origin, and with it to that origin's localStorage session. A relative
+        Location keeps the browser on the origin the page was actually opened
+        from.
+
+        ``page_path`` is the mounted folder URL and must end in "/" so the
+        redirect route never collides with the mount itself.
+        """
+        redirect_path = page_path.rstrip("/")
+
+        async def folder_page_redirect(request: Request):
+            if not self.manager.is_plugin_enabled(plugin_id):
+                raise HTTPException(status_code=404, detail="Plugin disabled")
+            target = quote(page_path, safe="/")
+            if request.url.query:
+                target += "?" + request.url.query
+            return RedirectResponse(url=target, status_code=307)
+
+        self.app.add_api_route(
+            path=redirect_path, endpoint=folder_page_redirect,
+            methods=["GET", "HEAD"],
+            tags=[f"plugin:{plugin_id}"], include_in_schema=False,
+        )
 
     def register_static(self, plugin_id: str) -> None:
         """Mount static assets using the existing plugin state policy."""
