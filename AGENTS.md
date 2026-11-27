@@ -26,7 +26,7 @@ python -m pytest tests/test_config_loader.py -v  # Run a single test file
 
 ```bash
 cd webui/frontend
-npm install
+npm install --registry=https://registry.npmjs.org/
 npm run dev      # Dev server on :3000, proxies /api → :5267
 npm run build    # Type-check (vue-tsc) + build → webui/static/dist/
 npm test         # Unit tests incl. i18n parity, only when webui/frontend changed
@@ -48,6 +48,7 @@ docker-compose up
 - When developing plugins, expose user-invoked capabilities through LLM-native extension points, such as `@register.tool` and `@register.tag` (XML tags), instead of command syntax for better digital life experience. 
 - Plugins must store their runtime data through `ctx.get_plugin_data_dir()` (which resolves to a per-plugin directory under `data/plugin_data/`) instead of writing into the plugin's own source directory.
 - JavaScript in a plugin's own WebUI (the plugin's webui assets, e.g. `web/js/*.js`) must be split into separate files; do not pile all of it into a single file.
+- Use the official npm registry (`https://registry.npmjs.org/`) for npm dependencies. Do not use npmmirror or other third-party registry mirrors in dependency installation commands, registry configuration, CI workflows, or committed lockfile `resolved` URLs.
 
 ## Architecture
 

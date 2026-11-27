@@ -115,9 +115,15 @@ pip install -r requirements.txt
 
 ### Frontend (WebUI)
 
+Use the official npm registry (`https://registry.npmjs.org/`) for all npm dependencies.
+Do not use npmmirror or other third-party registry mirrors in installation commands, registry
+configuration, CI workflows, or committed lockfile `resolved` URLs: these mirrors may be
+unreachable from CI runners and cause dependency installation to fail. When updating
+dependencies, check that the lockfile uses official npm registry URLs before submitting.
+
 ```bash
 cd webui/frontend
-npm install
+npm install --registry=https://registry.npmjs.org/
 npm run build
 ```
 
