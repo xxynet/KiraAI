@@ -57,11 +57,12 @@ class Routes:
             "response_class": route.response_class,
         }
         options.update(route.extra)
-        filtered_options = {key: value for key, value in options.items() if value is not None}
+        filtered_options = {
+            key: value for key, value in options.items() if value is not None
+        }
         self.app.add_api_route(
             route.path,
             route.endpoint,
             methods=list(route.methods),
             **filtered_options,
         )
-

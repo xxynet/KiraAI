@@ -2,6 +2,7 @@
 KiraAI WebUI Application
 Provides a web-based admin panel for managing KiraAI system
 """
+
 import mimetypes
 import os
 from pathlib import Path
@@ -46,7 +47,12 @@ class KiraWebUI:
     Holds lifecycle instance for accessing system components
     """
 
-    def __init__(self, lifecycle: KiraLifecycle, dist_dir: Path | None = None, disable_auth: bool = False):
+    def __init__(
+        self,
+        lifecycle: KiraLifecycle,
+        dist_dir: Path | None = None,
+        disable_auth: bool = False,
+    ):
         # Ensure proper MIME types on Windows (fixes .js served as text/plain)
         mimetypes.add_type("application/javascript", ".js")
         mimetypes.add_type("text/javascript", ".js")
@@ -60,7 +66,9 @@ class KiraWebUI:
         if disable_auth:
             self.access_token = "disabled"
         else:
-            self.access_token, self.access_token_generated = _get_or_generate_access_token()
+            self.access_token, self.access_token_generated = (
+                _get_or_generate_access_token()
+            )
         self.is_prod = os.environ.get("KIRA_ENV", "prod").lower() == "prod"
         fastapi_kwargs: dict = {
             "title": "KiraAI Admin Panel",
@@ -124,7 +132,9 @@ class KiraWebUI:
             )
         if dist_monaco.exists():
             self.app.mount(
-                "/monacoeditorwork", StaticFiles(directory=str(dist_monaco)), name="dist_monaco"
+                "/monacoeditorwork",
+                StaticFiles(directory=str(dist_monaco)),
+                name="dist_monaco",
             )
 
         # Register routes
@@ -135,7 +145,13 @@ class KiraWebUI:
         self.lifecycle.webui_app = self.app
 
     def _register_routes(self):
-        auth_routes = AuthRoutes(self.app, self.lifecycle, self.access_token, self.dist_dir, self.disable_auth)
+        auth_routes = AuthRoutes(
+            self.app,
+            self.lifecycle,
+            self.access_token,
+            self.dist_dir,
+            self.disable_auth,
+        )
         auth_routes.register()
         OverviewRoutes(self.app, self.lifecycle).register()
         LogsRoutes(self.app, self.lifecycle).register()

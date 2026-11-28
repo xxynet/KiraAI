@@ -150,13 +150,19 @@ class ProvidersRoutes(Routes):
             ),
         ]
 
-    def _get_provider_type_display(self, provider_type: str) -> tuple[str, dict[str, dict[str, str]]]:
+    def _get_provider_type_display(
+        self, provider_type: str
+    ) -> tuple[str, dict[str, dict[str, str]]]:
         if self.lifecycle and self.lifecycle.provider_manager:
             manifest = self.lifecycle.provider_manager.get_manifest(provider_type)
-            return manifest.get("display_name") or provider_type, manifest.get("locales") or {}
+            return manifest.get("display_name") or provider_type, manifest.get(
+                "locales"
+            ) or {}
         return provider_type, {}
 
-    def _get_provider_type_icon(self, provider_type: str, dark: bool = False) -> str | None:
+    def _get_provider_type_icon(
+        self, provider_type: str, dark: bool = False
+    ) -> str | None:
         if not self.lifecycle or not self.lifecycle.provider_manager:
             return None
         if not self.lifecycle.provider_manager.get_icon_path(provider_type, dark=dark):
@@ -164,8 +170,12 @@ class ProvidersRoutes(Routes):
         suffix = "?dark=true" if dark else ""
         return f"/api/provider-types/{quote(provider_type, safe='')}/icon{suffix}"
 
-    def _provider_response(self, provider_info, status_value: str, model_config: dict) -> ProviderResponse:
-        type_display_name, type_locales = self._get_provider_type_display(provider_info.provider_type)
+    def _provider_response(
+        self, provider_info, status_value: str, model_config: dict
+    ) -> ProviderResponse:
+        type_display_name, type_locales = self._get_provider_type_display(
+            provider_info.provider_type
+        )
         return ProviderResponse(
             id=provider_info.provider_id,
             name=provider_info.provider_name,
@@ -173,12 +183,16 @@ class ProvidersRoutes(Routes):
             status=status_value,
             config=provider_info.provider_config,
             model_config=model_config,
-            supported_model_types=self._get_supported_model_types(provider_info.provider_id),
+            supported_model_types=self._get_supported_model_types(
+                provider_info.provider_id
+            ),
             locales=type_locales,
             type_display_name=type_display_name,
             type_locales=type_locales,
             type_icon=self._get_provider_type_icon(provider_info.provider_type),
-            type_icon_dark=self._get_provider_type_icon(provider_info.provider_type, dark=True),
+            type_icon_dark=self._get_provider_type_icon(
+                provider_info.provider_type, dark=True
+            ),
         )
 
     def _get_supported_model_types(self, provider_id: str) -> list[str]:
@@ -190,7 +204,9 @@ class ProvidersRoutes(Routes):
             provider_format = provider_cfg.get("format")
             if not provider_format:
                 return []
-            provider_cls = self.lifecycle.provider_manager.get_provider_class(provider_format)
+            provider_cls = self.lifecycle.provider_manager.get_provider_class(
+                provider_format
+            )
             if not provider_cls:
                 return []
             models_attr = getattr(provider_cls, "models", None)
@@ -205,7 +221,9 @@ class ProvidersRoutes(Routes):
                     supported.append(type_key)
             return supported
         except Exception as e:
-            logger.error(f"Failed to get supported model types for provider {provider_id}: {e}")
+            logger.error(
+                f"Failed to get supported model types for provider {provider_id}: {e}"
+            )
             return []
 
     async def get_provider_types(self, details: bool = False):
@@ -234,15 +252,21 @@ class ProvidersRoutes(Routes):
 
     async def get_provider_type_icon(self, provider_type: str, dark: bool = False):
         if not self.lifecycle or not self.lifecycle.provider_manager:
-            raise HTTPException(status_code=404, detail="Provider manager not available")
-        icon_path = self.lifecycle.provider_manager.get_icon_path(provider_type, dark=dark)
+            raise HTTPException(
+                status_code=404, detail="Provider manager not available"
+            )
+        icon_path = self.lifecycle.provider_manager.get_icon_path(
+            provider_type, dark=dark
+        )
         if not icon_path:
             raise HTTPException(status_code=404, detail="Provider icon not found")
         return FileResponse(icon_path, headers={"Cache-Control": "no-cache"})
 
     async def get_provider_schema(self, provider_type: str):
         if not self.lifecycle or not self.lifecycle.provider_manager:
-            raise HTTPException(status_code=404, detail="Provider manager not available")
+            raise HTTPException(
+                status_code=404, detail="Provider manager not available"
+            )
 
         schema = self.lifecycle.provider_manager.get_schema(provider_type)
         if not schema:
@@ -273,16 +297,24 @@ class ProvidersRoutes(Routes):
         configured_providers = self.lifecycle.kira_config.get("providers", {})
 
         for provider_id in configured_providers:
-            provider_info = self.lifecycle.provider_manager.get_provider_info(provider_id)
+            provider_info = self.lifecycle.provider_manager.get_provider_info(
+                provider_id
+            )
             if not provider_info:
                 continue
-            is_active = self.lifecycle.provider_manager.get_provider(provider_id) is not None
-            config = self.lifecycle.kira_config.get("providers", {}).get(provider_id, {})
-            providers.append(self._provider_response(
-                provider_info,
-                "active" if is_active else "inactive",
-                config.get("model_config", {}),
-            ))
+            is_active = (
+                self.lifecycle.provider_manager.get_provider(provider_id) is not None
+            )
+            config = self.lifecycle.kira_config.get("providers", {}).get(
+                provider_id, {}
+            )
+            providers.append(
+                self._provider_response(
+                    provider_info,
+                    "active" if is_active else "inactive",
+                    config.get("model_config", {}),
+                )
+            )
         return providers
 
     async def create_provider(self, payload: ProviderBase):
@@ -314,10 +346,16 @@ class ProvidersRoutes(Routes):
             self.lifecycle.kira_config["providers"][provider_id] = generated_config
             self.lifecycle.kira_config.save_config()
             config_for_instantiation = generated_config.copy()
-            self.lifecycle.provider_manager.set_provider(provider_id, config_for_instantiation)
-            provider_info = self.lifecycle.provider_manager.get_provider_info(provider_id)
+            self.lifecycle.provider_manager.set_provider(
+                provider_id, config_for_instantiation
+            )
+            provider_info = self.lifecycle.provider_manager.get_provider_info(
+                provider_id
+            )
             if not provider_info:
-                raise HTTPException(status_code=500, detail="Failed to read created provider")
+                raise HTTPException(
+                    status_code=500, detail="Failed to read created provider"
+                )
             return await self.get_provider(provider_id)
         except Exception as e:
             logger.error(f"Error creating provider: {e}")
@@ -326,12 +364,18 @@ class ProvidersRoutes(Routes):
     async def get_provider(self, provider_id: str):
         if self.lifecycle and self.lifecycle.provider_manager:
             provider_inst = self.lifecycle.provider_manager.get_provider(provider_id)
-            provider_info = self.lifecycle.provider_manager.get_provider_info(provider_id)
+            provider_info = self.lifecycle.provider_manager.get_provider_info(
+                provider_id
+            )
             if not provider_info:
                 raise HTTPException(status_code=404, detail="Provider not found")
-            config = self.lifecycle.kira_config.get("providers", {}).get(provider_id, {})
+            config = self.lifecycle.kira_config.get("providers", {}).get(
+                provider_id, {}
+            )
             return self._provider_response(
-                provider_info, "active" if provider_inst else "inactive", config.get("model_config", {})
+                provider_info,
+                "active" if provider_inst else "inactive",
+                config.get("model_config", {}),
             )
         provider = self._providers.get(provider_id)
         if not provider:
@@ -352,10 +396,16 @@ class ProvidersRoutes(Routes):
             self.lifecycle.kira_config["providers"][provider_id] = config
             self.lifecycle.kira_config.save_config()
             config_for_instantiation = config.copy()
-            self.lifecycle.provider_manager.set_provider(provider_id, config_for_instantiation)
-            provider_info = self.lifecycle.provider_manager.get_provider_info(provider_id)
+            self.lifecycle.provider_manager.set_provider(
+                provider_id, config_for_instantiation
+            )
+            provider_info = self.lifecycle.provider_manager.get_provider_info(
+                provider_id
+            )
             if not provider_info:
-                raise HTTPException(status_code=500, detail="Failed to read updated provider")
+                raise HTTPException(
+                    status_code=500, detail="Failed to read updated provider"
+                )
             return await self.get_provider(provider_id)
         provider = self._providers.get(provider_id)
         if not provider:
@@ -364,7 +414,9 @@ class ProvidersRoutes(Routes):
         self._providers[provider_id] = updated
         return updated
 
-    async def update_provider_status(self, provider_id: str, payload: ProviderStatusUpdateRequest):
+    async def update_provider_status(
+        self, provider_id: str, payload: ProviderStatusUpdateRequest
+    ):
         if self.lifecycle and self.lifecycle.provider_manager:
             config = self.lifecycle.kira_config.get("providers", {}).get(provider_id)
             if not config:
@@ -379,7 +431,9 @@ class ProvidersRoutes(Routes):
                     config["status"] = previous_status
                 else:
                     config.pop("status", None)
-                raise HTTPException(status_code=500, detail="Failed to save provider status") from e
+                raise HTTPException(
+                    status_code=500, detail="Failed to save provider status"
+                ) from e
             self.lifecycle.provider_manager.set_provider(provider_id, config)
             return await self.get_provider(provider_id)
         provider = self._providers.get(provider_id)
@@ -395,16 +449,23 @@ class ProvidersRoutes(Routes):
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
         except (ConfigError, OSError) as e:
-            raise HTTPException(status_code=500, detail="Failed to save model configuration") from e
+            raise HTTPException(
+                status_code=500, detail="Failed to save model configuration"
+            ) from e
 
     async def add_model(self, provider_id: str, payload: ModelCreateRequest):
         if not self.lifecycle or not self.lifecycle.provider_manager:
-            raise HTTPException(status_code=500, detail="Provider manager not available")
+            raise HTTPException(
+                status_code=500, detail="Provider manager not available"
+            )
         model_type = payload.model_type
         model_name = payload.model_name.strip()
         if not model_type or not model_name:
-            raise HTTPException(status_code=400, detail="model_type and model_name are required")
-        model_id = self._change_model(self.lifecycle.provider_manager.register_model,
+            raise HTTPException(
+                status_code=400, detail="model_type and model_name are required"
+            )
+        model_id = self._change_model(
+            self.lifecycle.provider_manager.register_model,
             provider_id=provider_id,
             model_type=model_type,
             model_name=model_name,
@@ -416,7 +477,9 @@ class ProvidersRoutes(Routes):
 
     async def get_models(self, provider_id: str):
         if not self.lifecycle or not self.lifecycle.provider_manager:
-            raise HTTPException(status_code=500, detail="Provider manager not available")
+            raise HTTPException(
+                status_code=500, detail="Provider manager not available"
+            )
         models = self.lifecycle.provider_manager.get_models(provider_id)
         return models
 
@@ -428,8 +491,11 @@ class ProvidersRoutes(Routes):
         payload: ModelUpdateRequest,
     ):
         if not self.lifecycle or not self.lifecycle.provider_manager:
-            raise HTTPException(status_code=500, detail="Provider manager not available")
-        success = self._change_model(self.lifecycle.provider_manager.update_model,
+            raise HTTPException(
+                status_code=500, detail="Provider manager not available"
+            )
+        success = self._change_model(
+            self.lifecycle.provider_manager.update_model,
             provider_id=provider_id,
             model_type=model_type,
             model_id=model_id,
@@ -442,8 +508,11 @@ class ProvidersRoutes(Routes):
 
     async def delete_model(self, provider_id: str, model_type: str, model_id: str):
         if not self.lifecycle or not self.lifecycle.provider_manager:
-            raise HTTPException(status_code=500, detail="Provider manager not available")
-        success = self._change_model(self.lifecycle.provider_manager.delete_model,
+            raise HTTPException(
+                status_code=500, detail="Provider manager not available"
+            )
+        success = self._change_model(
+            self.lifecycle.provider_manager.delete_model,
             provider_id=provider_id,
             model_type=model_type,
             model_id=model_id,
@@ -470,11 +539,16 @@ class ProvidersRoutes(Routes):
         self._providers.pop(provider_id, None)
         return
 
-    async def sync_models(self, provider_id: str, model_type: str, payload: ModelSyncRequest):
+    async def sync_models(
+        self, provider_id: str, model_type: str, payload: ModelSyncRequest
+    ):
         """Batch sync upstream names while retaining existing internal model IDs."""
         if not self.lifecycle or not self.lifecycle.provider_manager:
-            raise HTTPException(status_code=500, detail="Provider manager not available")
-        result = self._change_model(self.lifecycle.provider_manager.sync_models,
+            raise HTTPException(
+                status_code=500, detail="Provider manager not available"
+            )
+        result = self._change_model(
+            self.lifecycle.provider_manager.sync_models,
             provider_id=provider_id,
             model_type=model_type,
             add_ids=payload.add_ids,
@@ -482,13 +556,17 @@ class ProvidersRoutes(Routes):
             config=payload.config or {},
         )
         if result["errors"]:
-            logger.warning(f"Sync models for {provider_id} had errors: {result['errors']}")
+            logger.warning(
+                f"Sync models for {provider_id} had errors: {result['errors']}"
+            )
         return result
 
     async def health_check(self, provider_id: str, model_type: str, model_id: str):
         """Test model availability by sending a simple prompt."""
         if not self.lifecycle or not self.lifecycle.provider_manager:
-            raise HTTPException(status_code=500, detail="Provider manager not available")
+            raise HTTPException(
+                status_code=500, detail="Provider manager not available"
+            )
         result = await self.lifecycle.provider_manager.health_check(
             provider_id=provider_id,
             model_type=model_type,
@@ -499,12 +577,18 @@ class ProvidersRoutes(Routes):
     async def fetch_remote_models(self, provider_id: str, model_type: str = "llm"):
         """Fetch available models from a provider's remote API."""
         if not self.lifecycle or not self.lifecycle.provider_manager:
-            raise HTTPException(status_code=500, detail="Provider manager not available")
+            raise HTTPException(
+                status_code=500, detail="Provider manager not available"
+            )
         try:
-            models = await self.lifecycle.provider_manager.fetch_remote_models(provider_id, model_type)
+            models = await self.lifecycle.provider_manager.fetch_remote_models(
+                provider_id, model_type
+            )
             return {"models": models}
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e))
         except Exception as e:
-            logger.error(f"Error fetching remote models for provider {provider_id}: {e}")
+            logger.error(
+                f"Error fetching remote models for provider {provider_id}: {e}"
+            )
             raise HTTPException(status_code=500, detail=str(e))

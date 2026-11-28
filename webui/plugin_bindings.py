@@ -26,8 +26,7 @@ logger = get_logger("plugin_manager", "cyan")
 class PluginPageStaticFiles(StaticFiles):
     """Serve a folder page with per-page auth, plugin state, and no-store."""
 
-    def __init__(self, directory: str, is_enabled: Callable[[], bool],
-                 need_auth: bool):
+    def __init__(self, directory: str, is_enabled: Callable[[], bool], need_auth: bool):
         super().__init__(directory=directory, html=True)
         self._is_enabled = is_enabled
         self._need_auth = need_auth
@@ -44,7 +43,8 @@ class PluginPageStaticFiles(StaticFiles):
             request = Request(scope)
             if not self._is_enabled():
                 response = HTMLResponse(
-                    content='{"detail":"Plugin disabled"}', status_code=404,
+                    content='{"detail":"Plugin disabled"}',
+                    status_code=404,
                 )
                 await response(scope, receive, send_with_no_store)
                 return
@@ -57,7 +57,8 @@ class PluginPageStaticFiles(StaticFiles):
                     token = request.cookies.get("kira_token")
                 if not token:
                     response = HTMLResponse(
-                        content='{"detail":"Not authenticated"}', status_code=401,
+                        content='{"detail":"Not authenticated"}',
+                        status_code=401,
                     )
                     await response(scope, receive, send_with_no_store)
                     return
@@ -65,7 +66,8 @@ class PluginPageStaticFiles(StaticFiles):
                     verify_session_token(token, request.app.state)
                 except Exception:
                     response = HTMLResponse(
-                        content='{"detail":"Invalid token"}', status_code=401,
+                        content='{"detail":"Invalid token"}',
+                        status_code=401,
                     )
                     await response(scope, receive, send_with_no_store)
                     return
@@ -75,8 +77,9 @@ class PluginPageStaticFiles(StaticFiles):
 class PluginStaticFiles(StaticFiles):
     """Serve static assets while their owning plugin is enabled."""
 
-    def __init__(self, directory: str, is_enabled: Callable[[], bool],
-                 html: bool = False):
+    def __init__(
+        self, directory: str, is_enabled: Callable[[], bool], html: bool = False
+    ):
         super().__init__(directory=directory, html=html)
         self._is_enabled = is_enabled
 
@@ -125,6 +128,7 @@ class PluginWebBindings:
             async def check():
                 if not mgr.is_plugin_enabled(pid):
                     raise HTTPException(status_code=404, detail="Plugin disabled")
+
             return check
 
         registered: list[str] = []
@@ -173,7 +177,9 @@ class PluginWebBindings:
             registered.append(full_path)
 
         if registered:
-            logger.info(f"Registered {len(registered)} API routes from {plugin_id}: {registered}")
+            logger.info(
+                f"Registered {len(registered)} API routes from {plugin_id}: {registered}"
+            )
 
     def register_ws(self, plugin_id: str) -> None:
         """Register plugin WebSocket routes on the FastAPI app.
@@ -228,7 +234,9 @@ class PluginWebBindings:
             registered.append(full_path)
 
         if registered:
-            logger.info(f"Registered {len(registered)} WS routes from {plugin_id}: {registered}")
+            logger.info(
+                f"Registered {len(registered)} WS routes from {plugin_id}: {registered}"
+            )
 
     def register_pages(self, plugin_id: str) -> None:
         """Resolve both page declaration forms before mounting them."""
@@ -243,17 +251,23 @@ class PluginWebBindings:
             page_obj = self._resolve_page(plugin_id, page)
             if page_obj is None:
                 continue
-            route_path = page["route"].lstrip('/')
+            route_path = page["route"].lstrip("/")
             full_path = f"/page/plugin/{plugin_id}/{route_path}"
-            if '{' in route_path and ':path}' in route_path:
+            if "{" in route_path and ":path}" in route_path:
                 full_path = f"/page/plugin/{plugin_id}/" + "{path:path}"
             if self._mount_page(
-                plugin_id, full_path, route_path, page_obj, page["auth"],
+                plugin_id,
+                full_path,
+                route_path,
+                page_obj,
+                page["auth"],
                 deferred=page.get("page") is None,
             ):
                 registered.append(full_path)
         if registered:
-            logger.info(f"Registered {len(registered)} page routes from {plugin_id}: {registered}")
+            logger.info(
+                f"Registered {len(registered)} page routes from {plugin_id}: {registered}"
+            )
 
     def _resolve_page(self, plugin_id: str, page: dict) -> PluginPage | None:
         page_obj = page.get("page")
@@ -264,7 +278,9 @@ class PluginWebBindings:
         func = page["func"]
         inst = self.manager.get_plugin_inst(plugin_id)
         if inst is None:
-            logger.error(f"Plugin {plugin_id}: instance not available for {func.__name__}")
+            logger.error(
+                f"Plugin {plugin_id}: instance not available for {func.__name__}"
+            )
             return None
         try:
             page_obj = getattr(inst, func.__name__)()
@@ -280,12 +296,21 @@ class PluginWebBindings:
             logger.error(f"Plugin {plugin_id}: failed to call {func.__name__}(): {e}")
             return None
         if not isinstance(page_obj, PluginPage):
-            logger.error(f"Plugin {plugin_id}: {func.__name__}() did not return PluginPage")
+            logger.error(
+                f"Plugin {plugin_id}: {func.__name__}() did not return PluginPage"
+            )
             return None
         return page_obj
 
-    def _mount_page(self, plugin_id: str, full_path: str, route_path: str,
-                    page: PluginPage, need_auth: bool, deferred: bool) -> bool:
+    def _mount_page(
+        self,
+        plugin_id: str,
+        full_path: str,
+        route_path: str,
+        page: PluginPage,
+        need_auth: bool,
+        deferred: bool,
+    ) -> bool:
         from fastapi import Depends
         from starlette.responses import RedirectResponse
 
@@ -294,7 +319,9 @@ class PluginWebBindings:
         if page.source == PluginPageSource.FOLDER:
             plugin_root = self.manager.get_plugin_module_path(plugin_id)
             if plugin_root is None:
-                logger.error(f"Plugin {plugin_id}: no plugin root, cannot serve folder page")
+                logger.error(
+                    f"Plugin {plugin_id}: no plugin root, cannot serve folder page"
+                )
                 return False
             try:
                 folder_path = (plugin_root / page.source_value).resolve()
@@ -308,7 +335,9 @@ class PluginWebBindings:
                 logger.error(f"Plugin {plugin_id}: invalid folder path: {e}")
                 return False
             if not folder_path.is_dir():
-                logger.error(f"Plugin {plugin_id}: folder not found: {page.source_value}")
+                logger.error(
+                    f"Plugin {plugin_id}: folder not found: {page.source_value}"
+                )
                 return False
             try:
                 self.app.mount(
@@ -327,12 +356,16 @@ class PluginWebBindings:
 
         dependencies = [Depends(require_auth)] if need_auth else []
         if page.source == PluginPageSource.URL:
+
             async def redirect_endpoint(_url=page.source_value):
                 return RedirectResponse(url=_url)
+
             endpoint = redirect_endpoint
         elif page.source == PluginPageSource.HTML:
+
             async def html_endpoint(_html=page.source_value):
                 return HTMLResponse(content=_html)
+
             endpoint = html_endpoint
         else:
             return False
@@ -340,8 +373,11 @@ class PluginWebBindings:
         if deferred:
             endpoint.__name__ = f"deferred_{endpoint.__name__}"
         self.app.add_api_route(
-            path=full_path, endpoint=endpoint, methods=["GET"],
-            dependencies=dependencies, tags=[f"plugin:{plugin_id}"],
+            path=full_path,
+            endpoint=endpoint,
+            methods=["GET"],
+            dependencies=dependencies,
+            tags=[f"plugin:{plugin_id}"],
         )
         return True
 
@@ -358,7 +394,7 @@ class PluginWebBindings:
             return
         registered: list[str] = []
         for static in comp.static_dirs:
-            path_prefix = static["path"].lstrip('/')
+            path_prefix = static["path"].lstrip("/")
             full_path = f"/static/plugin/{plugin_id}/{path_prefix}"
             dir_path = plugin_root / static["directory"]
             if not dir_path.exists() or not dir_path.is_dir():
@@ -375,13 +411,18 @@ class PluginWebBindings:
                 )
                 registered.append(full_path)
             except Exception as e:
-                logger.error(f"Failed to mount static dir {dir_path} for plugin {plugin_id}: {e}")
+                logger.error(
+                    f"Failed to mount static dir {dir_path} for plugin {plugin_id}: {e}"
+                )
         if registered:
-            logger.info(f"Registered {len(registered)} static directories from {plugin_id}: {registered}")
+            logger.info(
+                f"Registered {len(registered)} static directories from {plugin_id}: {registered}"
+            )
 
     def get_all_widgets(self) -> list:
         """Collect widget data from all enabled plugins (called per API request)."""
         from webui.models import OverviewWidget
+
         widgets = []
         for pid, comp in self.manager.get_plugin_components().items():
             if not self.manager.is_plugin_enabled(pid):
@@ -397,15 +438,17 @@ class PluginWebBindings:
                 try:
                     result = getattr(inst, func.__name__)()
                     content = str(result) if result is not None else ""
-                    widgets.append(OverviewWidget(
-                        widget_id=wid,
-                        label=meta["label"],
-                        content=content,
-                        icon=meta["icon"],
-                        color=meta["color"],
-                        order=meta["order"],
-                        size=meta["size"],
-                    ))
+                    widgets.append(
+                        OverviewWidget(
+                            widget_id=wid,
+                            label=meta["label"],
+                            content=content,
+                            icon=meta["icon"],
+                            color=meta["color"],
+                            order=meta["order"],
+                            size=meta["size"],
+                        )
+                    )
                 except Exception as e:
                     logger.error(f"Widget {wid} failed: {e}")
         widgets.sort(key=lambda w: w.order)
@@ -437,10 +480,15 @@ class PluginWebBindings:
             should_remove = False
 
             # API / page routes registered via add_api_route
-            if hasattr(route, 'tags') and tag_prefix in (route.tags or []) or hasattr(route, 'path') and (
-                route.path.startswith(page_prefix)
-                or route.path.startswith(static_prefix)
-                or route.path.startswith(ws_prefix)
+            if (
+                hasattr(route, "tags")
+                and tag_prefix in (route.tags or [])
+                or hasattr(route, "path")
+                and (
+                    route.path.startswith(page_prefix)
+                    or route.path.startswith(static_prefix)
+                    or route.path.startswith(ws_prefix)
+                )
             ):
                 should_remove = True
 

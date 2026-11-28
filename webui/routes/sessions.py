@@ -22,16 +22,25 @@ class SessionsRoutes(Routes):
     def get_routes(self):
         return [
             RouteDefinition(
-                path="/api/messages", methods=["GET"], endpoint=self.list_messages,
-                tags=["sessions"], dependencies=[Depends(require_auth)],
+                path="/api/messages",
+                methods=["GET"],
+                endpoint=self.list_messages,
+                tags=["sessions"],
+                dependencies=[Depends(require_auth)],
             ),
             RouteDefinition(
-                path="/api/messages/{message_id}/media", methods=["GET"], endpoint=self.get_message_media,
-                tags=["sessions"], dependencies=[Depends(require_auth)],
+                path="/api/messages/{message_id}/media",
+                methods=["GET"],
+                endpoint=self.get_message_media,
+                tags=["sessions"],
+                dependencies=[Depends(require_auth)],
             ),
             RouteDefinition(
-                path="/api/messages/{message_id}", methods=["GET"], endpoint=self.get_message,
-                tags=["sessions"], dependencies=[Depends(require_auth)],
+                path="/api/messages/{message_id}",
+                methods=["GET"],
+                endpoint=self.get_message,
+                tags=["sessions"],
+                dependencies=[Depends(require_auth)],
             ),
             RouteDefinition(
                 path="/api/sessions",
@@ -68,13 +77,19 @@ class SessionsRoutes(Routes):
     def message_history(self):
         return getattr(self.lifecycle, "message_history", None)
 
-    async def list_messages(self, session_id: str, cursor: str | None = None,
-                            limit: int = 50, llm_message_id: str | None = None):
+    async def list_messages(
+        self,
+        session_id: str,
+        cursor: str | None = None,
+        limit: int = 50,
+        llm_message_id: str | None = None,
+    ):
         if self.message_history is None:
             raise HTTPException(status_code=503, detail="Message history unavailable")
         try:
             page = await self.message_history.list_messages(
-                session_id, cursor=cursor, limit=limit, llm_message_id=llm_message_id)
+                session_id, cursor=cursor, limit=limit, llm_message_id=llm_message_id
+            )
             return page.to_dict()
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -85,7 +100,10 @@ class SessionsRoutes(Routes):
         message = await self.message_history.get_message(internal_message_id=message_id)
         if message is None:
             raise HTTPException(status_code=404, detail="Message not found")
-        return {"message": message.to_dict(), "memory": await self.message_history.get_linked_memory(message)}
+        return {
+            "message": message.to_dict(),
+            "memory": await self.message_history.get_linked_memory(message),
+        }
 
     async def get_message_media(self, message_id: str, element_path: str):
         """Serve only archived media referenced by a persisted message element."""
@@ -100,20 +118,29 @@ class SessionsRoutes(Routes):
         for part in element_path.split("."):
             chain = element.get("chain")
             index = int(part)
-            if not isinstance(chain, list) or index >= len(chain) or not isinstance(chain[index], dict):
+            if (
+                not isinstance(chain, list)
+                or index >= len(chain)
+                or not isinstance(chain[index], dict)
+            ):
                 raise HTTPException(status_code=404, detail="Message element not found")
             element = chain[index]
         file = element.get("file")
-        if (element.get("type") not in {"image", "sticker", "record", "video", "file"}
-                or element.get("file_type") != "archive" or not isinstance(file, str)
-                or not re.fullmatch(rf"{MEDIA_ROOT_NAME}/archive/[0-9a-f]{{64}}", file)):
+        if (
+            element.get("type") not in {"image", "sticker", "record", "video", "file"}
+            or element.get("file_type") != "archive"
+            or not isinstance(file, str)
+            or not re.fullmatch(rf"{MEDIA_ROOT_NAME}/archive/[0-9a-f]{{64}}", file)
+        ):
             raise HTTPException(status_code=404, detail="Archived media unavailable")
 
         def resolve_media():
             root = get_data_path() / MEDIA_ROOT_NAME / "archive"
             target = (get_data_path() / file).resolve()
             if not is_within_directory(root, target) or not target.is_file():
-                raise HTTPException(status_code=404, detail="Archived media unavailable")
+                raise HTTPException(
+                    status_code=404, detail="Archived media unavailable"
+                )
             with target.open("rb") as source:
                 inferred = _infer_mime_from_bytes(source.read(16))
             return target, inferred
@@ -121,15 +148,29 @@ class SessionsRoutes(Routes):
         try:
             target, inferred_mime = await asyncio.to_thread(resolve_media)
         except (OSError, ValueError) as exc:
-            raise HTTPException(status_code=404, detail="Archived media unavailable") from exc
+            raise HTTPException(
+                status_code=404, detail="Archived media unavailable"
+            ) from exc
         name = element.get("name")
-        filename = PureWindowsPath(name).name if isinstance(name, str) and name else target.name
+        filename = (
+            PureWindowsPath(name).name
+            if isinstance(name, str) and name
+            else target.name
+        )
         mime = inferred_mime or element.get("mime") or mimetypes.guess_type(filename)[0]
-        if not isinstance(mime, str) or not re.fullmatch(r"(?:image|audio|video)/[a-zA-Z0-9.+-]+", mime):
+        if not isinstance(mime, str) or not re.fullmatch(
+            r"(?:image|audio|video)/[a-zA-Z0-9.+-]+", mime
+        ):
             mime = "application/octet-stream"
-        return FileResponse(target, media_type=mime, filename=filename, headers={
-            "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
-        })
+        return FileResponse(
+            target,
+            media_type=mime,
+            filename=filename,
+            headers={
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
 
     @staticmethod
     def _validate_capabilities_payload(capabilities: object) -> None:
@@ -137,7 +178,9 @@ class SessionsRoutes(Routes):
         if capabilities is None:
             return
         if not isinstance(capabilities, dict):
-            raise HTTPException(status_code=400, detail="Capabilities must be an object or null")
+            raise HTTPException(
+                status_code=400, detail="Capabilities must be an object or null"
+            )
 
         capability_schema = {
             "image_recognition": {"enabled": bool, "mode": str, "desc_prompt": str},
@@ -150,13 +193,24 @@ class SessionsRoutes(Routes):
         for group_name, group_config in capabilities.items():
             expected_fields = capability_schema.get(group_name)
             if expected_fields is None or not isinstance(group_config, dict):
-                raise HTTPException(status_code=400, detail=f"Invalid capability group: {group_name}")
+                raise HTTPException(
+                    status_code=400, detail=f"Invalid capability group: {group_name}"
+                )
             for field_name, field_value in group_config.items():
                 expected_type = expected_fields.get(field_name)
                 if expected_type is None or not isinstance(field_value, expected_type):
-                    raise HTTPException(status_code=400, detail=f"Invalid capability field: {group_name}.{field_name}")
-            if group_name == "image_recognition" and group_config.get("mode") not in (None, "vlm_description", "native"):
-                raise HTTPException(status_code=400, detail="Invalid image recognition mode")
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid capability field: {group_name}.{field_name}",
+                    )
+            if group_name == "image_recognition" and group_config.get("mode") not in (
+                None,
+                "vlm_description",
+                "native",
+            ):
+                raise HTTPException(
+                    status_code=400, detail="Invalid image recognition mode"
+                )
 
     @staticmethod
     def _session_response(session_id: str, row: Session | None) -> dict:
@@ -169,21 +223,29 @@ class SessionsRoutes(Routes):
             "parent_id": row.parent_id if row else None,
             "created_at": row.created_at if row else None,
             "updated_at": row.updated_at if row else None,
-            "adapter_name": adapter, "session_type": kind, "session_id": target,
+            "adapter_name": adapter,
+            "session_type": kind,
+            "session_id": target,
             "title": row.session_title if row else "",
             "description": row.session_description if row else "",
             "capabilities": row.data.get("capabilities") if row else None,
             "llm_model": row.data.get("llm_model") if row else None,
             "messages": row.content if row else [],
-            "message_count": len(row.content) if row and isinstance(row.content, list) else 0,
+            "message_count": len(row.content)
+            if row and isinstance(row.content, list)
+            else 0,
         }
 
     async def list_sessions(self):
         if not self.lifecycle or not self.lifecycle.session_manager:
             return {"sessions": []}
 
-        records = await self.lifecycle.session_manager.get_sessions(include_content=False)
-        message_counts = await self.lifecycle.session_manager.get_session_message_counts()
+        records = await self.lifecycle.session_manager.get_sessions(
+            include_content=False
+        )
+        message_counts = (
+            await self.lifecycle.session_manager.get_session_message_counts()
+        )
         malformed = set()
         sessions = []
         for row in records:
@@ -226,7 +288,11 @@ class SessionsRoutes(Routes):
         except ValueError as exc:
             raise HTTPException(status_code=404, detail="Session not found") from exc
         if row is None or row.content is None:
-            history = await self.message_history.list_messages(session_id, limit=1) if self.message_history else None
+            history = (
+                await self.message_history.list_messages(session_id, limit=1)
+                if self.message_history
+                else None
+            )
             if history is None or not history.messages:
                 raise HTTPException(status_code=404, detail="Session not found")
             response = self._session_response(session_id, row)
@@ -241,7 +307,9 @@ class SessionsRoutes(Routes):
             raise HTTPException(status_code=400, detail="Invalid session id format")
 
         messages = payload.get("messages")
-        changes = {key: payload[key] for key in ("title", "description") if key in payload}
+        changes = {
+            key: payload[key] for key in ("title", "description") if key in payload
+        }
         if "capabilities" in payload:
             self._validate_capabilities_payload(payload["capabilities"])
             changes["capabilities"] = payload["capabilities"]
@@ -249,23 +317,35 @@ class SessionsRoutes(Routes):
             reference = payload["llm_model"]
             if reference is not None:
                 if not isinstance(reference, str):
-                    raise HTTPException(status_code=400, detail="LLM model must be a string or null")
+                    raise HTTPException(
+                        status_code=400, detail="LLM model must be a string or null"
+                    )
                 provider_id, separator, model_id = reference.partition(":")
                 if not separator or not provider_id or not model_id:
-                    raise HTTPException(status_code=400, detail="Invalid LLM model reference")
+                    raise HTTPException(
+                        status_code=400, detail="Invalid LLM model reference"
+                    )
                 provider_manager = self.lifecycle.provider_manager
                 if provider_manager is None:
-                    raise HTTPException(status_code=503, detail="Provider manager unavailable")
-                model = provider_manager.get_model_info(provider_id, model_id, ModelType.LLM)
+                    raise HTTPException(
+                        status_code=503, detail="Provider manager unavailable"
+                    )
+                model = provider_manager.get_model_info(
+                    provider_id, model_id, ModelType.LLM
+                )
                 if model is None:
-                    raise HTTPException(status_code=400, detail=f"LLM model not found: {reference}")
+                    raise HTTPException(
+                        status_code=400, detail=f"LLM model not found: {reference}"
+                    )
                 reference = f"{model.provider_id}:{model.model_id}"
             changes["llm_model"] = reference
         if messages is not None:
             changes["content"] = messages
         if changes:
             try:
-                await self.lifecycle.session_manager.update_session(session_id, **changes)
+                await self.lifecycle.session_manager.update_session(
+                    session_id, **changes
+                )
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
 

@@ -1,6 +1,10 @@
 from fastapi import Depends, HTTPException
 
-from core.agent.subagent_presets import DuplicatePresetNameError, ReadOnlyPresetError, SubAgentPreset
+from core.agent.subagent_presets import (
+    DuplicatePresetNameError,
+    ReadOnlyPresetError,
+    SubAgentPreset,
+)
 from core.logging_manager import get_logger
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
@@ -69,7 +73,9 @@ class SubAgentsRoutes(Routes):
                 detail=str(exc),
             ) from exc
         except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Subagent preset not found") from exc
+            raise HTTPException(
+                status_code=404, detail="Subagent preset not found"
+            ) from exc
         except OSError as exc:
             logger.exception("Failed to save subagent preset %s", preset_id)
             raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -80,7 +86,9 @@ class SubAgentsRoutes(Routes):
         except ReadOnlyPresetError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
         except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Subagent preset not found") from exc
+            raise HTTPException(
+                status_code=404, detail="Subagent preset not found"
+            ) from exc
         except OSError as exc:
             logger.exception("Failed to delete subagent preset %s", preset_id)
             raise HTTPException(status_code=500, detail=str(exc)) from exc

@@ -22,13 +22,18 @@ class PluginUploadSizeLimitMiddleware:
         if (
             scope["type"] != "http"
             or scope["method"] != "POST"
-            or scope["path"] not in {PLUGIN_UPLOAD_PATH, "/api/plugins/tasks/install/upload"}
+            or scope["path"]
+            not in {PLUGIN_UPLOAD_PATH, "/api/plugins/tasks/install/upload"}
         ):
             await self.app(scope, receive, send)
             return
 
         content_length = next(
-            (value for name, value in scope.get("headers", []) if name == b"content-length"),
+            (
+                value
+                for name, value in scope.get("headers", [])
+                if name == b"content-length"
+            ),
             None,
         )
         if content_length is not None:
@@ -98,15 +103,18 @@ class PluginBridgeInjectionMiddleware(BaseHTTPMiddleware):
         ):
             return response
 
-        body = b"".join([
-            chunk if isinstance(chunk, bytes) else chunk.encode()
-            async for chunk in response.body_iterator
-        ])
+        body = b"".join(
+            [
+                chunk if isinstance(chunk, bytes) else chunk.encode()
+                async for chunk in response.body_iterator
+            ]
+        )
         try:
             html = body.decode("utf-8")
         except UnicodeDecodeError:
             return Response(
-                content=body, status_code=response.status_code,
+                content=body,
+                status_code=response.status_code,
                 headers=dict(response.headers),
             )
 
@@ -116,8 +124,13 @@ class PluginBridgeInjectionMiddleware(BaseHTTPMiddleware):
         bootstrap = ""
         theme = request.query_params.get("theme")
         locale = request.query_params.get("locale")
-        plugin_id, separator, page_route = path[len(prefix):].partition("/")
-        if theme in {"light", "dark"} and locale in {"zh", "en"} and plugin_id and separator:
+        plugin_id, separator, page_route = path[len(prefix) :].partition("/")
+        if (
+            theme in {"light", "dark"}
+            and locale in {"zh", "en"}
+            and plugin_id
+            and separator
+        ):
             context = {
                 "pluginId": plugin_id,
                 "pageRoute": page_route,
@@ -125,7 +138,9 @@ class PluginBridgeInjectionMiddleware(BaseHTTPMiddleware):
                 "locale": locale,
             }
             # Escape markup delimiters so paths cannot terminate the JSON script.
-            context_json = json.dumps(context, ensure_ascii=True).replace("<", r"\u003c")
+            context_json = json.dumps(context, ensure_ascii=True).replace(
+                "<", r"\u003c"
+            )
             context_json = context_json.replace(">", r"\u003e").replace("&", r"\u0026")
             bootstrap = (
                 '<script id="kira-plugin-page-context" type="application/json">'
@@ -135,7 +150,11 @@ class PluginBridgeInjectionMiddleware(BaseHTTPMiddleware):
             def set_html_attributes(match):
                 attrs = re.sub(
                     r"""\s+([^\s=/>"']+)(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>"']+))?""",
-                    lambda attr: "" if attr.group(1).lower() in {"data-theme", "lang"} else attr.group(0),
+                    lambda attr: (
+                        ""
+                        if attr.group(1).lower() in {"data-theme", "lang"}
+                        else attr.group(0)
+                    ),
                     match.group(1),
                 )
                 return f'<html{attrs} data-theme="{theme}" lang="{locale}">'
@@ -143,27 +162,36 @@ class PluginBridgeInjectionMiddleware(BaseHTTPMiddleware):
             html = html_tag.sub(set_html_attributes, html, count=1)
 
         bridge_present = re.search(
-            r"<script\b" + tag_attributes + r"""\ssrc\s*=\s*["']?/plugin-bridge\.js(?=["'?\s>])""",
-            html, flags=re.IGNORECASE,
+            r"<script\b"
+            + tag_attributes
+            + r"""\ssrc\s*=\s*["']?/plugin-bridge\.js(?=["'?\s>])""",
+            html,
+            flags=re.IGNORECASE,
         )
         if not bridge_present:
             bootstrap += '<script src="/plugin-bridge.js"></script>'
         if bootstrap:
             head = re.search(r"<head\b" + tag_attributes + ">", html, re.IGNORECASE)
             if head:
-                html = html[:head.end()] + bootstrap + html[head.end():]
+                html = html[: head.end()] + bootstrap + html[head.end() :]
             else:
                 root = html_tag.search(html)
                 if root:
-                    html = html[:root.end()] + bootstrap + html[root.end():]
+                    html = html[: root.end()] + bootstrap + html[root.end() :]
                 else:
                     html = bootstrap + html
 
         # Personalized responses must not reuse cached context or old body validators.
         strip = {"content-length", "etag", "last-modified"}
-        headers = {key: value for key, value in response.headers.items() if key.lower() not in strip}
+        headers = {
+            key: value
+            for key, value in response.headers.items()
+            if key.lower() not in strip
+        }
         headers["cache-control"] = "no-store"
         return Response(
-            content=html.encode("utf-8"), status_code=response.status_code,
-            headers=headers, media_type="text/html",
+            content=html.encode("utf-8"),
+            status_code=response.status_code,
+            headers=headers,
+            media_type="text/html",
         )

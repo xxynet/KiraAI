@@ -78,7 +78,9 @@ class StickersRoutes(Routes):
             file_path = sticker_folder / path
             if not file_path.exists():
                 continue
-            stickers.append(StickerItem(id=str(sticker_id), desc=str(desc), path=str(path)))
+            stickers.append(
+                StickerItem(id=str(sticker_id), desc=str(desc), path=str(path))
+            )
         return stickers
 
     async def add_sticker(
@@ -95,7 +97,9 @@ class StickersRoutes(Routes):
             logger.error(f"Failed to read uploaded sticker file: {e}")
             raise HTTPException(status_code=500, detail="Failed to read sticker file")
         if len(file_bytes) > MAX_STICKER_UPLOAD_BYTES:
-            raise HTTPException(status_code=413, detail="Sticker file exceeds the size limit")
+            raise HTTPException(
+                status_code=413, detail="Sticker file exceeds the size limit"
+            )
         sticker_id = id.strip() if id else None
         desc = description.strip() if description else None
         if self.lifecycle and getattr(self.lifecycle, "sticker_manager", None):
@@ -111,12 +115,14 @@ class StickersRoutes(Routes):
             except Exception as e:
                 logger.error(f"Error adding sticker: {e}")
                 raise HTTPException(status_code=500, detail="Failed to add sticker")
-            return StickerItem(id=result["id"], desc=result["desc"], path=result["path"])
+            return StickerItem(
+                id=result["id"], desc=result["desc"], path=result["path"]
+            )
 
         sticker_config_path = get_data_path() / "config" / "sticker.json"
         try:
             if sticker_config_path.exists():
-                with open(sticker_config_path, "r", encoding="utf-8") as f:
+                with open(sticker_config_path, encoding="utf-8") as f:
                     content = f.read()
                 data = json.loads(content) if content.strip() else {}
             else:
@@ -146,8 +152,11 @@ class StickersRoutes(Routes):
             sticker_folder.mkdir(parents=True, exist_ok=True)
         except Exception as e:
             logger.error(f"Failed to create sticker folder {sticker_folder}: {e}")
-            raise HTTPException(status_code=500, detail="Failed to prepare sticker folder")
+            raise HTTPException(
+                status_code=500, detail="Failed to prepare sticker folder"
+            )
         from pathlib import Path as _Path
+
         base_name = _Path(file.filename).name
         name_only = _Path(base_name).stem
         ext = _Path(base_name).suffix
@@ -200,19 +209,25 @@ class StickersRoutes(Routes):
         desc = payload.desc or ""
         if self.lifecycle and getattr(self.lifecycle, "sticker_manager", None):
             try:
-                result = await self.lifecycle.sticker_manager.update_sticker_desc(sticker_id, desc)
+                result = await self.lifecycle.sticker_manager.update_sticker_desc(
+                    sticker_id, desc
+                )
             except KeyError:
                 raise HTTPException(status_code=404, detail="Sticker not found")
             except Exception as e:
                 logger.error(f"Error updating sticker {sticker_id}: {e}")
                 raise HTTPException(status_code=500, detail="Failed to update sticker")
-            return StickerItem(id=result["id"], desc=result["desc"], path=result["path"])
+            return StickerItem(
+                id=result["id"], desc=result["desc"], path=result["path"]
+            )
         raise HTTPException(status_code=404, detail="Sticker manager not available")
 
     async def delete_sticker(self, sticker_id: str, delete_file: bool = False):
         if self.lifecycle and getattr(self.lifecycle, "sticker_manager", None):
             try:
-                await self.lifecycle.sticker_manager.delete_sticker(sticker_id, delete_file=delete_file)
+                await self.lifecycle.sticker_manager.delete_sticker(
+                    sticker_id, delete_file=delete_file
+                )
             except KeyError:
                 raise HTTPException(status_code=404, detail="Sticker not found")
             except Exception as e:

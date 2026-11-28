@@ -126,8 +126,12 @@ class AdaptersRoutes(Routes):
     async def get_adapter_platforms(self, details: bool = False):
         """Return stable platform IDs for backwards compatibility."""
         try:
-            if not self.lifecycle or not getattr(self.lifecycle, "adapter_manager", None):
-                logger.warning("Adapter manager not available for get_adapter_platforms")
+            if not self.lifecycle or not getattr(
+                self.lifecycle, "adapter_manager", None
+            ):
+                logger.warning(
+                    "Adapter manager not available for get_adapter_platforms"
+                )
                 return []
             adapter_manager = self.lifecycle.adapter_manager
             if not details:
@@ -194,7 +198,9 @@ class AdaptersRoutes(Routes):
                 self._qrcode_login_sessions.pop(old_id, None)
                 await old_session.handler.close()
         if len(self._qrcode_login_sessions) >= 20:
-            raise HTTPException(status_code=429, detail="Too many QR-code login sessions")
+            raise HTTPException(
+                status_code=429, detail="Too many QR-code login sessions"
+            )
 
         handler = adapter_cls.create_qrcode_login_handler(payload.config)
         if handler is None:
@@ -229,7 +235,9 @@ class AdaptersRoutes(Routes):
     async def poll_qrcode_login(self, session_id: str):
         login_session = self._qrcode_login_sessions.get(session_id)
         if not login_session:
-            raise HTTPException(status_code=404, detail="QR-code login session not found")
+            raise HTTPException(
+                status_code=404, detail="QR-code login session not found"
+            )
         if login_session.expires_at <= time.monotonic():
             self._qrcode_login_sessions.pop(session_id, None)
             await login_session.handler.close()
@@ -268,13 +276,19 @@ class AdaptersRoutes(Routes):
             return manifest.get("locales") or {}
         return {}
 
-    def _get_adapter_platform_display(self, platform: str) -> tuple[str, dict[str, dict[str, str]]]:
+    def _get_adapter_platform_display(
+        self, platform: str
+    ) -> tuple[str, dict[str, dict[str, str]]]:
         if self.lifecycle and getattr(self.lifecycle, "adapter_manager", None):
             manifest = self.lifecycle.adapter_manager.get_manifest(platform)
-            return manifest.get("display_name") or platform, manifest.get("locales") or {}
+            return manifest.get("display_name") or platform, manifest.get(
+                "locales"
+            ) or {}
         return platform, {}
 
-    def _get_adapter_platform_icon(self, platform: str, dark: bool = False) -> str | None:
+    def _get_adapter_platform_icon(
+        self, platform: str, dark: bool = False
+    ) -> str | None:
         if not self.lifecycle or not getattr(self.lifecycle, "adapter_manager", None):
             return None
         if not self.lifecycle.adapter_manager.get_icon_path(platform, dark=dark):
@@ -283,7 +297,9 @@ class AdaptersRoutes(Routes):
         return f"/api/adapter-platforms/{quote(platform, safe='')}/icon{suffix}"
 
     def _adapter_response(self, info, status_value: str) -> AdapterResponse:
-        platform_display_name, platform_locales = self._get_adapter_platform_display(info.platform)
+        platform_display_name, platform_locales = self._get_adapter_platform_display(
+            info.platform
+        )
         return AdapterResponse(
             id=info.adapter_id,
             name=info.name,
@@ -295,7 +311,9 @@ class AdaptersRoutes(Routes):
             platform_display_name=platform_display_name,
             platform_locales=platform_locales,
             platform_icon=self._get_adapter_platform_icon(info.platform),
-            platform_icon_dark=self._get_adapter_platform_icon(info.platform, dark=True),
+            platform_icon_dark=self._get_adapter_platform_icon(
+                info.platform, dark=True
+            ),
         )
 
     async def get_adapter_platform_icon(self, platform: str, dark: bool = False):
@@ -315,7 +333,9 @@ class AdaptersRoutes(Routes):
                 adapters: list[AdapterResponse] = []
                 for info in adapters_info:
                     adapter_status = (
-                        "active" if info.enabled and info.name in running_adapters else "inactive"
+                        "active"
+                        if info.enabled and info.name in running_adapters
+                        else "inactive"
                     )
                     adapters.append(self._adapter_response(info, adapter_status))
                 return adapters
@@ -328,7 +348,9 @@ class AdaptersRoutes(Routes):
             name = payload.name
             platform = payload.platform
             if not name or not platform:
-                raise HTTPException(status_code=400, detail="name and platform are required")
+                raise HTTPException(
+                    status_code=400, detail="name and platform are required"
+                )
             try:
                 adapter_mgr = self.lifecycle.adapter_manager
                 info = await adapter_mgr.create_adapter(
@@ -339,9 +361,15 @@ class AdaptersRoutes(Routes):
                     config=payload.config or {},
                 )
                 if not info:
-                    raise HTTPException(status_code=500, detail="Failed to create adapter")
+                    raise HTTPException(
+                        status_code=500, detail="Failed to create adapter"
+                    )
                 running_adapters = set(adapter_mgr.get_adapters().keys())
-                status_value = "active" if info.enabled and info.name in running_adapters else "inactive"
+                status_value = (
+                    "active"
+                    if info.enabled and info.name in running_adapters
+                    else "inactive"
+                )
                 return self._adapter_response(info, status_value)
             except HTTPException:
                 raise
@@ -354,14 +382,22 @@ class AdaptersRoutes(Routes):
         return adapter
 
     async def get_adapter(self, adapter_id: str):
-        if self.lifecycle and getattr(self.lifecycle, "adapter_manager", None) and getattr(self.lifecycle, "kira_config", None):
+        if (
+            self.lifecycle
+            and getattr(self.lifecycle, "adapter_manager", None)
+            and getattr(self.lifecycle, "kira_config", None)
+        ):
             try:
                 adapter_mgr = self.lifecycle.adapter_manager
                 info = adapter_mgr.get_adapter_info(adapter_id)
                 if not info:
                     raise HTTPException(status_code=404, detail="Adapter not found")
                 running_adapters = set(adapter_mgr.get_adapters().keys())
-                adapter_status = "active" if info.enabled and info.name in running_adapters else "inactive"
+                adapter_status = (
+                    "active"
+                    if info.enabled and info.name in running_adapters
+                    else "inactive"
+                )
                 return self._adapter_response(info, adapter_status)
             except HTTPException:
                 raise
@@ -387,7 +423,11 @@ class AdaptersRoutes(Routes):
                 if not info:
                     raise HTTPException(status_code=404, detail="Adapter not found")
                 running_adapters = set(adapter_mgr.get_adapters().keys())
-                status_value = "active" if info.enabled and info.name in running_adapters else "inactive"
+                status_value = (
+                    "active"
+                    if info.enabled and info.name in running_adapters
+                    else "inactive"
+                )
                 return self._adapter_response(info, status_value)
             except HTTPException:
                 raise

@@ -97,8 +97,14 @@ class OverviewRoutes(Routes):
         if self.lifecycle and getattr(self.lifecycle, "db_service", None):
             try:
                 since_ts = int(time.time()) - 86400  # 24 hours ago
-                message_hourly = await self.lifecycle.db_service.get_message_hourly_counts(since_ts)
-                message_by_platform = await self.lifecycle.db_service.get_message_platform_counts(since_ts)
+                message_hourly = (
+                    await self.lifecycle.db_service.get_message_hourly_counts(since_ts)
+                )
+                message_by_platform = (
+                    await self.lifecycle.db_service.get_message_platform_counts(
+                        since_ts
+                    )
+                )
             except Exception as e:
                 logger.error(f"Failed to collect message distribution stats: {e}")
 
