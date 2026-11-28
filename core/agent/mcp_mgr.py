@@ -46,6 +46,15 @@ def _normalize_env(value) -> dict[str, str] | None:
     return {str(key): str(item) for key, item in value.items() if item is not None}
 
 
+def _iter_leaf_exceptions(exc: BaseException):
+    sub_exceptions = getattr(exc, "exceptions", None)
+    if isinstance(sub_exceptions, tuple) and sub_exceptions:
+        for sub in sub_exceptions:
+            yield from _iter_leaf_exceptions(sub)
+    else:
+        yield exc
+
+
 @dataclass
 class MCPServer:
     type: Literal["stdio", "sse", "streamable_http"]
@@ -889,7 +898,7 @@ class MCPManager:
             try:
                 tools_response = await client.list_tools()
             except Exception as e:
-                logger.error(f"Failed to list MCP tools for {server.name}: {e}")
+                logger.exception("Failed to list MCP tools for %s: %s", server.name, e)
                 return []
             if isinstance(tools_response, dict):
                 tools = tools_response.get("tools", [])
@@ -914,7 +923,16 @@ class MCPManager:
 
             return server.tools
         except Exception as e:
-            logger.error(f"Failed to connect to MCP server {server.name}: {e}")
+            logger.exception("Failed to connect to MCP server %s: %s", server.name, e)
+            if isinstance(getattr(e, "exceptions", None), tuple):
+                for sub in _iter_leaf_exceptions(e):
+                    logger.error(
+                        "MCP server %s sub-exception: %s: %s",
+                        server.name,
+                        type(sub).__name__,
+                        sub,
+                        exc_info=(type(sub), sub, sub.__traceback__),
+                    )
             return []
         finally:
             if not keep_connection:

@@ -509,8 +509,10 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
                         await self._upload_file(target_id, media_elements[0], is_group)
                     )
                 except Exception as exc:
-                    logger.error(
-                        "Failed to upload QQ official media (%s)", type(exc).__name__
+                    logger.exception(
+                        "Failed to upload QQ official media (%s): %s",
+                        type(exc).__name__,
+                        exc,
                     )
                     return KiraIMSentResult(
                         ok=False,
@@ -603,7 +605,7 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
                 return KiraIMSentResult(message_id=display_id)
             except Exception as exc:
                 error = self._send_error_code(exc) or type(exc).__name__
-                logger.error("Failed to send QQ official message (%s)", error)
+                logger.exception("Failed to send QQ official message (%s): %s", error, exc)
                 return KiraIMSentResult(
                     ok=False, err=f"Failed to send QQ official message ({error})"
                 )

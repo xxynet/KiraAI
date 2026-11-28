@@ -113,7 +113,7 @@ class ToolExecutor:
                         )
                     except Exception as e:
                         result = f"Error: Failed to call tool '{name}': {e}"
-                        tool_logger.error(f"Failed to call tool '{name}': {e}")
+                        tool_logger.exception("Failed to call tool '%s': %s", name, e)
             else:
                 result = f"Error: Tool {name} not implemented"
                 tool_logger.error(f"Tool {name} not implemented")

@@ -85,9 +85,10 @@ class BuildRequestStage(BaseStage[IMBatchContext]):
                     )
                     return False
                 model_group = [default_llm]
-            except Exception as _:
-                llm_logger.error(
-                    "Default LLM model not configured, please configure it in Configuration"
+            except Exception as exc:
+                llm_logger.exception(
+                    "Failed to resolve default LLM model (please verify Configuration): %s",
+                    exc,
                 )
                 return False
 
