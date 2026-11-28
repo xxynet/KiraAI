@@ -2,6 +2,7 @@
 @import './components/custom-select.css';
 @import './components/form-controls.css';
 @import './components/theme-text.css';
+@import './components/status-colors.css';
 @import './components/chat-bubble.css';
 @import './components/markdown.css';
 
@@ -374,19 +375,7 @@ button,
   100% { transform: rotate(360deg); }
 }
 
-/* Stat / badge colors — brightened so icons & tag text remain legible */
-.dark .bg-blue-100 { background-color: rgba(59, 130, 246, 0.2) !important; }
-.dark .bg-green-100 { background-color: rgba(34, 197, 94, 0.2) !important; }
-.dark .bg-purple-100 { background-color: rgba(168, 85, 247, 0.2) !important; }
-.dark .bg-yellow-100 { background-color: rgba(251, 191, 36, 0.2) !important; }
-.dark .text-blue-600 { color: #60a5fa !important; }
-.dark .text-green-600 { color: #34d399 !important; }
-.dark .text-purple-600 { color: #a78bfa !important; }
-.dark .text-yellow-600 { color: #fbbf24 !important; }
-.dark .text-red-600 { color: #f87171 !important; }
-
-/* Keep session ID copy feedback visible despite the global dark-mode color overrides. */
-.dark .session-copy-button:hover { color: #93c5fd !important; }
+/* Stat / badge colors are defined by the status-colors component classes. */
 
 /* Borders / dividers — must hit 3:1 non-text contrast (WCAG 1.4.11) */
 .dark .border-gray-100,

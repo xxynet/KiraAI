@@ -76,10 +76,10 @@
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-theme-subtle">{{ session.history_count || 0 }}</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-              <button class="text-blue-600 hover:text-blue-900 dark:hover:text-blue-300 mr-3" @click="showHistory(session)">{{ $t('sessions.history.view') }}</button>
-              <button class="text-blue-600 hover:text-blue-900 dark:hover:text-blue-300 mr-3" @click="editSession(session)">{{ $t('sessions.edit') }}</button>
+              <button class="text-status-info hover:text-blue-900 dark:hover:text-blue-300 mr-3" @click="showHistory(session)">{{ $t('sessions.history.view') }}</button>
+              <button class="text-status-info hover:text-blue-900 dark:hover:text-blue-300 mr-3" @click="editSession(session)">{{ $t('sessions.edit') }}</button>
               <button class="text-amber-600 hover:text-amber-900 dark:hover:text-amber-600 mr-3" @click="handleClear(session)">{{ $t('sessions.clear') }}</button>
-              <button class="text-red-600 hover:text-red-900 dark:hover:text-red-300" @click="handleDelete(session)">{{ $t('sessions.delete') }}</button>
+              <button class="text-status-danger hover:text-red-900 dark:hover:text-red-300" @click="handleDelete(session)">{{ $t('sessions.delete') }}</button>
             </td>
           </tr>
         </tbody>
@@ -409,8 +409,8 @@ function getSessionTypeLabel(type: string): string {
 }
 
 function getSessionTypeColor(type: string): string {
-  if (type === 'dm') return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
-  if (type === 'gm') return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
+  if (type === 'dm') return 'bg-status-info-soft text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+  if (type === 'gm') return 'bg-status-violet-soft text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
   return 'bg-gray-100 text-theme-strong dark:bg-gray-700'
 }
 

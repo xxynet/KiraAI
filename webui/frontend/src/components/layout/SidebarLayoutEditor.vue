@@ -2,7 +2,7 @@
   <section ref="editorRef" class="space-y-3" aria-labelledby="sidebar-layout-title" @dragstart.prevent>
     <div class="flex flex-wrap items-center justify-between gap-2">
       <h4 id="sidebar-layout-title" class="text-sm font-medium text-theme-body">{{ $t('settings.sidebar_layout_title') }}</h4>
-      <button type="button" class="text-sm text-blue-600 dark:text-blue-400 hover:underline" @click="resetLayout">
+      <button type="button" class="text-sm text-status-info dark:text-blue-400 hover:underline" @click="resetLayout">
         {{ $t('settings.sidebar_layout_reset') }}
       </button>
     </div>

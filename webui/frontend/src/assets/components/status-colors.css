@@ -1,0 +1,36 @@
+/* Semantic status colors replacing the global dark-mode Tailwind overrides. */
+.text-status-info {
+  color: var(--color-info-text);
+}
+
+.text-status-success {
+  color: var(--color-success-text);
+}
+
+.text-status-warning {
+  color: var(--color-warning-text);
+}
+
+.text-status-danger {
+  color: var(--color-danger-text);
+}
+
+.text-status-violet {
+  color: var(--color-violet-text);
+}
+
+.bg-status-info-soft {
+  background-color: var(--color-info-soft);
+}
+
+.bg-status-success-soft {
+  background-color: var(--color-success-soft);
+}
+
+.bg-status-warning-soft {
+  background-color: var(--color-warning-soft);
+}
+
+.bg-status-violet-soft {
+  background-color: var(--color-violet-soft);
+}

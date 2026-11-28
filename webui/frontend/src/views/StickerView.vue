@@ -63,7 +63,7 @@
               {{ $t('sticker.edit') }}
             </button>
             <button
-              class="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors"
+              class="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 text-status-danger hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors"
               @click="handleDelete(sticker.id)"
             >
               {{ $t('common.delete') }}

@@ -41,7 +41,7 @@
       <p v-if="element.file_type !== 'archive'" class="text-xs text-theme-subtle">{{ $t('sessions.history.media_unavailable') }}</p>
       <div v-else-if="failed" class="space-y-2">
         <button type="button" class="chat-media-link" @click="loadMedia">{{ $t('sessions.history.retry') }}</button>
-        <p role="alert" class="text-xs text-red-600 dark:text-red-400">{{ $t('sessions.history.media_failed') }}</p>
+        <p role="alert" class="text-xs text-status-danger dark:text-red-400">{{ $t('sessions.history.media_failed') }}</p>
       </div>
       <p v-else-if="loading" role="status" class="text-xs text-theme-subtle">{{ $t('sessions.history.loading') }}</p>
       <img v-else-if="url" :src="url" :alt="$t('sessions.history.sticker')" class="max-h-full max-w-full rounded object-contain" @error="failed = true" />
@@ -52,7 +52,7 @@
       <button v-else-if="failed" type="button" class="chat-media-link" @click="loadMedia">
         {{ $t('sessions.history.retry') }}
       </button>
-      <p v-if="failed" role="alert" class="text-xs text-red-600 dark:text-red-400">{{ $t('sessions.history.media_failed') }}</p>
+      <p v-if="failed" role="alert" class="text-xs text-status-danger dark:text-red-400">{{ $t('sessions.history.media_failed') }}</p>
       <template v-if="url">
         <img v-if="element.type === 'image'" :src="url" :alt="element.caption || element.description || element.name || $t('sessions.history.image')" class="max-h-80 max-w-full rounded object-contain" @error="failed = true" />
         <audio v-else-if="element.type === 'record'" :src="url" controls preload="metadata" class="max-w-full" @error="failed = true" />

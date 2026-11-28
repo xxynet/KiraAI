@@ -36,7 +36,7 @@
               <span
                 class="px-2 py-0.5 text-xs rounded-full flex-shrink-0"
                 :class="adapter.status === 'active'
-                  ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                  ? 'bg-status-success-soft text-green-800 dark:bg-green-900 dark:text-green-200'
                   : 'bg-gray-100 text-theme-strong dark:bg-gray-700'"
               >
                 {{ $t(`adapter.${adapter.status}`) }}
@@ -70,7 +70,7 @@
             {{ $t('adapter.edit') }}
           </button>
           <button
-            class="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors"
+            class="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 text-status-danger hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors"
             @click="handleDelete(adapter.id)"
           >
             {{ $t('adapter.delete') }}
@@ -167,13 +167,13 @@
                 />
                 <p
                   class="mt-2 text-center text-sm"
-                  :class="qrLoginStatus === 'confirmed' ? 'text-green-600 dark:text-green-400' : 'text-theme-subtle'"
+                  :class="qrLoginStatus === 'confirmed' ? 'text-status-success dark:text-green-400' : 'text-theme-subtle'"
                 >
                   {{ qrLoginStatusText }}
                 </p>
               </div>
 
-              <p v-if="qrLoginMessage && qrLoginStatus !== 'confirmed'" class="mt-2 text-xs text-red-600 dark:text-red-400">
+              <p v-if="qrLoginMessage && qrLoginStatus !== 'confirmed'" class="mt-2 text-xs text-status-danger dark:text-red-400">
                 {{ te(qrLoginMessage) ? t(qrLoginMessage) : qrLoginMessage }}
               </p>
             </div>

@@ -25,7 +25,7 @@
         <button
           class="px-4 py-2 rounded-lg border transition-colors flex items-center whitespace-nowrap"
           :class="autoScroll
-            ? 'border-blue-500 text-blue-600 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-500'
+            ? 'border-blue-500 text-status-info bg-blue-50 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-500'
             : 'border-gray-300 text-theme-supporting dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'"
           :aria-pressed="autoScroll"
           @click="toggleAutoScroll"
@@ -375,9 +375,9 @@ function loadLogs() {
 
 function logLevelColor(level: string) {
   const l = level?.toLowerCase()
-  if (l === 'error' || l === 'critical') return 'text-red-600 dark:text-red-400'
-  if (l === 'warning') return 'text-yellow-600 dark:text-yellow-400'
-  if (l === 'info') return 'text-green-600 dark:text-green-400'
+  if (l === 'error' || l === 'critical') return 'text-status-danger dark:text-red-400'
+  if (l === 'warning') return 'text-status-warning dark:text-yellow-400'
+  if (l === 'info') return 'text-status-success dark:text-green-400'
   if (l === 'debug') return 'text-cyan-600 dark:text-cyan-400'
   return 'text-theme-subtle'
 }

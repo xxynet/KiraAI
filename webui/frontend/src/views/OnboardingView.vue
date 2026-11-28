@@ -43,9 +43,9 @@
         <div v-else class="-mx-1 min-h-0 flex-1 space-y-4 overflow-y-auto px-1 py-1">
           <p class="text-sm text-theme-supporting">{{ t('onboarding.configuration_hint') }}</p>
           <button v-for="item in configurationItems" :key="item.key" type="button" class="w-full flex items-center gap-4 p-4 text-left rounded-xl border border-gray-200 bg-white/70 hover:border-blue-400 hover:bg-blue-50/70 transition-colors dark:border-gray-700 dark:bg-gray-800/70 dark:hover:border-blue-500 dark:hover:bg-gray-700" @click="openConfiguration(item.key)">
-            <span class="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-sm font-semibold text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">{{ item.order }}</span>
+            <span class="flex items-center justify-center w-8 h-8 rounded-full bg-status-info-soft text-sm font-semibold text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">{{ item.order }}</span>
             <span class="flex-1"><span class="block font-medium text-theme-high">{{ t(item.titleKey) }}</span><span class="block mt-1 text-xs text-theme-subtle">{{ t(item.descriptionKey) }}</span></span>
-            <span class="text-blue-600 dark:text-blue-400" aria-hidden="true">→</span>
+            <span class="text-status-info dark:text-blue-400" aria-hidden="true">→</span>
           </button>
           <div class="flex gap-3 pt-2">
             <button type="button" class="flex-1 py-3 px-4 border border-gray-300 rounded-xl text-sm font-medium text-theme-body hover:bg-gray-50 transition-colors dark:border-gray-600 dark:hover:bg-gray-700" @click="step = 1">{{ t('onboarding.back') }}</button>
@@ -57,7 +57,7 @@
         </div>
 
         <div v-if="errorMessage" class="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl dark:bg-red-900/20 dark:border-red-800/30">
-          <div class="flex items-center"><IconInfo class="w-5 h-5 text-red-600 mr-2 dark:text-red-400" /><span class="text-sm text-red-700 dark:text-red-300">{{ errorMessage }}</span></div>
+          <div class="flex items-center"><IconInfo class="w-5 h-5 text-status-danger mr-2 dark:text-red-400" /><span class="text-sm text-red-700 dark:text-red-300">{{ errorMessage }}</span></div>
         </div>
         <div class="mt-8 text-center"><p class="text-xs text-theme-subtle">KiraAI WebUI</p></div>
       </div>

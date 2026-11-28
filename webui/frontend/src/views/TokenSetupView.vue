@@ -72,7 +72,7 @@
         </form>
 
         <div v-if="errorMessage" class="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl dark:bg-red-900/20 dark:border-red-800/30">
-          <div class="flex items-center"><IconInfo class="w-5 h-5 text-red-600 mr-2 dark:text-red-400" /><span class="text-sm text-red-700 dark:text-red-300">{{ errorMessage }}</span></div>
+          <div class="flex items-center"><IconInfo class="w-5 h-5 text-status-danger mr-2 dark:text-red-400" /><span class="text-sm text-red-700 dark:text-red-300">{{ errorMessage }}</span></div>
         </div>
         <div class="mt-8 text-center"><p class="text-xs text-theme-subtle">KiraAI WebUI</p></div>
       </div>

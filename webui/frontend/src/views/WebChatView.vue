@@ -1,6 +1,6 @@
 <template>
   <section class="flex min-h-0 flex-1 flex-col overflow-hidden">
-    <div v-if="error" role="alert" class="mx-6 mt-4 shrink-0 rounded-lg bg-red-50 dark:bg-red-950 p-3 text-sm text-red-600 dark:text-red-300">
+    <div v-if="error" role="alert" class="mx-6 mt-4 shrink-0 rounded-lg bg-red-50 dark:bg-red-950 p-3 text-sm text-status-danger dark:text-red-300">
       {{ error }}
       <button v-if="!loaded" type="button" class="ml-3 underline" @click="refresh">{{ t('webchat.retry') }}</button>
     </div>
@@ -41,7 +41,7 @@
             <ToggleSwitch :model-value="adapterConfig.allow_exec" :disabled="savingConfig" show-state aria-labelledby="webchat-exec-label" @update:model-value="saveConfig('allow_exec', $event)" />
           </div>
           <p class="text-sm text-theme-subtle" role="status">{{ t(savingConfig ? 'webchat.saving' : 'webchat.tool_permissions_hint') }}</p>
-          <p v-if="configError" role="alert" class="text-sm text-red-600 dark:text-red-300">{{ configError }}</p>
+          <p v-if="configError" role="alert" class="text-sm text-status-danger dark:text-red-300">{{ configError }}</p>
         </div>
         <div v-if="profile" class="border-t border-gray-200 pt-5 dark:border-gray-700">
           <button type="button" :disabled="deleting || saving || sending" class="rounded-lg bg-red-600 px-4 py-2 text-white hover:bg-red-700 transition-colors disabled:opacity-50" @click="deleteConfirmModalRef?.open()">{{ t(deleting ? 'webchat.deleting' : 'webchat.delete_history') }}</button>
@@ -53,7 +53,7 @@
     <template v-else>
       <div ref="messageList" @scroll="onMessageScroll" role="log" :aria-label="t('webchat.messages')" dir="ltr" class="min-h-0 flex-1 overflow-y-auto [overflow-anchor:none]">
         <div ref="messageContent" dir="ltr" class="mx-auto w-full max-w-[1280px] space-y-4 px-6 py-5">
-          <button v-if="hasOlder" type="button" :disabled="loadingOlder" class="w-full rounded-lg border border-gray-200 dark:border-gray-700 py-2 text-sm text-blue-600 dark:text-blue-300 disabled:opacity-50" @click="loadOlder">{{ t(loadingOlder ? 'webchat.loading' : 'sessions.history.load_more') }}</button>
+          <button v-if="hasOlder" type="button" :disabled="loadingOlder" class="w-full rounded-lg border border-gray-200 dark:border-gray-700 py-2 text-sm text-status-info dark:text-blue-300 disabled:opacity-50" @click="loadOlder">{{ t(loadingOlder ? 'webchat.loading' : 'sessions.history.load_more') }}</button>
           <p v-if="historyLoaded && !messages.length" class="py-10 text-center text-theme-subtle">{{ t('webchat.empty') }}</p>
           <article v-for="message in messages" :key="message.id" class="flex" :class="message.direction === 'incoming' ? 'justify-end' : 'justify-start'">
             <div class="min-w-0 max-w-[85%] flex flex-col gap-2" :class="message.direction === 'incoming' ? 'items-end' : 'items-start'">

@@ -20,24 +20,24 @@
       <div class="flex flex-wrap items-center gap-3 pr-8 text-sm">
         <span class="font-medium text-theme-strong">{{ $t('plugin.task_queue_title') }}</span>
         <span class="text-theme-supporting" role="status">{{ $t('plugin.task_queue_summary', taskQueueSummary) }}</span>
-        <button type="button" class="text-blue-600 hover:underline disabled:opacity-50 dark:text-blue-400" :disabled="refreshingPluginTasks" @click="refreshPluginTasks">{{ $t('common.refresh') }}</button>
-        <button v-if="retryablePluginTasks.length" type="button" class="text-blue-600 hover:underline disabled:opacity-50 dark:text-blue-400" :disabled="enqueueingUpdates" @click="retryFailedTasks">{{ $t('plugin.update_retry_failed') }}</button>
+        <button type="button" class="text-status-info hover:underline disabled:opacity-50 dark:text-blue-400" :disabled="refreshingPluginTasks" @click="refreshPluginTasks">{{ $t('common.refresh') }}</button>
+        <button v-if="retryablePluginTasks.length" type="button" class="text-status-info hover:underline disabled:opacity-50 dark:text-blue-400" :disabled="enqueueingUpdates" @click="retryFailedTasks">{{ $t('plugin.update_retry_failed') }}</button>
       </div>
-      <p v-if="taskQueueLoadError" class="mt-2 text-sm text-red-600 dark:text-red-400">{{ $t('plugin.task_queue_status_failed') }}</p>
+      <p v-if="taskQueueLoadError" class="mt-2 text-sm text-status-danger dark:text-red-400">{{ $t('plugin.task_queue_status_failed') }}</p>
       <p v-if="pluginOperationsBusy" class="mt-2 text-xs text-theme-subtle">{{ $t('plugin.task_queue_busy') }}</p>
       <details v-if="pluginTasks.length" class="mt-3" :open="pluginOperationsBusy">
         <summary class="cursor-pointer text-sm text-theme-body">{{ $t('plugin.task_queue_details') }}</summary>
         <ul class="mt-2 max-h-64 space-y-2 overflow-y-auto">
           <li v-for="task in pluginTasks" :key="task.task_id" class="rounded-md bg-white p-3 text-sm dark:bg-gray-900">
             <div class="flex items-center gap-2">
-              <IconSpinner v-if="task.status === 'running'" class="h-4 w-4 shrink-0 animate-spin text-blue-600" />
+              <IconSpinner v-if="task.status === 'running'" class="h-4 w-4 shrink-0 animate-spin text-status-info" />
               <span class="min-w-0 flex-1 break-words text-theme-strong">{{ $t('plugin.task_operation_' + task.operation) }} · {{ pluginTaskName(task) }}</span>
               <span class="shrink-0 text-theme-subtle">{{ taskStageLabel(task.stage) }}</span>
-              <button v-if="storeTaskItem(task)" type="button" class="shrink-0 text-blue-600 hover:underline dark:text-blue-400" @click="viewStoreInstallTask(task)">{{ $t('pluginStore.install_view_progress') }}</button>
-              <button v-if="task.status === 'queued' || (task.status === 'running' && task.operation === 'install' && task.stage !== 'loading')" type="button" class="shrink-0 text-red-600 hover:underline dark:text-red-400" @click="cancelQueuedTask(task)">{{ $t('plugin.cancel') }}</button>
-              <button v-if="retryablePluginTasks.some(item => item.task_id === task.task_id)" type="button" class="shrink-0 text-blue-600 hover:underline disabled:opacity-50 dark:text-blue-400" :disabled="enqueueingUpdates" @click="retryPluginTasks([task])">{{ $t('plugin.update_retry') }}</button>
+              <button v-if="storeTaskItem(task)" type="button" class="shrink-0 text-status-info hover:underline dark:text-blue-400" @click="viewStoreInstallTask(task)">{{ $t('pluginStore.install_view_progress') }}</button>
+              <button v-if="task.status === 'queued' || (task.status === 'running' && task.operation === 'install' && task.stage !== 'loading')" type="button" class="shrink-0 text-status-danger hover:underline dark:text-red-400" @click="cancelQueuedTask(task)">{{ $t('plugin.cancel') }}</button>
+              <button v-if="retryablePluginTasks.some(item => item.task_id === task.task_id)" type="button" class="shrink-0 text-status-info hover:underline disabled:opacity-50 dark:text-blue-400" :disabled="enqueueingUpdates" @click="retryPluginTasks([task])">{{ $t('plugin.update_retry') }}</button>
             </div>
-            <p v-if="task.error" class="mt-1 break-words text-red-600 dark:text-red-400">{{ task.error }}</p>
+            <p v-if="task.error" class="mt-1 break-words text-status-danger dark:text-red-400">{{ task.error }}</p>
             <p v-if="task.status === 'failed' && task.source === 'upload'" class="mt-1 text-theme-subtle">{{ $t('plugin.task_upload_retry') }}</p>
             <p v-for="(warning, index) in task.warnings" :key="index" class="mt-1 break-words text-amber-700 dark:text-amber-400">{{ warning }}</p>
           </li>
@@ -50,7 +50,7 @@
       <button
         type="button"
         class="px-3 py-2 text-sm font-medium border-b-2 focus:outline-none transition-colors duration-150"
-        :class="activeTab === 'plugins' ? 'border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500' : 'border-transparent text-theme-subtle text-theme-subtle-hover hover:border-gray-300 dark:hover:border-gray-600'"
+        :class="activeTab === 'plugins' ? 'border-blue-600 dark:border-blue-500 text-status-info dark:text-blue-500' : 'border-transparent text-theme-subtle text-theme-subtle-hover hover:border-gray-300 dark:hover:border-gray-600'"
         @click="activeTab = 'plugins'"
       >
         {{ $t('plugin.plugins') }}
@@ -58,7 +58,7 @@
       <button
         type="button"
         class="px-3 py-2 text-sm font-medium border-b-2 focus:outline-none transition-colors duration-150"
-        :class="activeTab === 'pluginStore' ? 'border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500' : 'border-transparent text-theme-subtle text-theme-subtle-hover hover:border-gray-300 dark:hover:border-gray-600'"
+        :class="activeTab === 'pluginStore' ? 'border-blue-600 dark:border-blue-500 text-status-info dark:text-blue-500' : 'border-transparent text-theme-subtle text-theme-subtle-hover hover:border-gray-300 dark:hover:border-gray-600'"
         @click="activeTab = 'pluginStore'"
       >
         {{ $t('pluginStore.title') }}
@@ -66,7 +66,7 @@
       <button
         type="button"
         class="px-3 py-2 text-sm font-medium border-b-2 focus:outline-none transition-colors duration-150"
-        :class="activeTab === 'mcp' ? 'border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500' : 'border-transparent text-theme-subtle text-theme-subtle-hover hover:border-gray-300 dark:hover:border-gray-600'"
+        :class="activeTab === 'mcp' ? 'border-blue-600 dark:border-blue-500 text-status-info dark:text-blue-500' : 'border-transparent text-theme-subtle text-theme-subtle-hover hover:border-gray-300 dark:hover:border-gray-600'"
         @click="activeTab = 'mcp'"
       >
         {{ $t('plugin.tab_mcp') }}
@@ -74,7 +74,7 @@
       <button
         type="button"
         class="px-3 py-2 text-sm font-medium border-b-2 focus:outline-none transition-colors duration-150"
-        :class="activeTab === 'skills' ? 'border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500' : 'border-transparent text-theme-subtle text-theme-subtle-hover hover:border-gray-300 dark:hover:border-gray-600'"
+        :class="activeTab === 'skills' ? 'border-blue-600 dark:border-blue-500 text-status-info dark:text-blue-500' : 'border-transparent text-theme-subtle text-theme-subtle-hover hover:border-gray-300 dark:hover:border-gray-600'"
         @click="activeTab = 'skills'"
       >
         {{ $t('plugin.skills') }}
@@ -82,7 +82,7 @@
       <button
         type="button"
         class="px-3 py-2 text-sm font-medium border-b-2 focus:outline-none transition-colors duration-150"
-        :class="activeTab === 'subagents' ? 'border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500' : 'border-transparent text-theme-subtle text-theme-subtle-hover hover:border-gray-300 dark:hover:border-gray-600'"
+        :class="activeTab === 'subagents' ? 'border-blue-600 dark:border-blue-500 text-status-info dark:text-blue-500' : 'border-transparent text-theme-subtle text-theme-subtle-hover hover:border-gray-300 dark:hover:border-gray-600'"
         @click="activeTab = 'subagents'"
       >
         {{ $t('plugin.tab_subagents') }}
@@ -90,7 +90,7 @@
       <button
         type="button"
         class="px-3 py-2 text-sm font-medium border-b-2 focus:outline-none transition-colors duration-150"
-        :class="activeTab === 'scope' ? 'border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500' : 'border-transparent text-theme-subtle text-theme-subtle-hover hover:border-gray-300 dark:hover:border-gray-600'"
+        :class="activeTab === 'scope' ? 'border-blue-600 dark:border-blue-500 text-status-info dark:text-blue-500' : 'border-transparent text-theme-subtle text-theme-subtle-hover hover:border-gray-300 dark:hover:border-gray-600'"
         @click="activeTab = 'scope'"
       >
         {{ $t('plugin.scope') }}
@@ -121,7 +121,7 @@
         <button
           v-if="availableUpdateItems.length"
           type="button"
-          class="inline-flex items-center rounded-md border border-green-300 px-3 py-1.5 text-xs font-medium text-green-600 hover:bg-green-50 disabled:opacity-50 dark:border-green-600 dark:text-green-400 dark:hover:bg-green-900/30"
+          class="inline-flex items-center rounded-md border border-green-300 px-3 py-1.5 text-xs font-medium text-status-success hover:bg-green-50 disabled:opacity-50 dark:border-green-600 dark:text-green-400 dark:hover:bg-green-900/30"
           :disabled="enqueueingUpdates"
           @click="openBatchUpdate"
         >
@@ -263,7 +263,7 @@
             </button>
             <button
               type="button"
-              class="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors"
+              class="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 text-status-danger hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors"
               @click.stop="handleDeleteMcp(server.id)"
             >
               {{ $t('plugin.mcp_delete') }}
@@ -349,7 +349,7 @@
               </button>
               <button
                 type="button"
-                class="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors"
+                class="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 text-status-danger hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors"
                 :title="$t('plugin.skills_delete')"
                 @click.stop="handleDeleteSkill(skill)"
               >
@@ -393,13 +393,13 @@
                   <button
                     type="button"
                     class="px-2.5 py-1 text-xs rounded-l-md border transition-colors"
-                    :class="resource.mode === 'global' ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700' : 'bg-white dark:bg-gray-800 text-theme-subtle border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                    :class="resource.mode === 'global' ? 'bg-status-success-soft dark:bg-green-900 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700' : 'bg-white dark:bg-gray-800 text-theme-subtle border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'"
                     @click="onScopeModeChange(resource, 'global')"
                   >{{ $t('plugin.scope_global') }}</button>
                   <button
                     type="button"
                     class="px-2.5 py-1 text-xs border-t border-b transition-colors"
-                    :class="resource.mode === 'allow' ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700' : 'bg-white dark:bg-gray-800 text-theme-subtle border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                    :class="resource.mode === 'allow' ? 'bg-status-info-soft dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700' : 'bg-white dark:bg-gray-800 text-theme-subtle border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'"
                     @click="onScopeModeChange(resource, 'allow')"
                   >{{ $t('plugin.scope_mode_allow') }}</button>
                   <button
@@ -530,7 +530,7 @@
 
       <!-- Loading -->
       <div v-else-if="storeLoading" class="flex justify-center items-center py-12">
-        <IconSpinner class="animate-spin h-8 w-8 text-blue-600 dark:text-blue-400" />
+        <IconSpinner class="animate-spin h-8 w-8 text-status-info dark:text-blue-400" />
       </div>
 
       <!-- No Plugins Available -->
@@ -643,20 +643,20 @@
                   <button
                     v-if="!currentStoreSource || currentStoreSource.id !== src.id"
                     type="button"
-                    class="px-2.5 py-1 text-xs font-medium rounded-md border border-blue-300 text-blue-600 hover:bg-blue-50 dark:border-blue-600 dark:text-blue-400 dark:hover:bg-blue-900/30 transition-colors"
+                    class="px-2.5 py-1 text-xs font-medium rounded-md border border-blue-300 text-status-info hover:bg-blue-50 dark:border-blue-600 dark:text-blue-400 dark:hover:bg-blue-900/30 transition-colors"
                     @click="switchToSource(src)"
                   >
                     {{ $t('pluginStore.switch_source') }}
                   </button>
                   <span
                     v-else
-                    class="px-2.5 py-1 text-xs font-medium rounded-md bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                    class="px-2.5 py-1 text-xs font-medium rounded-md bg-status-info-soft text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
                   >
                     {{ $t('pluginStore.current_source') }}
                   </span>
                   <button
                     type="button"
-                    class="px-2.5 py-1 text-xs font-medium rounded-md border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors"
+                    class="px-2.5 py-1 text-xs font-medium rounded-md border border-red-300 text-status-danger hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors"
                     @click="removeSource(pluginSources.indexOf(src))"
                   >
                     {{ $t('pluginStore.remove_source') }}
@@ -729,20 +729,20 @@
           </div>
           <p v-if="storeInstallTarget.description" class="whitespace-pre-wrap text-sm leading-6 text-theme-supporting">{{ localize(storeInstallTarget, 'description', storeInstallTarget.description) }}</p>
           <div v-if="storeInstallTarget.tags?.length" class="flex flex-wrap gap-1.5">
-            <span v-for="tag in storeInstallTarget.tags" :key="tag" class="inline-block rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">{{ tag }}</span>
+            <span v-for="tag in storeInstallTarget.tags" :key="tag" class="inline-block rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-status-info dark:bg-blue-900/30 dark:text-blue-400">{{ tag }}</span>
           </div>
           <dl class="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
             <div><dt class="text-theme-subtle">{{ $t('plugin.plugin_id') }}</dt><dd class="mt-1 font-mono break-all text-theme-high">{{ storeInstallTarget.id }}</dd></div>
-            <div v-if="storeInstallRepo" class="sm:col-span-2"><dt class="text-theme-subtle">{{ $t('plugin.repo_url') }}</dt><dd class="mt-1 break-all"><a :href="storeInstallRepo" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-700 hover:underline dark:text-blue-400 dark:hover:text-blue-300">{{ storeInstallRepo }}</a></dd></div>
+            <div v-if="storeInstallRepo" class="sm:col-span-2"><dt class="text-theme-subtle">{{ $t('plugin.repo_url') }}</dt><dd class="mt-1 break-all"><a :href="storeInstallRepo" target="_blank" rel="noopener noreferrer" class="text-status-info hover:text-blue-700 hover:underline dark:text-blue-400 dark:hover:text-blue-300">{{ storeInstallRepo }}</a></dd></div>
           </dl>
           <div v-if="storeInstallTask" class="rounded-md border border-gray-200 p-3 text-sm dark:border-gray-700">
-            <div class="flex items-center gap-2 text-theme-body"><IconSpinner v-if="storeInstallTask.status === 'running'" class="h-4 w-4 animate-spin text-blue-600" /><span>{{ storeInstallStageLabel }}</span></div>
-            <p v-if="storeInstallTask.error" class="mt-2 break-words text-red-600 dark:text-red-400">{{ storeInstallTask.error }}</p>
+            <div class="flex items-center gap-2 text-theme-body"><IconSpinner v-if="storeInstallTask.status === 'running'" class="h-4 w-4 animate-spin text-status-info" /><span>{{ storeInstallStageLabel }}</span></div>
+            <p v-if="storeInstallTask.error" class="mt-2 break-words text-status-danger dark:text-red-400">{{ storeInstallTask.error }}</p>
           </div>
         </div>
         <div class="flex justify-end gap-3 border-t border-gray-200 px-6 py-4 dark:border-gray-700">
           <template v-if="storeInstallPending">
-            <button type="button" class="px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors disabled:opacity-50" :disabled="storeInstallTask?.stage === 'loading'" @click="cancelStoreInstall">{{ $t('pluginStore.install_cancel') }}</button>
+            <button type="button" class="px-4 py-2 border border-red-300 text-status-danger rounded-lg hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors disabled:opacity-50" :disabled="storeInstallTask?.stage === 'loading'" @click="cancelStoreInstall">{{ $t('pluginStore.install_cancel') }}</button>
             <button type="button" class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors" @click="storeInstallVisible = false">{{ $t('pluginStore.install_silent') }}</button>
           </template>
           <button v-else-if="storeInstallTask" type="button" class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors" @click="storeInstallVisible = false">{{ $t('plugin.close') }}</button>
@@ -767,7 +767,7 @@
           <button
             type="button"
             class="px-4 py-3 text-sm font-medium border-b-2 focus:outline-none transition-colors duration-150"
-            :class="installTab === 'github' ? 'border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500' : 'border-transparent text-theme-subtle text-theme-subtle-hover hover:border-gray-300 dark:hover:border-gray-600'"
+            :class="installTab === 'github' ? 'border-blue-600 dark:border-blue-500 text-status-info dark:text-blue-500' : 'border-transparent text-theme-subtle text-theme-subtle-hover hover:border-gray-300 dark:hover:border-gray-600'"
             @click="installTab = 'github'"
           >
             GitHub
@@ -775,7 +775,7 @@
           <button
             type="button"
             class="px-4 py-3 text-sm font-medium border-b-2 focus:outline-none transition-colors duration-150"
-            :class="installTab === 'upload' ? 'border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500' : 'border-transparent text-theme-subtle text-theme-subtle-hover hover:border-gray-300 dark:hover:border-gray-600'"
+            :class="installTab === 'upload' ? 'border-blue-600 dark:border-blue-500 text-status-info dark:text-blue-500' : 'border-transparent text-theme-subtle text-theme-subtle-hover hover:border-gray-300 dark:hover:border-gray-600'"
             @click="installTab = 'upload'"
           >
             {{ $t('plugin.upload_zip') }}
@@ -918,7 +918,7 @@
             <div v-if="pluginDetailsRepo">
               <dt class="text-theme-subtle">{{ $t('plugin.repo_url') }}</dt>
               <dd class="mt-1 break-all">
-                <a :href="pluginDetailsRepo" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-700 hover:underline dark:text-blue-400 dark:hover:text-blue-300">
+                <a :href="pluginDetailsRepo" target="_blank" rel="noopener noreferrer" class="text-status-info hover:text-blue-700 hover:underline dark:text-blue-400 dark:hover:text-blue-300">
                   {{ pluginDetailsRepo }}
                 </a>
               </dd>
@@ -936,7 +936,7 @@
           <div v-if="selectedPlugin.tags?.length">
             <p class="text-sm text-theme-subtle">{{ $t('plugin.tags') }}</p>
             <div class="mt-2 flex flex-wrap gap-1.5">
-              <span v-for="tag in selectedPlugin.tags" :key="tag" class="inline-block rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">{{ tag }}</span>
+              <span v-for="tag in selectedPlugin.tags" :key="tag" class="inline-block rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-status-info dark:bg-blue-900/30 dark:text-blue-400">{{ tag }}</span>
             </div>
           </div>
 
@@ -952,7 +952,7 @@
                 :aria-controls="`plugin-details-panel-${tab}`"
                 :tabindex="pluginDetailsTab === tab ? 0 : -1"
                 class="px-3 py-2 text-sm font-medium border-b-2 transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
-                :class="pluginDetailsTab === tab ? 'border-blue-600 dark:border-blue-500 text-blue-600 dark:text-blue-500' : 'border-transparent text-theme-subtle text-theme-subtle-hover hover:border-gray-300 dark:hover:border-gray-600'"
+                :class="pluginDetailsTab === tab ? 'border-blue-600 dark:border-blue-500 text-status-info dark:text-blue-500' : 'border-transparent text-theme-subtle text-theme-subtle-hover hover:border-gray-300 dark:hover:border-gray-600'"
                 @click="pluginDetailsTab = tab"
               >
                 {{ $t(tab === 'readme' ? 'plugin.readme_title' : 'plugin.components_title') }}
@@ -965,8 +965,8 @@
             <div v-show="pluginDetailsTab === 'components'" id="plugin-details-panel-components" role="tabpanel" aria-labelledby="plugin-details-tab-components" tabindex="0" class="pt-4">
               <p v-if="pluginComponentsLoading" class="text-sm text-theme-subtle">{{ $t('plugin.status_loading') }}</p>
               <div v-else-if="pluginComponentsError" class="flex items-center gap-3 text-sm">
-                <p class="text-red-600 dark:text-red-400">{{ $t('plugin.components_load_error') }}</p>
-                <button type="button" class="text-blue-600 dark:text-blue-400 hover:underline" @click="loadPluginComponents(selectedPlugin.id, pluginDetailsRequest)">{{ $t('plugin.components_retry') }}</button>
+                <p class="text-status-danger dark:text-red-400">{{ $t('plugin.components_load_error') }}</p>
+                <button type="button" class="text-status-info dark:text-blue-400 hover:underline" @click="loadPluginComponents(selectedPlugin.id, pluginDetailsRequest)">{{ $t('plugin.components_retry') }}</button>
               </div>
               <p v-else-if="!selectedPluginInstalled" class="text-sm text-theme-subtle">{{ $t('plugin.components_not_installed') }}</p>
               <PluginComponents v-else :components="pluginComponents" :plugin-id="selectedPlugin.id" />
@@ -989,7 +989,7 @@
         </div>
         <div class="px-6 py-4 flex-1 overflow-y-auto">
           <div v-if="configLoading" class="flex justify-center items-center py-12">
-            <IconSpinner class="animate-spin h-6 w-6 text-blue-600 dark:text-blue-400" />
+            <IconSpinner class="animate-spin h-6 w-6 text-status-info dark:text-blue-400" />
           </div>
           <div v-else-if="hasPluginConfigFields">
             <ConfigForm ref="configFormRef" v-model="pluginConfigValues" :schema="pluginConfigSchema" />

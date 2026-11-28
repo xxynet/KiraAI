@@ -102,7 +102,7 @@
           :aria-selected="activeTab === tab.id"
           class="relative flex items-center space-x-2 px-4 py-2.5 text-sm font-medium transition-colors duration-150 whitespace-nowrap border-b-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           :class="activeTab === tab.id
-            ? 'text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400'
+            ? 'text-status-info dark:text-blue-400 border-blue-600 dark:border-blue-400'
             : 'text-theme-subtle text-theme-subtle-hover border-transparent hover:border-gray-300 dark:hover:border-gray-600'"
           @click="switchTab(tab.id)"
         >
@@ -224,7 +224,7 @@
             <label
               v-if="field.type !== 'info'"
               class="block text-sm font-medium mb-1"
-              :class="validationErrors[field.key] ? 'text-red-600 dark:text-red-400' : 'text-theme-body'"
+              :class="validationErrors[field.key] ? 'text-status-danger dark:text-red-400' : 'text-theme-body'"
               :title="field.key"
             >
               <span v-html="highlightSearch($t(field.labelKey, field.labelFallback))" />

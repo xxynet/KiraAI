@@ -19,21 +19,21 @@
           :aria-controls="panelId(tab)"
           :tabindex="activeTab === tab ? 0 : -1"
           class="px-1 py-2 text-sm font-medium border-b-2 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
-          :class="activeTab === tab ? 'border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400' : 'border-transparent text-theme-subtle text-theme-subtle-hover'"
+          :class="activeTab === tab ? 'border-blue-600 text-status-info dark:border-blue-400 dark:text-blue-400' : 'border-transparent text-theme-subtle text-theme-subtle-hover'"
           @click="activeTab = tab"
           @keydown="navigateTabs($event, tab)"
         >{{ $t(tab === 'history' ? 'sessions.history.title' : 'sessions.session_data') }}</button>
       </div>
-      <button type="button" class="shrink-0 text-sm text-blue-600 dark:text-blue-300 disabled:opacity-50" :disabled="activeTab === 'history' ? loading : contextLoading" @click="activeTab === 'history' ? loadMessages(true) : loadContext()">{{ $t('common.refresh') }}</button>
+      <button type="button" class="shrink-0 text-sm text-status-info dark:text-blue-300 disabled:opacity-50" :disabled="activeTab === 'history' ? loading : contextLoading" @click="activeTab === 'history' ? loadMessages(true) : loadContext()">{{ $t('common.refresh') }}</button>
     </div>
     <div v-show="activeTab === 'history'" :id="panelId('history')" role="tabpanel" :aria-labelledby="tabId('history')" tabindex="0" ref="messageList" class="px-6 pb-6 min-h-0 overflow-y-auto space-y-4 [overflow-anchor:none]" :aria-busy="loading">
       <SessionHistorySkeleton v-if="loading" :count="messages.length ? 1 : 4" />
       <div v-else-if="error || nextCursor" class="text-center text-sm">
-        <div v-if="error" class="text-red-600 dark:text-red-400" role="alert">
+        <div v-if="error" class="text-status-danger dark:text-red-400" role="alert">
           <p>{{ $t('sessions.history.load_failed') }}</p>
-          <button type="button" class="mt-2 text-blue-600 dark:text-blue-300" @click="loadMessages(messages.length === 0)">{{ $t('sessions.history.retry') }}</button>
+          <button type="button" class="mt-2 text-status-info dark:text-blue-300" @click="loadMessages(messages.length === 0)">{{ $t('sessions.history.retry') }}</button>
         </div>
-        <button v-else-if="nextCursor" type="button" class="w-full rounded-lg border border-gray-200 dark:border-gray-700 py-2 text-blue-600 dark:text-blue-300" @click="loadMessages(false)">{{ $t('sessions.history.load_more') }}</button>
+        <button v-else-if="nextCursor" type="button" class="w-full rounded-lg border border-gray-200 dark:border-gray-700 py-2 text-status-info dark:text-blue-300" @click="loadMessages(false)">{{ $t('sessions.history.load_more') }}</button>
       </div>
       <p v-if="!loading && !error && !messages.length" class="py-10 text-center text-theme-subtle">{{ $t('sessions.history.empty') }}</p>
       <article v-for="message in messages" :key="message.id" class="flex" :class="message.direction === 'outgoing' ? 'justify-end' : 'justify-start'">
@@ -71,7 +71,7 @@
             </div>
             <time :id="`message-time-${message.id}`" class="message-time mt-1 text-xs text-theme-subtle">{{ formatTime(message.timestamp, message.created_at) }}</time>
           </div>
-          <p v-if="message.error_type" class="text-xs text-red-600 dark:text-red-400 break-all">{{ message.error_type }}</p>
+          <p v-if="message.error_type" class="text-xs text-status-danger dark:text-red-400 break-all">{{ message.error_type }}</p>
         </div>
       </article>
     </div>
@@ -86,9 +86,9 @@
       class="px-6 pb-6 min-h-0 overflow-y-auto space-y-4"
     >
       <SessionHistorySkeleton v-if="contextLoading" />
-      <div v-else-if="contextError" class="text-center text-sm text-red-600 dark:text-red-400" role="alert">
+      <div v-else-if="contextError" class="text-center text-sm text-status-danger dark:text-red-400" role="alert">
         <p>{{ $t('sessions.context.load_failed') }}</p>
-        <button type="button" class="mt-2 text-blue-600 dark:text-blue-300" @click="loadContext()">{{ $t('sessions.history.retry') }}</button>
+        <button type="button" class="mt-2 text-status-info dark:text-blue-300" @click="loadContext()">{{ $t('sessions.history.retry') }}</button>
       </div>
       <p v-else-if="!contextMessages.length" class="py-10 text-center text-theme-subtle">{{ $t('sessions.context.empty') }}</p>
       <article v-for="(message, index) in contextMessages" :key="index" class="flex" :class="message.role === 'assistant' ? 'justify-end' : 'justify-start'">
