@@ -114,7 +114,9 @@ class WebChatService:
                         request_id, chain, profile
                     )
                 except Exception:
-                    logger.exception("Failed to dispatch webchat request %s", request_id)
+                    logger.exception(
+                        "Failed to dispatch webchat request %s", request_id
+                    )
                     await self.store.finish(request_id, "failed")
                     raise ValueError("unavailable") from None
             return request

@@ -605,7 +605,9 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
                 return KiraIMSentResult(message_id=display_id)
             except Exception as exc:
                 error = self._send_error_code(exc) or type(exc).__name__
-                logger.exception("Failed to send QQ official message (%s): %s", error, exc)
+                logger.exception(
+                    "Failed to send QQ official message (%s): %s", error, exc
+                )
                 return KiraIMSentResult(
                     ok=False, err=f"Failed to send QQ official message ({error})"
                 )
