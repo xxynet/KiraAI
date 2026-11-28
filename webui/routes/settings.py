@@ -60,11 +60,16 @@ def _snapshot_sqlite(source_path: Path, snapshot_path: Path) -> None:
     """Write a standalone snapshot including committed transactions in the WAL."""
     deadline = monotonic() + 15
     # Python 3.10 does not export these SQLite primary result codes.
-    retry_statuses = (getattr(sqlite3, "SQLITE_BUSY", 5), getattr(sqlite3, "SQLITE_LOCKED", 6))
+    retry_statuses = (
+        getattr(sqlite3, "SQLITE_BUSY", 5),
+        getattr(sqlite3, "SQLITE_LOCKED", 6),
+    )
 
     def check_lock(status: int, _remaining: int, _total: int) -> None:
         if status in retry_statuses and monotonic() >= deadline:
-            raise sqlite3.OperationalError(f"Timed out reading SQLite database {source_path.name}")
+            raise sqlite3.OperationalError(
+                f"Timed out reading SQLite database {source_path.name}"
+            )
 
     source_uri = source_path.as_uri()
     if source_path.drive.startswith("\\\\"):
@@ -77,9 +82,13 @@ def _snapshot_sqlite(source_path: Path, snapshot_path: Path) -> None:
     ):
         source.backup(snapshot, progress=check_lock, sleep=0.1)
         if snapshot.execute("PRAGMA journal_mode=DELETE").fetchone() != ("delete",):
-            raise sqlite3.DatabaseError(f"Could not finalize SQLite snapshot {source_path.name}")
+            raise sqlite3.DatabaseError(
+                f"Could not finalize SQLite snapshot {source_path.name}"
+            )
         if snapshot.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
-            raise sqlite3.DatabaseError(f"SQLite snapshot failed integrity check: {source_path.name}")
+            raise sqlite3.DatabaseError(
+                f"SQLite snapshot failed integrity check: {source_path.name}"
+            )
 
 
 def _is_relative_link_target(target: str, link: Path, root: Path) -> bool:
@@ -125,17 +134,24 @@ def _backup_link_entry(
                     if (path.parent / relative).resolve() == resolved:
                         target = relative
                 except (OSError, RuntimeError) as exc:
-                    logger.debug("Could not verify relative backup symlink %s: %s", path, exc)
+                    logger.debug(
+                        "Could not verify relative backup symlink %s: %s", path, exc
+                    )
         if not _is_relative_link_target(target, path, data_path):
             target = os.path.relpath(resolved, path.parent).replace(os.sep, "/")
     if not _is_relative_link_target(target, path, data_path):
-        logger.warning("Skipping backup symlink with unsupported target %s -> %s", path, target)
+        logger.warning(
+            "Skipping backup symlink with unsupported target %s -> %s", path, target
+        )
         return None
 
     info = zipfile.ZipInfo(path.relative_to(data_path).as_posix())
     info.create_system = 3
     info.external_attr = metadata.st_mode << 16
-    if is_directory or getattr(metadata, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_DIRECTORY:
+    if (
+        is_directory
+        or getattr(metadata, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_DIRECTORY
+    ):
         info.external_attr |= stat.FILE_ATTRIBUTE_DIRECTORY
     info.compress_type = zipfile.ZIP_DEFLATED
     return info, os.fsencode(target)
@@ -160,7 +176,9 @@ def _storage_usage_group(relative_path: Path) -> str:
             return category
     if len(relative_path.parts) == 1:
         name = relative_path.name.lower()
-        database_name = name.removesuffix("-wal").removesuffix("-shm").removesuffix("-journal")
+        database_name = (
+            name.removesuffix("-wal").removesuffix("-shm").removesuffix("-journal")
+        )
         if database_name.endswith((".db", ".sqlite", ".sqlite3")):
             return "database"
         if name == "log.log" or name.startswith("log.log.") or name.endswith(".log"):
@@ -168,7 +186,9 @@ def _storage_usage_group(relative_path: Path) -> str:
     return "other"
 
 
-def _calc_dir_size(path: Path, *, usage: dict[str, int] | None = None) -> tuple[int, int]:
+def _calc_dir_size(
+    path: Path, *, usage: dict[str, int] | None = None
+) -> tuple[int, int]:
     """Return logical bytes and file count without following file symlinks.
 
     Count hard links once per tree.
@@ -303,7 +323,9 @@ class SettingsRoutes(Routes):
     @staticmethod
     def _validate_retention_days(retention_days: int) -> None:
         if retention_days not in (7, 30, 90):
-            raise HTTPException(status_code=422, detail="Retention must be 7, 30, or 90 days")
+            raise HTTPException(
+                status_code=422, detail="Retention must be 7, 30, or 90 days"
+            )
 
     async def get_storage_info(self, retention_days: Annotated[int, Query()] = 30):
         self._validate_retention_days(retention_days)
@@ -311,11 +333,23 @@ class SettingsRoutes(Routes):
         for category in ("message_archives", "temp", "logs", "update_packages"):
             days = retention_days if category == "message_archives" else 1
             usage = await self._inspect_storage_files(category, time() - days * 86400)
-            info.categories.append(StorageCategory(
-                id=category,
-                retention_days=retention_days if category == "message_archives" else None,
-                **{key: usage[key] for key in ("size_bytes", "item_count", "cleanable_bytes", "cleanable_count")},
-            ))
+            info.categories.append(
+                StorageCategory(
+                    id=category,
+                    retention_days=retention_days
+                    if category == "message_archives"
+                    else None,
+                    **{
+                        key: usage[key]
+                        for key in (
+                            "size_bytes",
+                            "item_count",
+                            "cleanable_bytes",
+                            "cleanable_count",
+                        )
+                    },
+                )
+            )
         db = self.lifecycle.db_service if self.lifecycle else None
         cache = StorageCategory(id="image_descriptions", available=db is not None)
         if db is not None:
@@ -341,52 +375,87 @@ class SettingsRoutes(Routes):
             task.result()
             raise
 
-    async def _inspect_storage_files(self, category: str, cutoff: float, *, delete: bool = False):
+    async def _inspect_storage_files(
+        self, category: str, cutoff: float, *, delete: bool = False
+    ):
         if category == "message_archives":
             root = get_data_path() / "session_media" / "archive"
             options = {
-                "delete": delete, "recursive": False, "use_mtime": True,
+                "delete": delete,
+                "recursive": False,
+                "use_mtime": True,
                 "boundary": get_data_path(),
-                "include": lambda path: re.fullmatch(r"[0-9a-f]{64}", path.name) is not None,
+                "include": lambda path: (
+                    re.fullmatch(r"[0-9a-f]{64}", path.name) is not None
+                ),
             }
             if not delete:
-                return await self._run_storage_worker(inspect_files, root, cutoff, **options)
+                return await self._run_storage_worker(
+                    inspect_files, root, cutoff, **options
+                )
             history = getattr(self.lifecycle, "message_history", None)
             if history is None:
-                raise HTTPException(status_code=503, detail="Message history service unavailable")
+                raise HTTPException(
+                    status_code=503, detail="Message history service unavailable"
+                )
             async with history.maintenance() as protected:
                 if protected is None:
-                    raise HTTPException(status_code=409, detail="Messages are being archived; retry cleanup later")
-                return await self._run_storage_worker(inspect_files, root, cutoff, **options)
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Messages are being archived; retry cleanup later",
+                    )
+                return await self._run_storage_worker(
+                    inspect_files, root, cutoff, **options
+                )
         if category == "logs":
             return await self._run_storage_worker(inspect_rotated_logs, delete=delete)
         if category == "update_packages":
             root = get_data_path() / "updates"
             options = {
-                "delete": delete, "recursive": False,
+                "delete": delete,
+                "recursive": False,
                 "include": lambda path: path.suffix == ".zip",
             }
             if delete:
                 async with update_package_maintenance():
-                    return await self._run_storage_worker(inspect_files, root, cutoff, **options)
-            return await self._run_storage_worker(inspect_files, root, cutoff, **options)
+                    return await self._run_storage_worker(
+                        inspect_files, root, cutoff, **options
+                    )
+            return await self._run_storage_worker(
+                inspect_files, root, cutoff, **options
+            )
         if category == "temp":
-            return await self._run_storage_worker(inspect_files, get_data_path() / "temp", cutoff, delete=delete)
-        raise HTTPException(status_code=422, detail="Unsupported storage cleanup category")
+            return await self._run_storage_worker(
+                inspect_files, get_data_path() / "temp", cutoff, delete=delete
+            )
+        raise HTTPException(
+            status_code=422, detail="Unsupported storage cleanup category"
+        )
 
-    async def cleanup_storage(self, category: StorageCategoryId, retention_days: Annotated[int, Query()] = 30):
+    async def cleanup_storage(
+        self, category: StorageCategoryId, retention_days: Annotated[int, Query()] = 30
+    ):
         self._validate_retention_days(retention_days)
         async with self._maintenance_lock:
             if category == "image_descriptions":
                 db = self.lifecycle.db_service if self.lifecycle else None
                 if db is None:
-                    raise HTTPException(status_code=503, detail="Database service unavailable")
-                return StorageCleanupResponse(deleted_count=await db.clear_image_desc_cache())
+                    raise HTTPException(
+                        status_code=503, detail="Database service unavailable"
+                    )
+                return StorageCleanupResponse(
+                    deleted_count=await db.clear_image_desc_cache()
+                )
             days = retention_days if category == "message_archives" else 1
-            usage = await self._inspect_storage_files(category, time() - days * 86400, delete=True)
-            return StorageCleanupResponse(**{
-                key: usage[key] for key in ("deleted_count", "deleted_bytes", "failed_count")
-            })
+            usage = await self._inspect_storage_files(
+                category, time() - days * 86400, delete=True
+            )
+            return StorageCleanupResponse(
+                **{
+                    key: usage[key]
+                    for key in ("deleted_count", "deleted_bytes", "failed_count")
+                }
+            )
 
     def _collect_storage_info(self) -> StorageInfoResponse:
         data_path = get_data_path()
@@ -417,7 +486,10 @@ class SettingsRoutes(Routes):
             disk_used_bytes=disk.used,
             disk_free_bytes=disk.free,
             directories=directories,
-            usage_breakdown=[StorageUsageEntry(id=key, size_bytes=size) for key, size in usage.items()],
+            usage_breakdown=[
+                StorageUsageEntry(id=key, size_bytes=size)
+                for key, size in usage.items()
+            ],
         )
 
     # ── Backup ───────────────────────────────────────────────────────────────
@@ -458,17 +530,27 @@ class SettingsRoutes(Routes):
         loop = asyncio.get_running_loop()
 
         def report(stage: str, percent: int):
-            loop.call_soon_threadsafe(self._set_backup_progress, task_id, stage, percent)
+            loop.call_soon_threadsafe(
+                self._set_backup_progress, task_id, stage, percent
+            )
 
         try:
             async with self._maintenance_lock:
                 result = await asyncio.to_thread(self._create_backup_sync, report)
             self._backup_progress[task_id] = BackupProgressResponse(
-                id=task_id, status="completed", stage="completed", percent=100, result=result
+                id=task_id,
+                status="completed",
+                stage="completed",
+                percent=100,
+                result=result,
             )
         except Exception as exc:
             progress = self._backup_progress[task_id]
-            error = "backup_exists" if isinstance(exc, HTTPException) and exc.status_code == 409 else None
+            error = (
+                "backup_exists"
+                if isinstance(exc, HTTPException) and exc.status_code == 409
+                else None
+            )
             if error is None:
                 logger.exception("Backup creation failed")
             self._backup_progress[task_id] = progress.model_copy(
@@ -487,7 +569,9 @@ class SettingsRoutes(Routes):
         zip_path = backup_dir / filename
         marker_path = zip_path.with_suffix(".zip.part")
         if os.path.lexists(zip_path) or os.path.lexists(marker_path):
-            raise HTTPException(status_code=409, detail="Backup filename already exists")
+            raise HTTPException(
+                status_code=409, detail="Backup filename already exists"
+            )
         exclude_root_dirs = {BACKUP_DIR_NAME, "dist", "updates", "temp"}
 
         marker_created = False
@@ -507,12 +591,16 @@ class SettingsRoutes(Routes):
                     directory = Path(root)
                     is_data_root = directory == data_path
                     subdirs = [
-                        d for d in dirs
-                        if d != "__pycache__" and (not is_data_root or d not in exclude_root_dirs)
+                        d
+                        for d in dirs
+                        if d != "__pycache__"
+                        and (not is_data_root or d not in exclude_root_dirs)
                     ]
                     dirs.clear()
                     if not (is_data_root or subdirs or files):
-                        zf.writestr(directory.relative_to(data_path).as_posix() + "/", b"")
+                        zf.writestr(
+                            directory.relative_to(data_path).as_posix() + "/", b""
+                        )
                     for name in subdirs + files:
                         full_path = directory / name
                         try:
@@ -520,24 +608,38 @@ class SettingsRoutes(Routes):
                         except OSError:
                             continue
                         if stat.S_ISLNK(metadata.st_mode):
-                            entry = _backup_link_entry(full_path, data_path, metadata, name in subdirs)
+                            entry = _backup_link_entry(
+                                full_path, data_path, metadata, name in subdirs
+                            )
                             if entry is not None:
-                                files_to_backup.append((full_path, max(len(entry[1]), 1), entry))
+                                files_to_backup.append(
+                                    (full_path, max(len(entry[1]), 1), entry)
+                                )
                         elif stat.S_ISDIR(metadata.st_mode):
-                            if os.name == "nt" and metadata.st_reparse_tag == stat.IO_REPARSE_TAG_MOUNT_POINT:
-                                logger.warning("Skipping backup directory junction %s", full_path)
+                            if (
+                                os.name == "nt"
+                                and metadata.st_reparse_tag
+                                == stat.IO_REPARSE_TAG_MOUNT_POINT
+                            ):
+                                logger.warning(
+                                    "Skipping backup directory junction %s", full_path
+                                )
                             else:
                                 dirs.append(name)
                         elif stat.S_ISREG(metadata.st_mode):
-                            files_to_backup.append((full_path, max(metadata.st_size, 1), None))
+                            files_to_backup.append(
+                                (full_path, max(metadata.st_size, 1), None)
+                            )
 
                 sqlite_paths = {
-                    path for path, _, link in files_to_backup
+                    path
+                    for path, _, link in files_to_backup
                     if link is None and _has_sqlite_header(path)
                 }
                 sqlite_sidecars = {
                     path.with_name(path.name + suffix)
-                    for path in sqlite_paths for suffix in SQLITE_SIDECAR_SUFFIXES
+                    for path in sqlite_paths
+                    for suffix in SQLITE_SIDECAR_SUFFIXES
                 }
                 files_to_backup = [
                     (path, weight, link)
@@ -566,7 +668,9 @@ class SettingsRoutes(Routes):
                         input_path = full_path
                         is_sqlite = full_path in sqlite_paths
                         if is_sqlite:
-                            temp_dir = files.enter_context(tempfile.TemporaryDirectory(dir=backup_dir))
+                            temp_dir = files.enter_context(
+                                tempfile.TemporaryDirectory(dir=backup_dir)
+                            )
                             input_path = Path(temp_dir) / "snapshot.sqlite"
                             _snapshot_sqlite(full_path, input_path)
                         try:
@@ -600,7 +704,9 @@ class SettingsRoutes(Routes):
             completed = True
             return result
         except FileExistsError as exc:
-            raise HTTPException(status_code=409, detail="Backup filename already exists") from exc
+            raise HTTPException(
+                status_code=409, detail="Backup filename already exists"
+            ) from exc
         finally:
             if archive_created and not completed:
                 zip_path.unlink(missing_ok=True)
@@ -617,11 +723,13 @@ class SettingsRoutes(Routes):
                 if os.path.lexists(f.with_suffix(".zip.part")):
                     continue
                 stat = f.stat()
-                backups.append({
-                    "filename": f.name,
-                    "size_bytes": stat.st_size,
-                    "created_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                })
+                backups.append(
+                    {
+                        "filename": f.name,
+                        "size_bytes": stat.st_size,
+                        "created_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    }
+                )
         return backups
 
     async def download_backup(self, filename: str):
@@ -687,7 +795,9 @@ class SettingsRoutes(Routes):
                     for member in zf.infolist():
                         target = (staging_path / member.filename).resolve()
                         if not target.is_relative_to(staging_path):
-                            raise HTTPException(status_code=400, detail="Invalid archive content")
+                            raise HTTPException(
+                                status_code=400, detail="Invalid archive content"
+                            )
 
                         parts = target.relative_to(staging_path).parts
                         if parts and parts[0] in exclude_dirs:
@@ -695,12 +805,20 @@ class SettingsRoutes(Routes):
 
                         if stat.S_ISLNK(member.external_attr >> 16):
                             if member.file_size > MAX_LINK_TARGET_BYTES:
-                                raise HTTPException(status_code=400, detail="Invalid archive content")
+                                raise HTTPException(
+                                    status_code=400, detail="Invalid archive content"
+                                )
                             link_target = os.fsdecode(zf.read(member))
-                            if not _is_relative_link_target(link_target, target, staging_path):
-                                raise HTTPException(status_code=400, detail="Invalid archive content")
+                            if not _is_relative_link_target(
+                                link_target, target, staging_path
+                            ):
+                                raise HTTPException(
+                                    status_code=400, detail="Invalid archive content"
+                                )
                             target.parent.mkdir(parents=True, exist_ok=True)
-                            is_directory = bool(member.external_attr & stat.FILE_ATTRIBUTE_DIRECTORY)
+                            is_directory = bool(
+                                member.external_attr & stat.FILE_ATTRIBUTE_DIRECTORY
+                            )
                             links.append((target, link_target, is_directory))
                         elif member.is_dir():
                             target.mkdir(parents=True, exist_ok=True)
@@ -712,19 +830,30 @@ class SettingsRoutes(Routes):
                 # Stage links after regular entries so extraction cannot write through them.
                 for path, target, is_directory in links:
                     if os.path.lexists(path):
-                        raise HTTPException(status_code=400, detail="Invalid archive content")
+                        raise HTTPException(
+                            status_code=400, detail="Invalid archive content"
+                        )
                     path.symlink_to(target, target_is_directory=is_directory)
                 for path, _, _ in links:
                     try:
                         resolved = path.resolve()
                     except RuntimeError as exc:
-                        raise HTTPException(status_code=400, detail="Invalid archive content") from exc
-                    if not resolved.is_relative_to(staging_path) or resolved.is_symlink():
-                        raise HTTPException(status_code=400, detail="Invalid archive content")
+                        raise HTTPException(
+                            status_code=400, detail="Invalid archive content"
+                        ) from exc
+                    if (
+                        not resolved.is_relative_to(staging_path)
+                        or resolved.is_symlink()
+                    ):
+                        raise HTTPException(
+                            status_code=400, detail="Invalid archive content"
+                        )
                     # A target absent from the archive must not inherit a live symlink.
                     live_target = data_path / resolved.relative_to(staging_path)
                     if not resolved.exists() and live_target.resolve() != live_target:
-                        raise HTTPException(status_code=400, detail="Invalid archive content")
+                        raise HTTPException(
+                            status_code=400, detail="Invalid archive content"
+                        )
 
                 # Check the live layout before changing any files.
                 entries = []
@@ -734,11 +863,23 @@ class SettingsRoutes(Routes):
                     is_link = src_file.is_symlink()
                     is_directory = not is_link and src_file.is_dir()
                     if dst_file.parent.resolve() != dst_file.parent:
-                        raise HTTPException(status_code=400, detail="Invalid archive content")
-                    if is_directory and (dst_file.resolve() != dst_file or dst_file.is_symlink()):
-                        raise HTTPException(status_code=400, detail="Invalid archive content")
-                    if not dst_file.is_symlink() and dst_file.exists() and dst_file.is_dir() != is_directory:
-                        raise HTTPException(status_code=400, detail="Invalid archive content")
+                        raise HTTPException(
+                            status_code=400, detail="Invalid archive content"
+                        )
+                    if is_directory and (
+                        dst_file.resolve() != dst_file or dst_file.is_symlink()
+                    ):
+                        raise HTTPException(
+                            status_code=400, detail="Invalid archive content"
+                        )
+                    if (
+                        not dst_file.is_symlink()
+                        and dst_file.exists()
+                        and dst_file.is_dir() != is_directory
+                    ):
+                        raise HTTPException(
+                            status_code=400, detail="Invalid archive content"
+                        )
                     if not is_link:
                         entries.append((src_file, dst_file, is_directory))
 
@@ -748,7 +889,9 @@ class SettingsRoutes(Routes):
                     else:
                         dst_file.parent.mkdir(parents=True, exist_ok=True)
                         if dst_file.is_symlink():
-                            with tempfile.TemporaryDirectory(dir=dst_file.parent) as pending_dir:
+                            with tempfile.TemporaryDirectory(
+                                dir=dst_file.parent
+                            ) as pending_dir:
                                 pending = Path(pending_dir) / "file"
                                 shutil.copy2(src_file, pending)
                                 pending.replace(dst_file)
@@ -757,17 +900,30 @@ class SettingsRoutes(Routes):
 
                 for path, target, is_directory in links:
                     dst_file = data_path / path.relative_to(staging_path)
-                    if dst_file.is_symlink() and os.readlink(dst_file).replace(os.sep, "/") == target:
-                        attributes = getattr(dst_file.lstat(), "st_file_attributes", None)
-                        if attributes is None or bool(attributes & stat.FILE_ATTRIBUTE_DIRECTORY) == is_directory:
+                    if (
+                        dst_file.is_symlink()
+                        and os.readlink(dst_file).replace(os.sep, "/") == target
+                    ):
+                        attributes = getattr(
+                            dst_file.lstat(), "st_file_attributes", None
+                        )
+                        if (
+                            attributes is None
+                            or bool(attributes & stat.FILE_ATTRIBUTE_DIRECTORY)
+                            == is_directory
+                        ):
                             continue
                     dst_file.parent.mkdir(parents=True, exist_ok=True)
-                    with tempfile.TemporaryDirectory(dir=dst_file.parent) as pending_dir:
+                    with tempfile.TemporaryDirectory(
+                        dir=dst_file.parent
+                    ) as pending_dir:
                         pending = Path(pending_dir) / "link"
                         pending.symlink_to(target, target_is_directory=is_directory)
                         pending.replace(dst_file)
 
-            return RestoreResponse(success=True, message="Restore completed successfully")
+            return RestoreResponse(
+                success=True, message="Restore completed successfully"
+            )
         except zipfile.BadZipFile:
             raise HTTPException(status_code=400, detail="Invalid zip file")
         except HTTPException:
@@ -787,7 +943,9 @@ class SettingsRoutes(Routes):
 
     async def change_access_token(self, body: ChangeTokenRequest, request: Request):
         if request.app.state.disable_auth:
-            raise HTTPException(status_code=400, detail="Cannot change token when auth is disabled")
+            raise HTTPException(
+                status_code=400, detail="Cannot change token when auth is disabled"
+            )
         current_token = request.app.state.access_token
         # Strip like the first-run setup endpoint does, so pasted tokens with
         # stray whitespace compare and persist identically in both flows.
@@ -796,9 +954,14 @@ class SettingsRoutes(Routes):
         if old_token != current_token:
             raise HTTPException(status_code=400, detail="Old token is incorrect")
         if not new_token or len(new_token) < 6:
-            raise HTTPException(status_code=400, detail="New token must be at least 6 characters")
+            raise HTTPException(
+                status_code=400, detail="New token must be at least 6 characters"
+            )
         if new_token == "disabled":
-            raise HTTPException(status_code=400, detail="The token 'disabled' is reserved and cannot be used")
+            raise HTTPException(
+                status_code=400,
+                detail="The token 'disabled' is reserved and cannot be used",
+            )
         _update_webui_config(access_token=new_token)
         request.app.state.access_token = new_token
         return {"success": True}

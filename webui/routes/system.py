@@ -33,6 +33,7 @@ class SystemRoutes(Routes):
             self.lifecycle.uvicorn_server.should_exit = True
         # Give the response a moment to be sent, then exit with restart code
         import asyncio
+
         asyncio.get_running_loop().call_later(0.5, os._exit, RESTART_EXIT_CODE)
         return {"status": "restarting"}
 
@@ -42,5 +43,6 @@ class SystemRoutes(Routes):
         if self.lifecycle.uvicorn_server:
             self.lifecycle.uvicorn_server.should_exit = True
         import asyncio
+
         asyncio.get_running_loop().call_later(0.5, os._exit, 0)
         return {"status": "shutting_down"}

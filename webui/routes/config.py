@@ -49,11 +49,15 @@ class ConfigRoutes(Routes):
             model_config: dict = {}
             if self.lifecycle and self.lifecycle.provider_manager:
                 try:
-                    models_from_manager = self.lifecycle.provider_manager.get_models(provider_id)
+                    models_from_manager = self.lifecycle.provider_manager.get_models(
+                        provider_id
+                    )
                     if models_from_manager:
                         model_config = models_from_manager
                 except Exception as e:
-                    logger.error(f"Error getting models for provider {provider_id}: {e}")
+                    logger.error(
+                        f"Error getting models for provider {provider_id}: {e}"
+                    )
             if not model_config:
                 model_config = provider_cfg.get("model_config", {}) or {}
             provider_models[provider_id] = model_config
@@ -80,7 +84,14 @@ class ConfigRoutes(Routes):
         # corruption, validate that every section *present* in the payload is an
         # object/dict and reject with HTTP 400 otherwise; sections the client did
         # not send are left untouched (present-only assignment).
-        for section in ("bot_config", "models", "logging", "adapters", "network", "locale"):
+        for section in (
+            "bot_config",
+            "models",
+            "logging",
+            "adapters",
+            "network",
+            "locale",
+        ):
             if section in payload and not isinstance(payload[section], dict):
                 raise HTTPException(
                     status_code=400,
@@ -95,8 +106,13 @@ class ConfigRoutes(Routes):
         if isinstance(bot_config, dict) and "subagent" in bot_config:
             subagent_config = bot_config["subagent"]
             if not isinstance(subagent_config, dict):
-                raise HTTPException(status_code=400, detail="subagent must be an object")
-            for key, minimum in (("session_retention_hours", 0), ("max_concurrent_per_session", 1)):
+                raise HTTPException(
+                    status_code=400, detail="subagent must be an object"
+                )
+            for key, minimum in (
+                ("session_retention_hours", 0),
+                ("max_concurrent_per_session", 1),
+            ):
                 if key not in subagent_config:
                     continue
                 value = subagent_config[key]
@@ -121,7 +137,9 @@ class ConfigRoutes(Routes):
             models = deepcopy(models)
             for key, kind in DEFAULT_MODEL_TYPES.items():
                 if key in models:
-                    models[key] = resolve_model_reference(config.get("providers", {}), models[key], kind)
+                    models[key] = resolve_model_reference(
+                        config.get("providers", {}), models[key], kind
+                    )
             config["models"] = models
             updated = True
         logging_changed = False
@@ -152,7 +170,9 @@ class ConfigRoutes(Routes):
         if updated:
             config.save_config()
             if "bot_config" in payload:
-                history_cleanup = getattr(self.lifecycle, "message_history_cleanup", None)
+                history_cleanup = getattr(
+                    self.lifecycle, "message_history_cleanup", None
+                )
                 if history_cleanup is not None:
                     history_cleanup.notify_config_changed()
             if isinstance(network_config, dict) and self.lifecycle:

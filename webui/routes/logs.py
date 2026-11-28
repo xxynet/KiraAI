@@ -20,6 +20,7 @@ class InstallPackagesRequest(BaseModel):
 
 class LogsRoutes(Routes):
     _install_task: asyncio.Task | None = None
+
     def get_routes(self):
         return [
             RouteDefinition(
@@ -87,30 +88,37 @@ class LogsRoutes(Routes):
         try:
             cached_logs = log_cache_manager.get_cache()
             if limit > 0:
-                recent_logs = cached_logs[-limit:] if len(cached_logs) > limit else cached_logs
+                recent_logs = (
+                    cached_logs[-limit:] if len(cached_logs) > limit else cached_logs
+                )
             else:
                 recent_logs = cached_logs
 
             logs = []
-            for log in recent_logs:
-                logs.append({
+            logs.extend(
+                {
                     "time": log.get("time", ""),
                     "level": log.get("level", "INFO"),
                     "name": log.get("name", ""),
                     "message": log.get("message", ""),
                     "color": log.get("color", "blue"),
                     "raw": f"{log.get('time', '')} {log.get('level', 'INFO')} [{log.get('name', '')}] {log.get('message', '')}",
-                })
+                }
+                for log in recent_logs
+            )
 
             return {"logs": logs, "total": len(logs)}
         except Exception as e:
             logger.error(f"Error reading log cache: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to read log cache: {e!s}")
+            raise HTTPException(
+                status_code=500, detail=f"Failed to read log cache: {e!s}"
+            )
 
     async def get_log_config(self):
         """Get log configuration including max queue size."""
         try:
             from core.logging_manager import MAX_QUEUE_SIZE
+
             return {"maxQueueSize": MAX_QUEUE_SIZE}
         except Exception as e:
             logger.error(f"Error reading log config: {e}")
@@ -122,8 +130,12 @@ class LogsRoutes(Routes):
         if not packages:
             raise HTTPException(status_code=400, detail="No packages specified")
         if self._install_task and not self._install_task.done():
-            raise HTTPException(status_code=409, detail="Another installation is already in progress")
-        self._install_task = asyncio.create_task(self._run_pip_install(packages, body.pypi_mirror))
+            raise HTTPException(
+                status_code=409, detail="Another installation is already in progress"
+            )
+        self._install_task = asyncio.create_task(
+            self._run_pip_install(packages, body.pypi_mirror)
+        )
         return {"status": "started"}
 
     async def _run_pip_install(self, packages: str, pypi_mirror: str | None = None):
@@ -156,6 +168,8 @@ class LogsRoutes(Routes):
             if proc.returncode == 0:
                 logger.info("Package installation completed successfully")
             else:
-                logger.error(f"Package installation failed with exit code {proc.returncode}")
+                logger.error(
+                    f"Package installation failed with exit code {proc.returncode}"
+                )
         except Exception as e:
             logger.error(f"Package installation error: {e}")

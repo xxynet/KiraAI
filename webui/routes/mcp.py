@@ -85,18 +85,18 @@ class McpRoutes(Routes):
         try:
             manager = self.lifecycle.mcp_manager
             items: list[McpServerItem] = []
-            for server in manager.servers:
-                items.append(
-                    McpServerItem(
-                        id=str(server.id),
-                        type=str(server.type),
-                        name=str(server.name),
-                        description=str(server.description or ""),
-                        enabled=bool(server.enabled),
-                        url=str(server.url or ""),
-                        tools_count=len(server.tools),
-                    )
+            items.extend(
+                McpServerItem(
+                    id=str(server.id),
+                    type=str(server.type),
+                    name=str(server.name),
+                    description=str(server.description or ""),
+                    enabled=bool(server.enabled),
+                    url=str(server.url or ""),
+                    tools_count=len(server.tools),
                 )
+                for server in manager.servers
+            )
             return items
         except Exception as e:
             logger.error(f"Failed to list MCP servers from MCPManager: {e}")
@@ -111,7 +111,9 @@ class McpRoutes(Routes):
                 try:
                     config_json = json.loads(raw_config)
                 except json.JSONDecodeError:
-                    raise HTTPException(status_code=400, detail="Invalid MCP config JSON")
+                    raise HTTPException(
+                        status_code=400, detail="Invalid MCP config JSON"
+                    )
             elif isinstance(raw_config, dict):
                 config_json = raw_config
             else:
@@ -126,7 +128,9 @@ class McpRoutes(Routes):
             try:
                 await manager.list_tools(server)
             except Exception as e:
-                logger.warning(f"Failed to list tools for new MCP server {payload.name}: {e}")
+                logger.warning(
+                    f"Failed to list tools for new MCP server {payload.name}: {e}"
+                )
             return McpServerItem(
                 id=str(server.id),
                 type=str(server.type),
@@ -149,7 +153,9 @@ class McpRoutes(Routes):
         if not self.lifecycle or not getattr(self.lifecycle, "mcp_manager", None):
             raise HTTPException(status_code=503, detail="MCP manager not available")
         if "enabled" not in payload or not isinstance(payload["enabled"], bool):
-            raise HTTPException(status_code=400, detail="Invalid payload: 'enabled' must be a boolean")
+            raise HTTPException(
+                status_code=400, detail="Invalid payload: 'enabled' must be a boolean"
+            )
         enabled = payload["enabled"]
         try:
             manager = self.lifecycle.mcp_manager
@@ -166,7 +172,9 @@ class McpRoutes(Routes):
             raise HTTPException(status_code=502, detail=str(e)) from e
         except Exception as e:
             logger.error(f"Failed to set MCP server enabled state for {server_id}: {e}")
-            raise HTTPException(status_code=500, detail="Failed to update MCP server state")
+            raise HTTPException(
+                status_code=500, detail="Failed to update MCP server state"
+            )
 
     async def get_mcp_server_config(self, server_id: str):
         if not self.lifecycle or not getattr(self.lifecycle, "mcp_manager", None):
@@ -181,21 +189,32 @@ class McpRoutes(Routes):
                     description = server.description or ""
                     name = server.name
                     break
-            return {"id": server_id, "name": name, "description": description, "config": editor_cfg}
+            return {
+                "id": server_id,
+                "name": name,
+                "description": description,
+                "config": editor_cfg,
+            }
         except HTTPException:
             raise
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e)) from e
         except Exception as e:
             logger.error(f"Failed to load MCP config file for {server_id}: {e}")
-            raise HTTPException(status_code=500, detail="Failed to load MCP config file")
+            raise HTTPException(
+                status_code=500, detail="Failed to load MCP config file"
+            )
 
     async def list_mcp_server_tools(self, server_id: str):
         if not self.lifecycle or not getattr(self.lifecycle, "mcp_manager", None):
             raise HTTPException(status_code=503, detail="MCP manager not available")
         try:
             server = next(
-                (item for item in self.lifecycle.mcp_manager.servers if item.id == server_id),
+                (
+                    item
+                    for item in self.lifecycle.mcp_manager.servers
+                    if item.id == server_id
+                ),
                 None,
             )
             if server is None:
@@ -214,25 +233,35 @@ class McpRoutes(Routes):
             raise HTTPException(status_code=404, detail=str(e)) from e
         except Exception as e:
             logger.error(f"Failed to list MCP tools for {server_id}: {e}")
-            raise HTTPException(status_code=500, detail="Failed to list MCP tools") from e
+            raise HTTPException(
+                status_code=500, detail="Failed to list MCP tools"
+            ) from e
 
     async def set_mcp_tool_enabled(self, server_id: str, tool_name: str, payload: dict):
         if not self.lifecycle or not getattr(self.lifecycle, "mcp_manager", None):
             raise HTTPException(status_code=503, detail="MCP manager not available")
         if "enabled" not in payload or not isinstance(payload["enabled"], bool):
-            raise HTTPException(status_code=400, detail="Invalid payload: 'enabled' must be a boolean")
+            raise HTTPException(
+                status_code=400, detail="Invalid payload: 'enabled' must be a boolean"
+            )
         enabled = payload["enabled"]
         try:
             manager = self.lifecycle.mcp_manager
-            manager.set_tool_enabled(server_id=server_id, tool_name=tool_name, enabled=enabled)
+            manager.set_tool_enabled(
+                server_id=server_id, tool_name=tool_name, enabled=enabled
+            )
             return {"server_id": server_id, "tool_name": tool_name, "enabled": enabled}
         except HTTPException:
             raise
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e)) from e
         except Exception as e:
-            logger.error(f"Failed to set MCP tool enabled state for {server_id}/{tool_name}: {e}")
-            raise HTTPException(status_code=500, detail="Failed to update MCP tool state") from e
+            logger.error(
+                f"Failed to set MCP tool enabled state for {server_id}/{tool_name}: {e}"
+            )
+            raise HTTPException(
+                status_code=500, detail="Failed to update MCP tool state"
+            ) from e
 
     async def update_mcp_server_config(
         self,
@@ -269,7 +298,9 @@ class McpRoutes(Routes):
             raise HTTPException(status_code=400, detail=str(e)) from e
         except Exception as e:
             logger.error(f"Failed to update MCP config file for {server_id}: {e}")
-            raise HTTPException(status_code=500, detail="Failed to save MCP config file") from e
+            raise HTTPException(
+                status_code=500, detail="Failed to save MCP config file"
+            ) from e
 
     async def delete_mcp_server(self, server_id: str):
         if not self.lifecycle or not getattr(self.lifecycle, "mcp_manager", None):

@@ -1,6 +1,7 @@
 """
 Pydantic models shared across WebUI routes.
 """
+
 from typing import Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -32,18 +33,21 @@ class OverviewWidget(BaseModel):
 
 class HourlyMessageCount(BaseModel):
     """One data point for the hourly message line chart."""
+
     hour_ts: int = 0  # Unix timestamp of the hour bucket
     count: int = 0
 
 
 class PlatformMessageCount(BaseModel):
     """One data point for the platform distribution pie chart."""
+
     platform: str = ""
     count: int = 0
 
 
 class LLMModelStat(BaseModel):
     """Per-model LLM usage summary."""
+
     model: str = ""
     calls: int = 0
     success: int = 0
@@ -56,6 +60,7 @@ class LLMModelStat(BaseModel):
 
 class LLMSummary(BaseModel):
     """Aggregated LLM usage statistics."""
+
     total_calls: int = 0
     total_input_tokens: int = 0
     total_output_tokens: int = 0
@@ -108,7 +113,9 @@ class ProviderResponse(ProviderBase):
 
 class ModelCreateRequest(BaseModel):
     model_type: str
-    model_name: str = Field(min_length=1, validation_alias=AliasChoices("model_name", "model_id"))
+    model_name: str = Field(
+        min_length=1, validation_alias=AliasChoices("model_name", "model_id")
+    )
     config: dict = Field(default_factory=dict)
 
 
@@ -119,6 +126,7 @@ class ModelUpdateRequest(BaseModel):
 
 class ModelSyncRequest(BaseModel):
     """Batch sync: add and remove upstream model names."""
+
     add_ids: list[str] = Field(default_factory=list)
     delete_ids: list[str] = Field(default_factory=list)
     config: dict = Field(default_factory=dict)
@@ -126,12 +134,14 @@ class ModelSyncRequest(BaseModel):
 
 class HealthCheckRequest(BaseModel):
     """Health check request for a specific model."""
+
     model_type: str
     model_id: str
 
 
 class HealthCheckResponse(BaseModel):
     """Health check result."""
+
     success: bool
     latency: int | None = None
     error: str | None = None
@@ -156,6 +166,7 @@ class AdapterResponse(AdapterBase):
 
 class QRCodeLoginStartRequest(BaseModel):
     config: dict = Field(default_factory=dict)
+
 
 class PersonaBase(BaseModel):
     name: str
@@ -254,12 +265,13 @@ class StickerUpdateRequest(BaseModel):
 
 class PageMenu(BaseModel):
     """Menu entry for a plugin page, shown in sidebar."""
+
     route: str
     label: str | dict[str, str]
     icon: str | None = None
     order: int = 100
 
-    @field_validator('label')
+    @field_validator("label")
     @classmethod
     def validate_label(cls, v):
         if isinstance(v, str):
@@ -269,10 +281,14 @@ class PageMenu(BaseModel):
         if isinstance(v, dict):
             for key, val in v.items():
                 if not isinstance(key, str) or not isinstance(val, str):
-                    raise ValueError(f"label dict keys and values must be strings, "
-                                     f"got {type(key).__name__}: {type(val).__name__}")
+                    raise ValueError(
+                        f"label dict keys and values must be strings, "
+                        f"got {type(key).__name__}: {type(val).__name__}"
+                    )
                 if not val.strip():
-                    raise ValueError(f"label dict value for '{key}' must not be empty or whitespace")
+                    raise ValueError(
+                        f"label dict value for '{key}' must not be empty or whitespace"
+                    )
             return v
         raise ValueError(f"label must be a str or dict, got {type(v).__name__}")
 
@@ -299,8 +315,17 @@ class PluginItem(BaseModel):
 
 class PluginComponent(BaseModel):
     type: Literal[
-        "tool", "tag", "hook", "page", "api", "websocket", "static",
-        "widget", "provider", "adapter", "adapter_capability",
+        "tool",
+        "tag",
+        "hook",
+        "page",
+        "api",
+        "websocket",
+        "static",
+        "widget",
+        "provider",
+        "adapter",
+        "adapter_capability",
     ]
     name: str
     description: str | dict[str, str] = ""
@@ -323,7 +348,9 @@ class PluginInstallGithubRequest(BaseModel):
         if value is None:
             return None
         normalized = value.strip().lower()
-        if len(normalized) != 40 or any(char not in "0123456789abcdef" for char in normalized):
+        if len(normalized) != 40 or any(
+            char not in "0123456789abcdef" for char in normalized
+        ):
             raise ValueError("commit_sha must be a full 40-character Git commit SHA")
         return normalized
 
@@ -339,7 +366,14 @@ class PluginInstallTask(BaseModel):
     repo_url: str
     commit_sha: str | None = None
     status: Literal["installing", "completed", "failed", "cancelled"]
-    stage: Literal["downloading", "installing_dependencies", "loading", "completed", "failed", "cancelled"]
+    stage: Literal[
+        "downloading",
+        "installing_dependencies",
+        "loading",
+        "completed",
+        "failed",
+        "cancelled",
+    ]
     plugin_id: str | None = None
     error: str | None = None
     warnings: list[str] = Field(default_factory=list)
@@ -364,7 +398,9 @@ class PluginUpdateRequest(BaseModel):
         if value is None:
             return None
         normalized = value.strip().lower()
-        if len(normalized) != 40 or any(char not in "0123456789abcdef" for char in normalized):
+        if len(normalized) != 40 or any(
+            char not in "0123456789abcdef" for char in normalized
+        ):
             raise ValueError("commit_sha must be a full 40-character Git commit SHA")
         return normalized
 
@@ -385,7 +421,15 @@ class PluginUpdateTask(BaseModel):
     name: str
     commit_sha: str | None = None
     status: Literal["queued", "running", "completed", "failed", "cancelled"]
-    stage: Literal["queued", "downloading", "installing_dependencies", "loading", "completed", "failed", "cancelled"]
+    stage: Literal[
+        "queued",
+        "downloading",
+        "installing_dependencies",
+        "loading",
+        "completed",
+        "failed",
+        "cancelled",
+    ]
     error: str | None = None
     warnings: list[str] = Field(default_factory=list)
 
@@ -401,7 +445,16 @@ class PluginTask(BaseModel):
     repo_url: str | None = None
     commit_sha: str | None = None
     status: Literal["queued", "running", "completed", "failed", "cancelled"]
-    stage: Literal["queued", "downloading", "extracting", "installing_dependencies", "loading", "completed", "failed", "cancelled"]
+    stage: Literal[
+        "queued",
+        "downloading",
+        "extracting",
+        "installing_dependencies",
+        "loading",
+        "completed",
+        "failed",
+        "cancelled",
+    ]
     error: str | None = None
     warnings: list[str] = Field(default_factory=list)
 
@@ -489,7 +542,9 @@ class DirectoryEntry(BaseModel):
     file_count: int = 0
 
 
-StorageCategoryId = Literal["image_descriptions", "message_archives", "temp", "logs", "update_packages"]
+StorageCategoryId = Literal[
+    "image_descriptions", "message_archives", "temp", "logs", "update_packages"
+]
 
 
 class StorageCategory(BaseModel):
@@ -509,7 +564,17 @@ class StorageCleanupResponse(BaseModel):
 
 
 class StorageUsageEntry(BaseModel):
-    id: Literal["sessions", "media", "database", "plugins", "runtime", "backups", "temp", "logs", "other"]
+    id: Literal[
+        "sessions",
+        "media",
+        "database",
+        "plugins",
+        "runtime",
+        "backups",
+        "temp",
+        "logs",
+        "other",
+    ]
     size_bytes: int = 0
 
 
@@ -548,7 +613,9 @@ class BackupCreateResponse(BaseModel):
 class BackupProgressResponse(BaseModel):
     id: str
     status: Literal["queued", "running", "completed", "failed"] = "queued"
-    stage: Literal["queued", "scanning", "compressing", "finalizing", "completed", "failed"] = "queued"
+    stage: Literal[
+        "queued", "scanning", "compressing", "finalizing", "completed", "failed"
+    ] = "queued"
     percent: int = Field(default=0, ge=0, le=100)
     result: BackupCreateResponse | None = None
     error: Literal["backup_exists"] | None = None

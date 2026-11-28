@@ -145,7 +145,11 @@ class PersonasRoutes(Routes):
             persona_content = persona.content
             persona_format = persona.format
             persona_name = persona.name
-            return {"content": persona_content, "format": persona_format, "name": persona_name}
+            return {
+                "content": persona_content,
+                "format": persona_format,
+                "name": persona_name,
+            }
         raise HTTPException(status_code=404, detail="Persona manager not available")
 
     async def update_current_persona_content(self, payload: dict):
@@ -179,13 +183,32 @@ class PersonasRoutes(Routes):
         success = await self.lifecycle.persona_manager.update_persona(persona)
         if not success:
             raise HTTPException(status_code=404, detail="Persona not found")
-        return {"content": content, "format": persona_format, "name": name, "id": persona_id}
+        return {
+            "content": content,
+            "format": persona_format,
+            "name": name,
+            "id": persona_id,
+        }
 
     async def list_personas(self):
         if not self.lifecycle or not self.lifecycle.persona_manager:
             raise HTTPException(status_code=404, detail="Persona manager not available")
         items = await self.lifecycle.persona_manager.list_personas()
-        return [PersonaResponse(id=p.id, name=p.name, format=p.format, content=p.content, created_at=p.created_at or 0, is_active=p.is_active or False, reference_image_path=p.reference_image_path, chat_rules=p.chat_rules or "", private_chat_rules=p.private_chat_rules or "", group_chat_rules=p.group_chat_rules or "") for p in items]
+        return [
+            PersonaResponse(
+                id=p.id,
+                name=p.name,
+                format=p.format,
+                content=p.content,
+                created_at=p.created_at or 0,
+                is_active=p.is_active or False,
+                reference_image_path=p.reference_image_path,
+                chat_rules=p.chat_rules or "",
+                private_chat_rules=p.private_chat_rules or "",
+                group_chat_rules=p.group_chat_rules or "",
+            )
+            for p in items
+        ]
 
     async def get_active_persona(self):
         if not self.lifecycle or not self.lifecycle.persona_manager:
@@ -193,7 +216,18 @@ class PersonasRoutes(Routes):
         persona = await self.lifecycle.persona_manager.get_active_persona()
         if not persona:
             raise HTTPException(status_code=404, detail="No active persona found")
-        return PersonaResponse(id=persona.id, name=persona.name, format=persona.format, content=persona.content, created_at=persona.created_at or 0, is_active=True, reference_image_path=persona.reference_image_path, chat_rules=persona.chat_rules or "", private_chat_rules=persona.private_chat_rules or "", group_chat_rules=persona.group_chat_rules or "")
+        return PersonaResponse(
+            id=persona.id,
+            name=persona.name,
+            format=persona.format,
+            content=persona.content,
+            created_at=persona.created_at or 0,
+            is_active=True,
+            reference_image_path=persona.reference_image_path,
+            chat_rules=persona.chat_rules or "",
+            private_chat_rules=persona.private_chat_rules or "",
+            group_chat_rules=persona.group_chat_rules or "",
+        )
 
     async def set_active_persona(self, payload: dict):
         if not self.lifecycle or not self.lifecycle.persona_manager:
@@ -225,25 +259,45 @@ class PersonasRoutes(Routes):
         created = await self.lifecycle.persona_manager.get_persona(persona_id)
         if not created:
             raise HTTPException(status_code=500, detail="Failed to create persona")
-        return PersonaResponse(id=created.id, name=created.name, format=created.format, content=created.content, created_at=created.created_at or 0, is_active=created.is_active or False, reference_image_path=created.reference_image_path, chat_rules=created.chat_rules or "", private_chat_rules=created.private_chat_rules or "", group_chat_rules=created.group_chat_rules or "")
+        return PersonaResponse(
+            id=created.id,
+            name=created.name,
+            format=created.format,
+            content=created.content,
+            created_at=created.created_at or 0,
+            is_active=created.is_active or False,
+            reference_image_path=created.reference_image_path,
+            chat_rules=created.chat_rules or "",
+            private_chat_rules=created.private_chat_rules or "",
+            group_chat_rules=created.group_chat_rules or "",
+        )
 
     async def persona_generator_turn(self, payload: PersonaGeneratorTurnRequest):
         """Advance a persona-generation interview by one LLM tool call."""
         if not self.lifecycle or not self.lifecycle.provider_manager:
-            raise HTTPException(status_code=404, detail="Provider manager not available")
+            raise HTTPException(
+                status_code=404, detail="Provider manager not available"
+            )
         try:
             client = self._get_persona_generator_client()
             lang = self.lifecycle.kira_config.get_config("locale.lang")
             result = await PersonaGenerator(client).respond(
-                [OpenAIMessage(role=message.role, content=message.content) for message in payload.messages],
+                [
+                    OpenAIMessage(role=message.role, content=message.content)
+                    for message in payload.messages
+                ],
                 lang,
             )
         except PersonaGenerationError as exc:
             logger.warning("Persona generator returned an invalid result: %s", exc)
-            raise HTTPException(status_code=502, detail="Persona generator returned an invalid response") from exc
+            raise HTTPException(
+                status_code=502, detail="Persona generator returned an invalid response"
+            ) from exc
         except Exception as exc:
             logger.exception("Failed to generate persona")
-            raise HTTPException(status_code=502, detail="Failed to generate persona") from exc
+            raise HTTPException(
+                status_code=502, detail="Failed to generate persona"
+            ) from exc
         if isinstance(result, PersonaQuestion):
             return PersonaGeneratorTurnResponse(
                 type="question",
@@ -262,7 +316,9 @@ class PersonasRoutes(Routes):
     async def persona_generator_stream(self, payload: PersonaGeneratorTurnRequest):
         """Stream one persona-generation interview turn as server-sent events."""
         if not self.lifecycle or not self.lifecycle.provider_manager:
-            raise HTTPException(status_code=404, detail="Provider manager not available")
+            raise HTTPException(
+                status_code=404, detail="Provider manager not available"
+            )
 
         async def event_stream() -> AsyncIterator[str]:
             try:
@@ -272,31 +328,48 @@ class PersonasRoutes(Routes):
                     OpenAIMessage(role=message.role, content=message.content)
                     for message in payload.messages
                 ]
-                async with aclosing(PersonaGenerator(client).stream_respond(messages, lang)) as results:
+                async with aclosing(
+                    PersonaGenerator(client).stream_respond(messages, lang)
+                ) as results:
                     async for result in results:
                         if isinstance(result, PersonaTextDelta):
-                            yield self._sse_event({"type": "text", "content": result.content})
+                            yield self._sse_event(
+                                {"type": "text", "content": result.content}
+                            )
                         elif isinstance(result, PersonaQuestion):
-                            yield self._sse_event({
-                                "type": "question",
-                                "question": result.question,
-                                "options": result.options,
-                                "allow_custom": result.allow_custom,
-                            })
+                            yield self._sse_event(
+                                {
+                                    "type": "question",
+                                    "question": result.question,
+                                    "options": result.options,
+                                    "allow_custom": result.allow_custom,
+                                }
+                            )
                         else:
-                            yield self._sse_event({
-                                "type": "proposal",
-                                "name": result.name,
-                                "format": result.format,
-                                "content": result.content,
-                                "chat_rules": result.chat_rules,
-                            })
+                            yield self._sse_event(
+                                {
+                                    "type": "proposal",
+                                    "name": result.name,
+                                    "format": result.format,
+                                    "content": result.content,
+                                    "chat_rules": result.chat_rules,
+                                }
+                            )
             except PersonaGenerationError as exc:
-                logger.warning("Persona generator returned an invalid streamed result: %s", exc)
-                yield self._sse_event({"type": "error", "message": "Persona generator returned an invalid response"})
+                logger.warning(
+                    "Persona generator returned an invalid streamed result: %s", exc
+                )
+                yield self._sse_event(
+                    {
+                        "type": "error",
+                        "message": "Persona generator returned an invalid response",
+                    }
+                )
             except Exception:
                 logger.exception("Failed to stream persona generation")
-                yield self._sse_event({"type": "error", "message": "Failed to generate persona"})
+                yield self._sse_event(
+                    {"type": "error", "message": "Failed to generate persona"}
+                )
 
         return StreamingResponse(
             event_stream(),
@@ -309,7 +382,9 @@ class PersonasRoutes(Routes):
         try:
             return self.lifecycle.provider_manager.get_default_fast_llm()
         except (AttributeError, TypeError, ValueError):
-            logger.debug("[persona_gen] Default fast LLM is unavailable; using default LLM instead")
+            logger.debug(
+                "[persona_gen] Default fast LLM is unavailable; using default LLM instead"
+            )
             return self.lifecycle.provider_manager.get_default_llm()
 
     @staticmethod
@@ -325,8 +400,17 @@ class PersonasRoutes(Routes):
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         if path is None:
             raise HTTPException(status_code=404, detail="Reference image not found")
-        media_type = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}[path.suffix.lower()]
-        return FileResponse(path, media_type=media_type, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+        media_type = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".webp": "image/webp",
+        }[path.suffix.lower()]
+        return FileResponse(
+            path,
+            media_type=media_type,
+            headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+        )
 
     async def remove_reference_image(self, persona_id: str):
         if not self.lifecycle or not self.lifecycle.persona_manager:
@@ -339,18 +423,32 @@ class PersonasRoutes(Routes):
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-    async def upload_reference_image(self, persona_id: str, file: UploadFile = File(...)):
+    async def upload_reference_image(
+        self, persona_id: str, file: UploadFile = File(...)
+    ):
         try:
             if not self.lifecycle or not self.lifecycle.persona_manager:
-                raise HTTPException(status_code=404, detail="Persona manager not available")
+                raise HTTPException(
+                    status_code=404, detail="Persona manager not available"
+                )
             if not file.filename:
-                raise HTTPException(status_code=400, detail="Reference image file is required")
+                raise HTTPException(
+                    status_code=400, detail="Reference image file is required"
+                )
             file_bytes = await file.read(MAX_REFERENCE_IMAGE_BYTES + 1)
             if len(file_bytes) > MAX_REFERENCE_IMAGE_BYTES:
-                raise HTTPException(status_code=413, detail="Reference image exceeds the 10 MB limit")
-            path = await self.lifecycle.persona_manager.set_reference_image(persona_id, file_bytes, file.filename)
+                raise HTTPException(
+                    status_code=413, detail="Reference image exceeds the 10 MB limit"
+                )
+            path = await self.lifecycle.persona_manager.set_reference_image(
+                persona_id, file_bytes, file.filename
+            )
         except HTTPException as exc:
-            logger.warning("Persona reference image upload rejected (HTTP %s): %s", exc.status_code, exc.detail)
+            logger.warning(
+                "Persona reference image upload rejected (HTTP %s): %s",
+                exc.status_code,
+                exc.detail,
+            )
             raise
         except LookupError as exc:
             logger.warning("Persona reference image upload rejected: persona not found")
@@ -359,8 +457,12 @@ class PersonasRoutes(Routes):
             logger.warning("Persona reference image upload rejected: %s", exc)
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
-            logger.error("Failed to upload persona reference image (%s)", type(exc).__name__)
-            raise HTTPException(status_code=500, detail="Failed to upload reference image") from exc
+            logger.error(
+                "Failed to upload persona reference image (%s)", type(exc).__name__
+            )
+            raise HTTPException(
+                status_code=500, detail="Failed to upload reference image"
+            ) from exc
         finally:
             await file.close()
         return {"filename": path.name}
@@ -371,7 +473,18 @@ class PersonasRoutes(Routes):
         persona = await self.lifecycle.persona_manager.get_persona(persona_id)
         if not persona:
             raise HTTPException(status_code=404, detail="Persona not found")
-        return PersonaResponse(id=persona.id, name=persona.name, format=persona.format, content=persona.content, created_at=persona.created_at or 0, is_active=persona.is_active or False, reference_image_path=persona.reference_image_path, chat_rules=persona.chat_rules or "", private_chat_rules=persona.private_chat_rules or "", group_chat_rules=persona.group_chat_rules or "")
+        return PersonaResponse(
+            id=persona.id,
+            name=persona.name,
+            format=persona.format,
+            content=persona.content,
+            created_at=persona.created_at or 0,
+            is_active=persona.is_active or False,
+            reference_image_path=persona.reference_image_path,
+            chat_rules=persona.chat_rules or "",
+            private_chat_rules=persona.private_chat_rules or "",
+            group_chat_rules=persona.group_chat_rules or "",
+        )
 
     async def update_persona(self, persona_id: str, payload: PersonaBase):
         if not self.lifecycle or not self.lifecycle.persona_manager:
@@ -381,15 +494,32 @@ class PersonasRoutes(Routes):
             name=payload.name,
             format=payload.format,
             content=payload.content,
-            chat_rules=payload.chat_rules if "chat_rules" in payload.model_fields_set else None,
-            private_chat_rules=payload.private_chat_rules if "private_chat_rules" in payload.model_fields_set else None,
-            group_chat_rules=payload.group_chat_rules if "group_chat_rules" in payload.model_fields_set else None,
+            chat_rules=payload.chat_rules
+            if "chat_rules" in payload.model_fields_set
+            else None,
+            private_chat_rules=payload.private_chat_rules
+            if "private_chat_rules" in payload.model_fields_set
+            else None,
+            group_chat_rules=payload.group_chat_rules
+            if "group_chat_rules" in payload.model_fields_set
+            else None,
         )
         success = await self.lifecycle.persona_manager.update_persona(persona)
         if not success:
             raise HTTPException(status_code=404, detail="Persona not found")
         updated = await self.lifecycle.persona_manager.get_persona(persona_id)
-        return PersonaResponse(id=persona_id, name=updated.name, format=updated.format, content=updated.content, created_at=updated.created_at or 0, is_active=updated.is_active or False, reference_image_path=updated.reference_image_path, chat_rules=updated.chat_rules or "", private_chat_rules=updated.private_chat_rules or "", group_chat_rules=updated.group_chat_rules or "")
+        return PersonaResponse(
+            id=persona_id,
+            name=updated.name,
+            format=updated.format,
+            content=updated.content,
+            created_at=updated.created_at or 0,
+            is_active=updated.is_active or False,
+            reference_image_path=updated.reference_image_path,
+            chat_rules=updated.chat_rules or "",
+            private_chat_rules=updated.private_chat_rules or "",
+            group_chat_rules=updated.group_chat_rules or "",
+        )
 
     async def delete_persona(self, persona_id: str):
         if not self.lifecycle or not self.lifecycle.persona_manager:

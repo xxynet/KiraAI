@@ -14,7 +14,9 @@ _WEBUI_DIR = Path(__file__).parent
 # Load bundled resources once, before serving requests on the event loop.
 _MESSAGES = {
     locale: json.loads(
-        (_WEBUI_DIR / "locales" / f"frontend_unavailable.{locale}.json").read_text(encoding="utf-8")
+        (_WEBUI_DIR / "locales" / f"frontend_unavailable.{locale}.json").read_text(
+            encoding="utf-8"
+        )
     )
     for locale in ("en", "zh")
 }

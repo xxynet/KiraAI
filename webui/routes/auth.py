@@ -102,7 +102,14 @@ async def require_ws_auth(
 
 
 class AuthRoutes(Routes):
-    def __init__(self, app, lifecycle, access_token: str | None, dist_dir: Path, disable_auth: bool = False):
+    def __init__(
+        self,
+        app,
+        lifecycle,
+        access_token: str | None,
+        dist_dir: Path,
+        disable_auth: bool = False,
+    ):
         super().__init__(app, lifecycle)
         self.access_token = access_token
         self.dist_dir = dist_dir
@@ -203,14 +210,20 @@ class AuthRoutes(Routes):
                 if request.method != "GET":
                     return response
                 full_path = request.url.path.lstrip("/")
-                if full_path.startswith(("api/", "assets/", "monacoeditorwork/", "page/")):
+                if full_path.startswith(
+                    ("api/", "assets/", "monacoeditorwork/", "page/")
+                ):
                     return response
                 # sticker mount: only exclude if the requested file actually exists
                 # /sticker/xxx.gif → file exists → let mount handle it
                 # /sticker/ or /sticker → SPA route → serve index.html
                 if full_path.startswith("sticker/"):
-                    remaining = full_path[len("sticker/"):]
-                    if remaining and ".." not in remaining and (sticker_dir / remaining).exists():
+                    remaining = full_path[len("sticker/") :]
+                    if (
+                        remaining
+                        and ".." not in remaining
+                        and (sticker_dir / remaining).exists()
+                    ):
                         return response
                 # Serve single-segment root files from dist (favicon.ico, etc.)
                 if full_path and "/" not in full_path and ".." not in full_path:
@@ -218,9 +231,15 @@ class AuthRoutes(Routes):
                     try:
                         resolved = candidate.resolve()
                         dist_resolved = dist_dir.resolve()
-                        if resolved.is_file() and resolved.is_relative_to(dist_resolved):
+                        if resolved.is_file() and resolved.is_relative_to(
+                            dist_resolved
+                        ):
                             # The bridge has a stable URL across frontend builds.
-                            headers = {"Cache-Control": "no-cache"} if full_path == "plugin-bridge.js" else None
+                            headers = (
+                                {"Cache-Control": "no-cache"}
+                                if full_path == "plugin-bridge.js"
+                                else None
+                            )
                             return FileResponse(resolved, headers=headers)
                     except (OSError, ValueError):
                         pass
@@ -237,7 +256,9 @@ class AuthRoutes(Routes):
                 }
                 spa_index = dist_dir / "index.html"
                 if spa_index.exists():
-                    return FileResponse(spa_index, media_type="text/html", headers=no_cache_headers)
+                    return FileResponse(
+                        spa_index, media_type="text/html", headers=no_cache_headers
+                    )
                 return frontend_unavailable_response()
 
         self.app.add_middleware(SPAStaticFallbackMiddleware)
@@ -245,6 +266,7 @@ class AuthRoutes(Routes):
     @staticmethod
     def _get_sticker_dir() -> Path:
         from core.utils.path_utils import get_data_path
+
         return get_data_path() / "sticker"
 
     async def serve_spa(self, request: Request = None, full_path: str = ""):
@@ -260,8 +282,12 @@ class AuthRoutes(Routes):
             raise HTTPException(status_code=404)
         # sticker mount: only exclude if the requested file actually exists
         if full_path.startswith("sticker/"):
-            remaining = full_path[len("sticker/"):]
-            if remaining and ".." not in remaining and (self._get_sticker_dir() / remaining).exists():
+            remaining = full_path[len("sticker/") :]
+            if (
+                remaining
+                and ".." not in remaining
+                and (self._get_sticker_dir() / remaining).exists()
+            ):
                 raise HTTPException(status_code=404)
         # Serve single-segment root files from dist (favicon.ico, etc.).
         # Restrict to one path segment to avoid traversal.
@@ -274,12 +300,19 @@ class AuthRoutes(Routes):
                 # doesn't slip past a string-prefix check on /app/dist.
                 if resolved.is_file() and resolved.is_relative_to(dist_resolved):
                     # The bridge has a stable URL across frontend builds.
-                    headers = {"Cache-Control": "no-cache"} if full_path == "plugin-bridge.js" else None
+                    headers = (
+                        {"Cache-Control": "no-cache"}
+                        if full_path == "plugin-bridge.js"
+                        else None
+                    )
                     return FileResponse(resolved, headers=headers)
             except (OSError, ValueError):
                 pass
         # Only serve the SPA for GET requests that accept HTML (browser navigations)
-        if request and (request.method != "GET" or "text/html" not in request.headers.get("accept", "")):
+        if request and (
+            request.method != "GET"
+            or "text/html" not in request.headers.get("accept", "")
+        ):
             raise HTTPException(status_code=404)
         # SPA index.html must not be cached — asset filenames are content-hashed
         # in /assets, but index.html is the stable URL that points at the
@@ -292,16 +325,23 @@ class AuthRoutes(Routes):
         }
         spa_index = self.dist_dir / "index.html"
         if spa_index.exists():
-            return FileResponse(spa_index, media_type="text/html", headers=no_cache_headers)
+            return FileResponse(
+                spa_index, media_type="text/html", headers=no_cache_headers
+            )
         return frontend_unavailable_response()
 
     async def get_auth_config(self):
         return {"auth_enabled": not self.disable_auth}
 
     def _get_onboarding_config(self) -> dict:
-        config = getattr(self.lifecycle, "kira_config", None) if self.lifecycle else None
+        config = (
+            getattr(self.lifecycle, "kira_config", None) if self.lifecycle else None
+        )
         if not isinstance(config, dict) or not config:
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Configuration not available")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Configuration not available",
+            )
         onboarding = config.get("onboarding", {})
         return onboarding if isinstance(onboarding, dict) else {}
 
@@ -318,7 +358,9 @@ class AuthRoutes(Routes):
             ),
         )
 
-    async def setup_onboarding_token(self, payload: OnboardingTokenSetupRequest, request: Request):
+    async def setup_onboarding_token(
+        self, payload: OnboardingTokenSetupRequest, request: Request
+    ):
         """First-run access-token setup: replace the auto-generated token or skip.
 
         One-shot and only reachable before onboarding completes — afterwards
@@ -328,7 +370,9 @@ class AuthRoutes(Routes):
         the rotation.
         """
         if self.disable_auth:
-            raise HTTPException(status_code=400, detail="Cannot change token when auth is disabled")
+            raise HTTPException(
+                status_code=400, detail="Cannot change token when auth is disabled"
+            )
         if self._get_onboarding_config().get("completed", False):
             raise HTTPException(status_code=400, detail="Onboarding already completed")
         if _load_webui_config().get("token_setup_done", False):
@@ -340,9 +384,14 @@ class AuthRoutes(Routes):
 
         new_token = payload.token.strip()
         if len(new_token) < 6:
-            raise HTTPException(status_code=400, detail="New token must be at least 6 characters")
+            raise HTTPException(
+                status_code=400, detail="New token must be at least 6 characters"
+            )
         if new_token == "disabled":
-            raise HTTPException(status_code=400, detail="The token 'disabled' is reserved and cannot be used")
+            raise HTTPException(
+                status_code=400,
+                detail="The token 'disabled' is reserved and cannot be used",
+            )
 
         _update_webui_config(access_token=new_token, token_setup_done=True)
         request.app.state.access_token = new_token
@@ -355,7 +404,9 @@ class AuthRoutes(Routes):
             expires_delta=timedelta(days=5),
         )
         resp = JSONResponse(
-            content=OnboardingTokenSetupResponse(skipped=False, access_token=access_token).model_dump()
+            content=OnboardingTokenSetupResponse(
+                skipped=False, access_token=access_token
+            ).model_dump()
         )
         resp.set_cookie(
             key="kira_token",
@@ -381,7 +432,9 @@ class AuthRoutes(Routes):
             "version": onboarding.get("version", 1),
         }
         config.save_config()
-        return OnboardingStatusResponse(completed=True, version=config["onboarding"]["version"])
+        return OnboardingStatusResponse(
+            completed=True, version=config["onboarding"]["version"]
+        )
 
     async def health(self):
         return {"status": "ok", "lifecycle_available": self.lifecycle is not None}

@@ -38,23 +38,22 @@ class ScopeRoutes(Routes):
         mcp_servers: list[dict[str, Any]] = []
         if self.lifecycle.mcp_manager:
             mcp_scopes = dict(self.lifecycle.mcp_manager.mcp_config.get("_scope", {}))
-            for server in self.lifecycle.mcp_manager.servers:
-                mcp_servers.append({
-                    "id": server.id,
-                    "name": server.name,
-                    "enabled": server.enabled,
-                })
+            mcp_servers.extend(
+                {"id": server.id, "name": server.name, "enabled": server.enabled}
+                for server in self.lifecycle.mcp_manager.servers
+            )
 
         # Gather skills scopes: {skill_name: {"allow": [...]} or {"deny": [...]}}
         skill_scopes: dict[str, Any] = {}
         skills: list[dict[str, Any]] = []
         if self.lifecycle.skills_manager:
-            skill_scopes = dict(self.lifecycle.skills_manager._raw_config.get("_scope", {}))
-            for skill in self.lifecycle.skills_manager.skills_info:
-                skills.append({
-                    "name": skill.name,
-                    "enabled": skill.enabled,
-                })
+            skill_scopes = dict(
+                self.lifecycle.skills_manager._raw_config.get("_scope", {})
+            )
+            skills.extend(
+                {"name": skill.name, "enabled": skill.enabled}
+                for skill in self.lifecycle.skills_manager.skills_info
+            )
 
         manager = getattr(self.lifecycle, "subagent_manager", None)
         subagent_presets = []
@@ -70,16 +69,20 @@ class ScopeRoutes(Routes):
         # Gather sessions
         sessions: list[dict[str, Any]] = []
         if self.lifecycle.session_manager:
-            for session in await self.lifecycle.session_manager.get_sessions(include_content=False):
+            for session in await self.lifecycle.session_manager.get_sessions(
+                include_content=False
+            ):
                 if not isinstance(session.data, dict):
                     continue
-                sessions.append({
-                    "id": session.sid,
-                    "adapter": session.adapter_name,
-                    "type": session.session_type,
-                    "session_id": session.session_id,
-                    "title": session.session_title,
-                })
+                sessions.append(
+                    {
+                        "id": session.sid,
+                        "adapter": session.adapter_name,
+                        "type": session.session_type,
+                        "session_id": session.session_id,
+                        "title": session.session_title,
+                    }
+                )
 
         return {
             "mcp_scopes": mcp_scopes,
@@ -113,7 +116,9 @@ class ScopeRoutes(Routes):
             if "subagent_scopes" in payload:
                 manager = getattr(self.lifecycle, "subagent_manager", None)
                 if manager is None:
-                    raise HTTPException(status_code=503, detail="Subagent manager unavailable")
+                    raise HTTPException(
+                        status_code=503, detail="Subagent manager unavailable"
+                    )
                 try:
                     await manager.presets.replace_scopes(payload["subagent_scopes"])
                 except ValueError as exc:
@@ -128,24 +133,46 @@ class ScopeRoutes(Routes):
                         self.lifecycle.mcp_manager.set_server_scope(server_id, None, [])
                 # Set new entries
                 for server_id, entry in mcp_scopes.items():
-                    mode = "allow" if "allow" in entry else "deny" if "deny" in entry else None
+                    mode = (
+                        "allow"
+                        if "allow" in entry
+                        else "deny"
+                        if "deny" in entry
+                        else None
+                    )
                     sessions = entry.get(mode, []) if mode else []
-                    self.lifecycle.mcp_manager.set_server_scope(server_id, mode, sessions)
+                    self.lifecycle.mcp_manager.set_server_scope(
+                        server_id, mode, sessions
+                    )
 
             # Update skill scopes
             if self.lifecycle.skills_manager:
-                existing_skills = self.lifecycle.skills_manager._raw_config.get("_scope", {})
+                existing_skills = self.lifecycle.skills_manager._raw_config.get(
+                    "_scope", {}
+                )
                 for skill_name in list(existing_skills.keys()):
                     if skill_name not in skill_scopes:
-                        self.lifecycle.skills_manager.set_skill_scope(skill_name, None, [])
+                        self.lifecycle.skills_manager.set_skill_scope(
+                            skill_name, None, []
+                        )
                 for skill_name, entry in skill_scopes.items():
-                    mode = "allow" if "allow" in entry else "deny" if "deny" in entry else None
+                    mode = (
+                        "allow"
+                        if "allow" in entry
+                        else "deny"
+                        if "deny" in entry
+                        else None
+                    )
                     sessions = entry.get(mode, []) if mode else []
-                    self.lifecycle.skills_manager.set_skill_scope(skill_name, mode, sessions)
+                    self.lifecycle.skills_manager.set_skill_scope(
+                        skill_name, mode, sessions
+                    )
 
             return {"success": True}
         except HTTPException:
             raise
         except Exception as e:
             logger.error(f"Failed to update scope: {e}")
-            raise HTTPException(status_code=500, detail="Failed to update scope configuration")
+            raise HTTPException(
+                status_code=500, detail="Failed to update scope configuration"
+            )

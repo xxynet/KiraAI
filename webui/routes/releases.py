@@ -26,7 +26,9 @@ logger = get_logger("releases", "green")
 
 RESTART_EXIT_CODE = 42
 RESTART_DELAY_SECONDS = 0.5  # Allow HTTP response to flush before hard exit
-RESTART_PROGRESS_GRACE_SECONDS = 2.0  # Let the browser observe the restarting state first
+RESTART_PROGRESS_GRACE_SECONDS = (
+    2.0  # Let the browser observe the restarting state first
+)
 MAX_UPDATE_SOURCE_BYTES = 200 * 1024 * 1024
 
 
@@ -40,7 +42,9 @@ def _get_protected_source_update_items(root: Path) -> frozenset[str]:
         except ValueError:
             continue
         if not relative_data_path.parts:
-            raise ValueError("Source updates are unsafe when the runtime data directory is the application root")
+            raise ValueError(
+                "Source updates are unsafe when the runtime data directory is the application root"
+            )
         protected_items.add(relative_data_path.parts[0].casefold())
     return frozenset(protected_items)
 
@@ -52,7 +56,10 @@ _install_lock = asyncio.Lock()
 async def update_package_maintenance():
     """Exclude package cleanup while an update is downloading or applying."""
     if _install_lock.locked():
-        raise HTTPException(status_code=409, detail="An update is running; retry cleanup after it finishes")
+        raise HTTPException(
+            status_code=409,
+            detail="An update is running; retry cleanup after it finishes",
+        )
     async with _install_lock:
         yield
 
@@ -99,7 +106,10 @@ class ReleasesRoutes(Routes):
     async def get_releases(self):
         global _releases_cache, _releases_cache_time
         now = time.monotonic()
-        if _releases_cache is not None and now - _releases_cache_time < _RELEASES_CACHE_TTL:
+        if (
+            _releases_cache is not None
+            and now - _releases_cache_time < _RELEASES_CACHE_TTL
+        ):
             releases = _releases_cache
         else:
             try:
@@ -130,7 +140,10 @@ class ReleasesRoutes(Routes):
 
             releases = await self.get_releases()
             if not any(release.tag_name == tag for release in releases.releases):
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown release tag")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Unknown release tag",
+                )
 
             task_id = uuid.uuid4().hex
             self._progress[task_id] = self._new_progress(task_id, tag)
@@ -141,7 +154,9 @@ class ReleasesRoutes(Routes):
     async def get_update_progress(self, task_id: str):
         progress = self._progress.get(task_id)
         if progress is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Update task not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Update task not found"
+            )
         return progress
 
     @staticmethod
@@ -155,13 +170,29 @@ class ReleasesRoutes(Routes):
             "overall_percent": 0,
             "stages": {
                 name: {"status": "pending", "percent": 0}
-                for name in ("webui", "download", "verify", "apply", "dependencies", "restart")
+                for name in (
+                    "webui",
+                    "download",
+                    "verify",
+                    "apply",
+                    "dependencies",
+                    "restart",
+                )
             },
         }
 
-    def _set_progress(self, task_id: str, stage: str, message: str, percent: int, status: str = "running") -> None:
+    def _set_progress(
+        self,
+        task_id: str,
+        stage: str,
+        message: str,
+        percent: int,
+        status: str = "running",
+    ) -> None:
         progress = self._progress[task_id]
-        progress.update({"stage": stage, "message": message, "overall_percent": percent})
+        progress.update(
+            {"stage": stage, "message": message, "overall_percent": percent}
+        )
         progress["stages"][stage].update({"status": status, "percent": percent})
 
     async def _run_update(self, task_id: str, tag: str) -> None:
@@ -170,7 +201,9 @@ class ReleasesRoutes(Routes):
         try:
             async with _install_lock:
                 safe_tag = re.sub(r"[^A-Za-z0-9._-]", "-", tag)
-                safe_tag = re.sub(r"-{2,}", "-", safe_tag).strip(".-")[:128] or "unknown"
+                safe_tag = (
+                    re.sub(r"-{2,}", "-", safe_tag).strip(".-")[:128] or "unknown"
+                )
                 updates_dir = get_data_path() / "updates"
                 updates_dir.mkdir(parents=True, exist_ok=True)
                 zip_path = updates_dir / f"{safe_tag}.zip"
@@ -178,9 +211,17 @@ class ReleasesRoutes(Routes):
 
                 self._set_progress(task_id, "webui", "Downloading WebUI assets...", 5)
                 dist_archive = await download_dist_archive(tag)
-                self._set_progress(task_id, "webui", "WebUI assets downloaded and verified.", 30, "done")
+                self._set_progress(
+                    task_id,
+                    "webui",
+                    "WebUI assets downloaded and verified.",
+                    30,
+                    "done",
+                )
 
-                self._set_progress(task_id, "download", "Downloading release source...", 35)
+                self._set_progress(
+                    task_id, "download", "Downloading release source...", 35
+                )
                 if not zip_path.exists():
                     direct_url = f"https://github.com/KiraAI-Dev/KiraAI/archive/refs/tags/{tag}.zip"
                     ranked_urls = await pick_fastest_source(direct_url)
@@ -190,36 +231,68 @@ class ReleasesRoutes(Routes):
                     for i, url in enumerate(ranked_urls):
                         logger.info(f"Trying source {i + 1}/{len(ranked_urls)}: {url}")
                         try:
-                            data = await download_asset(url, max_bytes=MAX_UPDATE_SOURCE_BYTES)
-                            logger.info(f"Downloaded {len(data) / 1024 / 1024:.1f} MB from source {i + 1}")
+                            data = await download_asset(
+                                url, max_bytes=MAX_UPDATE_SOURCE_BYTES
+                            )
+                            logger.info(
+                                f"Downloaded {len(data) / 1024 / 1024:.1f} MB from source {i + 1}"
+                            )
                             break
                         except Exception as exc:
                             logger.warning(f"Source {i + 1} failed: {exc}")
                     if data is None:
                         raise RuntimeError("Failed to download release source")
                     await loop.run_in_executor(None, zip_path.write_bytes, data)
-                self._set_progress(task_id, "download", "Release source downloaded.", 55, "done")
+                self._set_progress(
+                    task_id, "download", "Release source downloaded.", 55, "done"
+                )
 
                 self._set_progress(task_id, "verify", "Verifying update package...", 60)
-                source_transaction = await asyncio.to_thread(self._apply_update, zip_path, True)
-                self._set_progress(task_id, "verify", "Update package verified.", 65, "done")
-                self._set_progress(task_id, "apply", "Applying core and WebUI files...", 70)
-                dist_transaction = await asyncio.to_thread(apply_dist_archive, dist_archive, tag, True)
-                self._set_progress(task_id, "apply", "Core and WebUI files applied; keeping rollback backups...", 80, "done")
+                source_transaction = await asyncio.to_thread(
+                    self._apply_update, zip_path, True
+                )
+                self._set_progress(
+                    task_id, "verify", "Update package verified.", 65, "done"
+                )
+                self._set_progress(
+                    task_id, "apply", "Applying core and WebUI files...", 70
+                )
+                dist_transaction = await asyncio.to_thread(
+                    apply_dist_archive, dist_archive, tag, True
+                )
+                self._set_progress(
+                    task_id,
+                    "apply",
+                    "Core and WebUI files applied; keeping rollback backups...",
+                    80,
+                    "done",
+                )
 
-                self._set_progress(task_id, "dependencies", "Installing dependencies...", 85)
+                self._set_progress(
+                    task_id, "dependencies", "Installing dependencies...", 85
+                )
                 config = getattr(self.lifecycle, "kira_config", None)
-                pypi_mirror = ((config.get("network") or {}).get("pypi_mirror") if config else None)
-                warnings = await install_requirements(get_root_path(), pypi_mirror=pypi_mirror)
+                pypi_mirror = (
+                    (config.get("network") or {}).get("pypi_mirror") if config else None
+                )
+                warnings = await install_requirements(
+                    get_root_path(), pypi_mirror=pypi_mirror
+                )
                 if warnings:
-                    raise RuntimeError("Dependency installation failed: " + "; ".join(warnings))
+                    raise RuntimeError(
+                        "Dependency installation failed: " + "; ".join(warnings)
+                    )
                 await asyncio.to_thread(source_transaction.commit)
                 source_transaction = None
                 await asyncio.to_thread(dist_transaction.commit)
                 dist_transaction = None
-                self._set_progress(task_id, "dependencies", "Dependencies installed.", 92, "done")
+                self._set_progress(
+                    task_id, "dependencies", "Dependencies installed.", 92, "done"
+                )
 
-            self._set_progress(task_id, "restart", "Update complete. Restarting KiraAI...", 98)
+            self._set_progress(
+                task_id, "restart", "Update complete. Restarting KiraAI...", 98
+            )
             self._progress[task_id]["status"] = "restarting"
             logger.info("Scheduling restart after update...")
             # The progress endpoint is in this process. Keep it alive briefly
@@ -229,7 +302,9 @@ class ReleasesRoutes(Routes):
             await self.lifecycle.stop()
             if self.lifecycle.uvicorn_server:
                 self.lifecycle.uvicorn_server.should_exit = True
-            asyncio.get_running_loop().call_later(RESTART_DELAY_SECONDS, os._exit, RESTART_EXIT_CODE)
+            asyncio.get_running_loop().call_later(
+                RESTART_DELAY_SECONDS, os._exit, RESTART_EXIT_CODE
+            )
         except Exception:
             rollback_failed = False
             for transaction in (dist_transaction, source_transaction):
@@ -247,21 +322,27 @@ class ReleasesRoutes(Routes):
             message = "Update failed. Existing files were restored when possible; check the server log for details."
             if rollback_failed:
                 message = "Update failed and automatic rollback encountered errors; check the server log before retrying."
-            self._progress[task_id].update({
-                "status": "failed",
-                "stage": "failed",
-                "message": message,
-            })
+            self._progress[task_id].update(
+                {
+                    "status": "failed",
+                    "stage": "failed",
+                    "message": message,
+                }
+            )
 
     @staticmethod
-    def _apply_update(zip_path: Path, keep_backup: bool = False) -> UpdateTransaction | None:
+    def _apply_update(
+        zip_path: Path, keep_backup: bool = False
+    ) -> UpdateTransaction | None:
         root = get_root_path()
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp = Path(tmp_dir).resolve()
             with zipfile.ZipFile(zip_path, "r") as zf:
                 corrupt_member = zf.testzip()
                 if corrupt_member:
-                    raise ValueError(f"Corrupt file in update archive: {corrupt_member}")
+                    raise ValueError(
+                        f"Corrupt file in update archive: {corrupt_member}"
+                    )
                 for member in zf.infolist():
                     target = (tmp / member.filename).resolve()
                     if not target.is_relative_to(tmp):
@@ -284,10 +365,14 @@ class ReleasesRoutes(Routes):
             # is excluded even if it was accidentally committed to a release.
             protected_items = _get_protected_source_update_items(root)
             zip_items: list[str] = [
-                item.name for item in source_root.iterdir() if item.name.casefold() not in protected_items
+                item.name
+                for item in source_root.iterdir()
+                if item.name.casefold() not in protected_items
             ]
             if not zip_items:
-                raise ValueError("Update archive does not contain any application files")
+                raise ValueError(
+                    "Update archive does not contain any application files"
+                )
 
             # Place staging inside root: root.parent can be a different Docker
             # mount, which makes rename() fail with EXDEV (cross-device link).

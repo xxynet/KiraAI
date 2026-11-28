@@ -1,6 +1,8 @@
 """
 Shared utility functions for the WebUI.
 """
+
+import contextlib
 import hashlib
 import json
 import os
@@ -45,22 +47,20 @@ def _load_persisted_jwt_secret() -> str:
         secret_path.parent.mkdir(parents=True, exist_ok=True)
         # Atomic write: tmp file in same dir + replace, so partial writes can't
         # leave an empty secret file behind.
-        fd, tmp_name = tempfile.mkstemp(prefix=".jwt_secret.", dir=str(secret_path.parent))
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=".jwt_secret.", dir=str(secret_path.parent)
+        )
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(generated)
-            try:
+            # chmod is best-effort (no-op on Windows); not fatal.
+            with contextlib.suppress(OSError):
                 os.chmod(tmp_name, stat.S_IRUSR | stat.S_IWUSR)
-            except OSError:
-                # chmod is best-effort (no-op on Windows); not fatal.
-                pass
             os.replace(tmp_name, secret_path)
         except Exception:
             # Clean up the temp file if replace failed
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp_name)
-            except OSError:
-                pass
             raise
     except OSError as e:
         logger.warning(
@@ -83,7 +83,12 @@ def _is_usable_access_token(token: object) -> bool:
         "\t\n\v\f\r \xa0\u1680\u2000\u2001\u2002\u2003\u2004\u2005"
         "\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff"
     )
-    if not isinstance(token, str) or not token or token == "disabled" or token != token.strip(trim_chars):
+    if (
+        not isinstance(token, str)
+        or not token
+        or token == "disabled"
+        or token != token.strip(trim_chars)
+    ):
         return False
     try:
         token.encode("utf-8")
@@ -117,10 +122,8 @@ def _save_webui_config(config: dict):
             json.dump(config, f, indent=2, ensure_ascii=False)
         os.replace(tmp_name, config_path)
     finally:
-        try:
+        with contextlib.suppress(FileNotFoundError):
             os.unlink(tmp_name)
-        except FileNotFoundError:
-            pass
 
 
 def _get_or_generate_access_token() -> tuple[str | None, bool]:
@@ -132,7 +135,7 @@ def _get_or_generate_access_token() -> tuple[str | None, bool]:
             return token, False
 
         alphabet = string.ascii_letters + string.digits + "!@#$%^&*()_+-=[]{}|;:,.<>?"
-        token = ''.join(secrets.choice(alphabet) for _ in range(16))
+        token = "".join(secrets.choice(alphabet) for _ in range(16))
         config["access_token"] = token
         _save_webui_config(config)
         if _load_webui_config().get("access_token") == token:
@@ -178,13 +181,11 @@ def _verify_jwt_token(token: str) -> dict:
         return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has expired"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has expired"
         )
     except jwt.PyJWTError:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
         )
 
 
@@ -198,14 +199,18 @@ def verify_session_token(token: str, app_state) -> dict:
     Raises HTTPException(401) on any failure and returns the decoded payload.
     """
     payload = _verify_jwt_token(token)
-    current_mode = "disabled" if getattr(app_state, "disable_auth", False) else "enabled"
+    current_mode = (
+        "disabled" if getattr(app_state, "disable_auth", False) else "enabled"
+    )
     if payload.get("auth_mode", "enabled") != current_mode:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token issued under a different auth mode, please re-login",
         )
     current_token = getattr(app_state, "access_token", "")
-    if current_token is None or payload.get("tv") != _access_token_fingerprint(current_token):
+    if current_token is None or payload.get("tv") != _access_token_fingerprint(
+        current_token
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Session invalidated by an access-token change, please re-login",
