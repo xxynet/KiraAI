@@ -1,20 +1,20 @@
 {
-  "name": "WeixinOC",
-  "display_name": "微信个人号",
-  "version": "1.0.0",
-  "author": "KiraAI",
-  "description": "个人微信适配器 (OpenClaw)",
-  "repo": null,
-  "icon": "icon.svg",
-  "login_method": "qrcode",
-  "locales": {
-    "zh": {
-      "display_name": "个人微信",
-      "description": "个人微信适配器 (OpenClaw)"
-    },
-    "en": {
-      "display_name": "WeChat Personal",
-      "description": "Personal WeChat Adapter (OpenClaw)"
+    "name": "WeixinOC",
+    "display_name": "微信个人号",
+    "version": "1.0.0",
+    "author": "KiraAI",
+    "description": "个人微信适配器 (OpenClaw)",
+    "repo": null,
+    "icon": "icon.svg",
+    "login_method": "qrcode",
+    "locales": {
+        "zh": {
+            "display_name": "个人微信",
+            "description": "个人微信适配器 (OpenClaw)"
+        },
+        "en": {
+            "display_name": "WeChat Personal",
+            "description": "Personal WeChat Adapter (OpenClaw)"
+        }
     }
-  }
 }

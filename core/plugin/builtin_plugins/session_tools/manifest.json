@@ -1,15 +1,15 @@
 {
-  "display_name": "Session Tools",
-  "plugin_id": "kira_session_plugin",
-  "version": "1.0.0",
-  "author": "KiraAI",
-  "description": "Session tools for cross-session messaging, session details, message search and anchor-based context reading",
-  "repo": null,
-  "tags": ["session", "tools"],
-  "locales": {
-    "zh": {
-      "display_name": "会话工具",
-      "description": "会话工具：跨会话发送消息、查看会话详情、搜索消息及读取锚点前后文"
+    "display_name": "Session Tools",
+    "plugin_id": "kira_session_plugin",
+    "version": "1.0.0",
+    "author": "KiraAI",
+    "description": "Session tools for cross-session messaging, session details, message search and anchor-based context reading",
+    "repo": null,
+    "tags": ["session", "tools"],
+    "locales": {
+        "zh": {
+            "display_name": "会话工具",
+            "description": "会话工具：跨会话发送消息、查看会话详情、搜索消息及读取锚点前后文"
+        }
     }
-  }
 }

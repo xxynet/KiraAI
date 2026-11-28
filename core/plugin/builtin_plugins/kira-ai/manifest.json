@@ -1,15 +1,15 @@
 {
-  "display_name": "builtin",
-  "plugin_id": "kira-ai",
-  "hide": true,
-  "version": "1.0.0",
-  "author": "KiraAI",
-  "description": "Builtin plugin, decorating message metadata",
-  "repo": null,
-  "locales": {
-    "zh": {
-      "display_name": "内置插件",
-      "description": "内置插件，装饰消息元数据"
+    "display_name": "builtin",
+    "plugin_id": "kira-ai",
+    "hide": true,
+    "version": "1.0.0",
+    "author": "KiraAI",
+    "description": "Builtin plugin, decorating message metadata",
+    "repo": null,
+    "locales": {
+        "zh": {
+            "display_name": "内置插件",
+            "description": "内置插件，装饰消息元数据"
+        }
     }
-  }
 }

@@ -1,15 +1,15 @@
 {
-  "name": "Volcengine",
-  "display_name": "Volcengine",
-  "version": "1.0.0",
-  "author": "KiraAI",
-  "description": "Volcengine Provider",
-  "repo": null,
-  "icon": "icon.svg",
-  "locales": {
-    "zh": {
-      "display_name": "火山引擎",
-      "description": "火山引擎提供商"
+    "name": "Volcengine",
+    "display_name": "Volcengine",
+    "version": "1.0.0",
+    "author": "KiraAI",
+    "description": "Volcengine Provider",
+    "repo": null,
+    "icon": "icon.svg",
+    "locales": {
+        "zh": {
+            "display_name": "火山引擎",
+            "description": "火山引擎提供商"
+        }
     }
-  }
 }
