@@ -27,7 +27,12 @@ class AgentExecutionHooks(Generic[ContextT]):
         return False
 
     async def on_exception(
-        self, ctx: ContextT, exception: Exception, *, source: str, comp_id: str | None,
+        self,
+        ctx: ContextT,
+        exception: Exception,
+        *,
+        source: str,
+        comp_id: str | None,
     ) -> None:
         """Report an execution failure; provider failover and propagation stay unchanged."""
 

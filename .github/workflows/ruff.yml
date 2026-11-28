@@ -19,6 +19,9 @@ jobs:
       - name: Install ruff
         run: python -m pip install ruff==0.17.3
 
+      - name: Ruff format check (core and main.py only; tests and webui excluded)
+        run: ruff format --check core main.py
+
       - name: Ruff check (core and main.py only; tests and webui excluded)
         run: >
           ruff check core main.py
