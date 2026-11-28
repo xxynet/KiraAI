@@ -22,6 +22,4 @@ jobs:
       - name: Ruff check (core and main.py only; tests and webui excluded)
         run: >
           ruff check core main.py
-          --select F,E,W,UP,B,SIM,C4,PERF,I
-          --ignore BLE001,B024,B027,E501,PERF203,W291
           --output-format=github
