@@ -124,6 +124,8 @@ async function handleLogin() {
       // request never got through (backend not started, network failure, or timeout).
       if (err.response?.status === 401) {
         errorMsg.value = t('login.error')
+      } else if (err.response?.status === 429) {
+        errorMsg.value = t('login.too_many_attempts')
       } else if (err.response) {
         errorMsg.value = t('login.server_error')
       } else {

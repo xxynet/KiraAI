@@ -3,6 +3,16 @@ import json
 import pytest
 
 from webui import utils
+from webui.utils import _tokens_match
+
+
+def test_tokens_match_compares_exactly():
+    assert _tokens_match("token", "token")
+    assert not _tokens_match("token", "Token")
+    assert not _tokens_match("token", "token ")
+    assert not _tokens_match(None, "token")
+    assert not _tokens_match("token", None)
+    assert _tokens_match("秘密令牌", "秘密令牌")
 
 
 @pytest.fixture

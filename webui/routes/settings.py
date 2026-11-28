@@ -1,4 +1,6 @@
 import asyncio
+import base64
+import json
 import os
 import re
 import shutil
@@ -19,6 +21,7 @@ from fastapi import Depends, File, HTTPException, Query, Request, UploadFile
 from core.logging_manager import get_logger, inspect_rotated_logs
 from core.utils.path_utils import get_data_path
 from core.utils.storage import inspect_files
+from webui import utils as webui_utils
 from webui.models import (
     BackupCreateResponse,
     BackupProgressResponse,
@@ -34,11 +37,17 @@ from webui.models import (
 from webui.routes.auth import require_auth
 from webui.routes.base import RouteDefinition, Routes
 from webui.routes.releases import update_package_maintenance
-from webui.utils import _update_webui_config
+from webui.utils import (
+    BACKUP_DIR_NAME,
+    RESTORE_MARKER_NAME,
+    _is_usable_access_token,
+    _tokens_match,
+    _update_webui_config,
+)
 
-# Backup directory lives inside the data directory
-BACKUP_DIR_NAME = "backups"
+# The backup directory lives inside the data directory.
 MAX_LINK_TARGET_BYTES = 128 * 1024
+MAINTENANCE_LOCK_TIMEOUT_SECONDS = 5
 SQLITE_HEADER = b"SQLite format 3\0"
 SQLITE_SIDECAR_SUFFIXES = ("-wal", "-shm", "-journal")
 logger = get_logger("webui", "blue")
@@ -46,6 +55,240 @@ logger = get_logger("webui", "blue")
 
 def _get_backup_dir() -> Path:
     return get_data_path() / BACKUP_DIR_NAME
+
+
+def _read_live_credentials(
+    data_path: Path, app_state, onboarding_completed: bool = False
+) -> tuple[str | None, bool, dict | None, bytes | None, bool]:
+    """Snapshot the credentials a restart would load from the live data directory."""
+    config = None
+    try:
+        with (data_path / "webui.json").open(encoding="utf-8") as source:
+            loaded = json.load(source)
+        if isinstance(loaded, dict):
+            config = loaded
+    except (OSError, ValueError, RecursionError):
+        pass
+    token = config.get("access_token") if config else None
+    if not _is_usable_access_token(token):
+        token = getattr(app_state, "access_token", None)
+    if not _is_usable_access_token(token):
+        token = None
+    # Completed onboarding means the one-shot token setup is not offered again,
+    # even on installs that predate the explicit token_setup_done flag.
+    token_setup_done = bool(onboarding_completed or (config and config.get("token_setup_done")))
+    try:
+        secret = (data_path / ".jwt_secret").read_bytes()
+    except OSError:
+        secret = None
+    secret_from_env = False
+    if not secret:
+        # Without a file the running module-level key is authoritative. When an
+        # env var supplies it, the key must not be persisted (backups include
+        # data/.jwt_secret), so only the deletion guard is needed later.
+        secret_from_env = bool(os.environ.get("JWT_SECRET"))
+        running_secret = getattr(webui_utils, "_JWT_SECRET", None)
+        if secret_from_env:
+            secret = os.environ["JWT_SECRET"].encode("utf-8")
+        elif running_secret:
+            secret = running_secret.encode("utf-8")
+    return token, token_setup_done, config, secret, secret_from_env
+
+
+def _restore_live_credentials(
+    data_path: Path,
+    token: str | None,
+    token_setup_done: bool,
+    live_config: dict | None,
+    secret: bytes | None,
+    secret_from_env: bool = False,
+    app_state=None,
+) -> None:
+    """Put the live credentials back after an archive was applied.
+
+    The archive may have written them through any path the platform treats as
+    the same file (case-insensitive names, stream suffixes, etc.), so the guard
+    works on the final live files instead of filtering archive entry names.
+    An env-supplied signing key is never written to disk; a file the archive
+    created is removed so the key cannot leak into later backups.
+    Raises OSError listing every credential that could not be re-applied.
+    """
+    errors: list[str] = []
+    if secret_from_env:
+        try:
+            secret_path = data_path / ".jwt_secret"
+            if os.path.lexists(secret_path):
+                # An empty directory here would otherwise survive and break key
+                # persistence on every later start without JWT_SECRET.
+                _remove_credential_path(secret_path)
+                logger.warning("Removed an entry at the signing-key path; the key comes from JWT_SECRET")
+        except OSError as exc:
+            errors.append(f"signing key file: {exc}")
+    elif secret is not None:
+        try:
+            secret_path = data_path / ".jwt_secret"
+            if secret_path.is_dir() and not secret_path.is_symlink():
+                _remove_credential_path(secret_path)
+            try:
+                current_secret = secret_path.read_bytes()
+            except OSError:
+                current_secret = None
+            if current_secret != secret:
+                _write_bytes_atomic(secret_path, secret)
+                logger.warning("Restore attempted to replace the JWT signing key; kept the active one")
+            else:
+                # copy2 keeps the archived mode (usually 0644); the atomic
+                # writer used when values differ creates owner-only files.
+                _chmod_owner_only(secret_path)
+        except OSError as exc:
+            errors.append(f"signing key: {exc}")
+    # The running process is authoritative; the snapshot covers restarts where
+    # auth is disabled and app.state only holds the sentinel.
+    running_token = getattr(app_state, "access_token", None) if app_state is not None else None
+    if _is_usable_access_token(running_token):
+        token = running_token
+    if token is not None or token_setup_done:
+        try:
+            config_path = data_path / "webui.json"
+            applied_config = None
+            try:
+                with config_path.open(encoding="utf-8") as source:
+                    loaded = json.load(source)
+                if isinstance(loaded, dict):
+                    applied_config = loaded
+            except (OSError, ValueError, RecursionError):
+                pass
+            base_config = applied_config if applied_config is not None else live_config
+            config = dict(base_config or {})
+            changed = applied_config is None
+            if token is not None and config.get("access_token") != token:
+                config["access_token"] = token
+                changed = True
+            if token_setup_done and not config.get("token_setup_done"):
+                # Restoring must not re-open the first-run token setup without the old token.
+                config["token_setup_done"] = True
+                changed = True
+            if changed:
+                if config_path.is_dir() and not config_path.is_symlink():
+                    _remove_credential_path(config_path)
+                try:
+                    config_bytes = json.dumps(config, indent=2, ensure_ascii=False).encode("utf-8")
+                except UnicodeEncodeError:
+                    # json.load accepts lone surrogates; keep them escaped
+                    # instead of failing after the archived config went live.
+                    config_bytes = json.dumps(config, indent=2, ensure_ascii=True).encode("utf-8")
+                _write_bytes_atomic(config_path, config_bytes)
+                logger.warning("Restore replaced webui.json credentials; restored the active ones")
+            elif not config_path.is_symlink():
+                _chmod_owner_only(config_path)
+        except (OSError, ValueError, RecursionError) as exc:
+            errors.append(f"access token: {exc}")
+    if errors:
+        raise OSError("; ".join(errors))
+
+
+def _chmod_owner_only(path: Path) -> None:
+    """Best-effort 0600 for credential files restored with equal values."""
+    try:
+        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+    except OSError:
+        pass
+
+
+def _remove_credential_path(path: Path) -> None:
+    """Remove a file/link, or an empty directory, at a credential path.
+
+    Directories must be empty: a non-empty one may hold data the archive never
+    touched, so it is left in place and the caller reports the failure.
+    """
+    if path.is_dir() and not path.is_symlink():
+        path.rmdir()
+    else:
+        path.unlink(missing_ok=True)
+
+
+def _write_bytes_atomic(path: Path, data: bytes) -> None:
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "wb") as target:
+            target.write(data)
+            os.fsync(target.fileno())
+        os.replace(tmp_name, path)
+    finally:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+
+
+def _write_restore_marker(live_credentials: tuple):
+    """Record the live credentials before an archive can replace them.
+
+    The marker lives in the backup directory, which restore never writes to,
+    so an archive cannot forge it. It is what lets the next start roll back if
+    this process stops before the credentials are re-asserted; a completed
+    restore removes it. The returned handle holds the OS lock that tells other
+    processes the restore is still running.
+    """
+    token, token_setup_done, _config, secret, secret_from_env = live_credentials
+    payload = {
+        "access_token": token,
+        "token_setup_done": token_setup_done,
+        # An env-supplied key must never be written to disk, and the recovery
+        # branch for it only needs the flag.
+        "jwt_secret": None if secret_from_env or not secret else base64.b64encode(secret).decode("ascii"),
+        "jwt_secret_from_env": secret_from_env,
+    }
+    marker_path = _get_backup_dir() / RESTORE_MARKER_NAME
+    marker_path.parent.mkdir(parents=True, exist_ok=True)
+    _write_bytes_atomic(marker_path, json.dumps(payload).encode("utf-8"))
+    handle = marker_path.open("r+b")
+    try:
+        if not webui_utils._try_lock_restore_marker(handle):
+            raise OSError(f"restore marker {marker_path} is locked")
+    except OSError:
+        handle.close()
+        raise
+    return handle
+
+
+def _release_restore_marker(handle) -> None:
+    if handle is not None:
+        try:
+            handle.close()
+        except OSError:
+            pass
+
+
+def _discard_restore_marker(handle) -> None:
+    _release_restore_marker(handle)
+    try:
+        (_get_backup_dir() / RESTORE_MARKER_NAME).unlink(missing_ok=True)
+    except OSError as exc:
+        logger.warning("Could not remove the restore marker: %s", exc)
+
+
+def _update_restore_marker_token(token: str) -> None:
+    """Stop a pending rollback from reverting a token rotation.
+
+    The signing key is left in the marker: a restore whose key repair failed
+    still needs that repair on the next start. Raises OSError when the marker
+    exists but cannot be updated, so the caller can fail instead of silently
+    letting a restart revert the rotation.
+    """
+    marker_path = _get_backup_dir() / RESTORE_MARKER_NAME
+    try:
+        payload = json.loads(marker_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return
+    except (ValueError, RecursionError):
+        # Recovery cannot use this marker either, so it cannot revert a token.
+        logger.warning("Could not parse the restore marker after a token change")
+        return
+    if not isinstance(payload, dict):
+        return
+    payload["access_token"] = token
+    _write_bytes_atomic(marker_path, json.dumps(payload).encode("utf-8"))
 
 
 def _has_sqlite_header(path: Path) -> bool:
@@ -199,9 +442,10 @@ def _calc_dir_size(path: Path, *, usage: dict[str, int] | None = None) -> tuple[
 
 
 class SettingsRoutes(Routes):
-    # Serializes backup creation and restore jobs so concurrent maintenance
-    # requests cannot overlap (same-second backups share a timestamped path,
-    # and restores copy into the same data directory).
+    # Serializes backup creation, restore jobs and token rotations so concurrent
+    # maintenance requests cannot overlap (same-second backups share a
+    # timestamped path, restores copy into the same data directory, and a
+    # restore could otherwise re-apply the token it snapshotted).
     _maintenance_lock = asyncio.Lock()
 
     def __init__(self, app, lifecycle=None):
@@ -668,15 +912,27 @@ class SettingsRoutes(Routes):
             raise HTTPException(status_code=409, detail="Backup is still being created")
 
         async with self._maintenance_lock:
-            return await asyncio.to_thread(self._do_restore, backup_path)
+            return await self._run_storage_worker(self._do_restore, backup_path)
 
     # ── Restore ──────────────────────────────────────────────────────────────
 
     def _do_restore(self, zip_source) -> RestoreResponse:
-        """Extract a zip into a staging dir, validate, then copy to data directory."""
+        """Extract a zip into a staging dir, validate, then copy to data directory.
+
+        The running instance's access token, token-setup flag and JWT signing
+        key are re-applied afterwards, so an archive can never replace them.
+        """
         data_path = get_data_path().resolve()
         exclude_dirs = {BACKUP_DIR_NAME, "__pycache__", "updates", "temp"}
+        lifecycle_config = getattr(self.lifecycle, "kira_config", None)
+        onboarding = lifecycle_config.get("onboarding", {}) if isinstance(lifecycle_config, dict) else {}
+        onboarding_completed = isinstance(onboarding, dict) and bool(onboarding.get("completed", False))
+        live_credentials = _read_live_credentials(data_path, self.app.state, onboarding_completed)
 
+        result: RestoreResponse | None = None
+        pending_error: HTTPException | None = None
+        apply_started = False
+        marker_handle = None
         try:
             with tempfile.TemporaryDirectory() as staging_dir:
                 staging_path = Path(staging_dir).resolve()
@@ -727,6 +983,7 @@ class SettingsRoutes(Routes):
                         raise HTTPException(status_code=400, detail="Invalid archive content")
 
                 # Check the live layout before changing any files.
+                backup_root = (data_path / BACKUP_DIR_NAME).resolve()
                 entries = []
                 for src_file in staging_path.rglob("*"):
                     rel = src_file.relative_to(staging_path)
@@ -735,6 +992,15 @@ class SettingsRoutes(Routes):
                     is_directory = not is_link and src_file.is_dir()
                     if dst_file.parent.resolve() != dst_file.parent:
                         raise HTTPException(status_code=400, detail="Invalid archive content")
+                    # The rollback marker lives there, and archives never
+                    # contain backups. Resolving also catches Windows aliases
+                    # (trailing dots, 8.3 names, alternate data streams).
+                    try:
+                        resolved_dst = dst_file.resolve()
+                    except (OSError, RuntimeError):
+                        resolved_dst = dst_file
+                    if resolved_dst.is_relative_to(backup_root):
+                        raise HTTPException(status_code=400, detail="Invalid archive content")
                     if is_directory and (dst_file.resolve() != dst_file or dst_file.is_symlink()):
                         raise HTTPException(status_code=400, detail="Invalid archive content")
                     if not dst_file.is_symlink() and dst_file.exists() and dst_file.is_dir() != is_directory:
@@ -742,6 +1008,12 @@ class SettingsRoutes(Routes):
                     if not is_link:
                         entries.append((src_file, dst_file, is_directory))
 
+                # From here on live files change, so credentials must be re-asserted.
+                # Refuse to start without the marker: it is the only rollback if
+                # the process dies before the re-assert below.
+                if entries or links:
+                    marker_handle = _write_restore_marker(live_credentials)
+                    apply_started = True
                 for src_file, dst_file, is_directory in entries:
                     if is_directory:
                         dst_file.mkdir(parents=True, exist_ok=True)
@@ -767,13 +1039,38 @@ class SettingsRoutes(Routes):
                         pending.symlink_to(target, target_is_directory=is_directory)
                         pending.replace(dst_file)
 
-            return RestoreResponse(success=True, message="Restore completed successfully")
+            result = RestoreResponse(success=True, message="Restore completed successfully")
         except zipfile.BadZipFile:
-            raise HTTPException(status_code=400, detail="Invalid zip file")
-        except HTTPException:
-            raise
+            pending_error = HTTPException(status_code=400, detail="Invalid zip file")
+        except HTTPException as exc:
+            pending_error = exc
         except Exception as e:
-            return RestoreResponse(success=False, message=f"Restore failed: {e}")
+            result = RestoreResponse(success=False, message=f"Restore failed: {e}")
+
+        # A rejected archive never touched live files, and rewriting credentials
+        # then would clobber edits made after startup.
+        if apply_started:
+            try:
+                _restore_live_credentials(
+                    data_path, *live_credentials, app_state=self.app.state
+                )
+            except Exception as exc:
+                # Release the lock but keep the marker for the next start.
+                _release_restore_marker(marker_handle)
+                logger.exception("Could not keep the active credentials after restore")
+                credential_note = (
+                    "the active credentials could not be preserved: "
+                    f"{exc}. Check data/webui.json and data/.jwt_secret."
+                )
+                if result is not None:
+                    prefix = "Restore finished, but " if result.success else f"{result.message} Additionally, "
+                    result = RestoreResponse(success=False, message=prefix + credential_note)
+            else:
+                # Credentials are back on disk, so a restart has nothing to repair.
+                _discard_restore_marker(marker_handle)
+        if pending_error is not None:
+            raise pending_error
+        return result
 
     async def restore_backup(self, file: UploadFile = File(...)):
         if not file.filename or not file.filename.endswith(".zip"):
@@ -781,24 +1078,44 @@ class SettingsRoutes(Routes):
 
         file.file.seek(0)
         async with self._maintenance_lock:
-            return await asyncio.to_thread(self._do_restore, file.file)
+            return await self._run_storage_worker(self._do_restore, file.file)
 
     # ── Access Token ────────────────────────────────────────────────────────
 
     async def change_access_token(self, body: ChangeTokenRequest, request: Request):
         if request.app.state.disable_auth:
             raise HTTPException(status_code=400, detail="Cannot change token when auth is disabled")
-        current_token = request.app.state.access_token
-        # Strip like the first-run setup endpoint does, so pasted tokens with
-        # stray whitespace compare and persist identically in both flows.
-        old_token = body.old_token.strip()
-        new_token = body.new_token.strip()
-        if old_token != current_token:
-            raise HTTPException(status_code=400, detail="Old token is incorrect")
-        if not new_token or len(new_token) < 6:
-            raise HTTPException(status_code=400, detail="New token must be at least 6 characters")
-        if new_token == "disabled":
-            raise HTTPException(status_code=400, detail="The token 'disabled' is reserved and cannot be used")
-        _update_webui_config(access_token=new_token)
-        request.app.state.access_token = new_token
+        # Share the maintenance lock so a concurrent restore cannot re-apply the
+        # previous token between the config write and the in-memory update.
+        # A restore may hold it for minutes; fail fast instead of hanging.
+        try:
+            await asyncio.wait_for(self._maintenance_lock.acquire(), timeout=MAINTENANCE_LOCK_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=409, detail="Backup or restore is in progress"
+            ) from None
+        try:
+            current_token = request.app.state.access_token
+            # Strip like the first-run setup endpoint does, so pasted tokens with
+            # stray whitespace compare and persist identically in both flows.
+            old_token = body.old_token.strip()
+            new_token = body.new_token.strip()
+            if not _tokens_match(old_token, current_token):
+                raise HTTPException(status_code=400, detail="Old token is incorrect")
+            if not new_token or len(new_token) < 6:
+                raise HTTPException(status_code=400, detail="New token must be at least 6 characters")
+            if new_token == "disabled":
+                raise HTTPException(status_code=400, detail="The token 'disabled' is reserved and cannot be used")
+            # A marker kept after a failed rollback must not revert this rotation.
+            try:
+                _update_restore_marker_token(new_token)
+            except OSError as exc:
+                logger.error("Could not update the restore marker before a token change: %s", exc)
+                raise HTTPException(
+                    status_code=500, detail="Could not update the restore marker"
+                ) from exc
+            _update_webui_config(access_token=new_token)
+            request.app.state.access_token = new_token
+        finally:
+            self._maintenance_lock.release()
         return {"success": True}
