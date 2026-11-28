@@ -18,6 +18,7 @@ from .statistics import Statistics
 @dataclass
 class SystemEvent:
     """统一事件对象"""
+
     event_type: str
     payload: Any
     source: str
@@ -34,8 +35,12 @@ if TYPE_CHECKING:
 class EventBus:
     """事件总线"""
 
-    def __init__(self, stats: Statistics, event_queue: asyncio.Queue,
-                 db: DatabaseService = None):
+    def __init__(
+        self,
+        stats: Statistics,
+        event_queue: asyncio.Queue,
+        db: DatabaseService | None = None,
+    ) -> None:
         self.stats = stats
         self.db = db
 
@@ -61,7 +66,7 @@ class EventBus:
             "published": 0,
             "processed": 0,
             "errors": 0,
-            "dropped": 0
+            "dropped": 0,
         }
 
         self.stats.set_stats("event_bus", self.event_bus_stats)
@@ -84,7 +89,7 @@ class EventBus:
         from core.plugin.handlers import event_handler_reg
 
         for handler in event_handler_reg.get_handlers(PluginEventType.ON_CUSTOM_EVENT):
-            filter_name = getattr(handler.handler, '_custom_event_name', None)
+            filter_name = getattr(handler.handler, "_custom_event_name", None)
             if filter_name is None or filter_name == event.event_name:
                 await handler.exec_handler(event)
 
@@ -156,7 +161,15 @@ class EventBus:
 
     async def _process_event(self, event):
         """处理单个事件"""
-        if isinstance(event, (KiraMessageEvent, KiraMessageBatchEvent, KiraCustomEvent, KiraCommentEvent)):
+        if isinstance(
+            event,
+            (
+                KiraMessageEvent,
+                KiraMessageBatchEvent,
+                KiraCustomEvent,
+                KiraCommentEvent,
+            ),
+        ):
             event_type = type(event)
         else:
             event_type = getattr(event, "event_type", None)
@@ -172,7 +185,9 @@ class EventBus:
                     self.logger.exception(
                         "Event handler %s failed for %s",
                         getattr(handler, "__qualname__", type(handler).__name__),
-                        event_type if isinstance(event_type, str) else event_type.__name__,
+                        event_type
+                        if isinstance(event_type, str)
+                        else event_type.__name__,
                     )
 
     async def dispatch(self):
@@ -185,7 +200,9 @@ class EventBus:
                 self.total_messages_stats["total_messages"] += 1
                 self.stats.set_stats("messages", self.total_messages_stats)
                 if self.db and isinstance(event, KiraMessageEvent):
-                    platform = getattr(getattr(event, "adapter", None), "platform", None) or getattr(event, "platform", "unknown")
+                    platform = getattr(
+                        getattr(event, "adapter", None), "platform", None
+                    ) or getattr(event, "platform", "unknown")
                     try:
                         await self.db.add_telemetry_message(int(time.time()), platform)
                     except Exception as e:

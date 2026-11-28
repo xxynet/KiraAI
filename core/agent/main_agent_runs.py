@@ -18,7 +18,9 @@ class MainAgentRuns:
         self._by_target: dict[str, set[AgentExecutor]] = {}
 
     @asynccontextmanager
-    async def track(self, session: Session, executor: AgentExecutor) -> AsyncIterator[None]:
+    async def track(
+        self, session: Session, executor: AgentExecutor
+    ) -> AsyncIterator[None]:
         targets = {session.sid}
         if session.internal_id:
             targets.add(session.internal_id)

@@ -36,7 +36,8 @@ def _infer_type(model_id: str) -> str:
     if mid.startswith(("cosyvoice", "sambert")) or "tts" in mid:
         return "tts"
     if (
-        mid.startswith(("paraformer", "fun-asr", "fun_asr", "sensevoice")) or "asr" in mid
+        mid.startswith(("paraformer", "fun-asr", "fun_asr", "sensevoice"))
+        or "asr" in mid
     ):
         return "stt"
     # Video before image: wan2.x-i2v / t2v / r2v / s2v / kf2v / *-video*
@@ -57,7 +58,18 @@ def _infer_type(model_id: str) -> str:
     if "rerank" in mid:
         return "rerank"
     if (
-        mid.startswith(("wanx", "flux")) or "t2i" in mid or "image" in mid and "video" not in mid or mid.startswith("wan") and "i2v" not in mid and "t2v" not in mid and "r2v" not in mid and "s2v" not in mid and "kf2v" not in mid and "-vace" not in mid and "video" not in mid
+        mid.startswith(("wanx", "flux"))
+        or "t2i" in mid
+        or "image" in mid
+        and "video" not in mid
+        or mid.startswith("wan")
+        and "i2v" not in mid
+        and "t2v" not in mid
+        and "r2v" not in mid
+        and "s2v" not in mid
+        and "kf2v" not in mid
+        and "-vace" not in mid
+        and "video" not in mid
     ):
         return "image"
     return "llm"

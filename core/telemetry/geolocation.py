@@ -67,11 +67,15 @@ async def fetch_country_code() -> str | None:
     failures = []
     try:
         transport = httpx.AsyncHTTPTransport(proxy=None)
-        async with httpx.AsyncClient(timeout=3.0, transport=transport, trust_env=False) as client:
+        async with httpx.AsyncClient(
+            timeout=3.0, transport=transport, trust_env=False
+        ) as client:
             for provider in _PROVIDERS:
                 try:
                     # Bound the whole lookup, including connection and response body.
-                    code = await asyncio.wait_for(provider.fetch_country_code(client), timeout=3.0)
+                    code = await asyncio.wait_for(
+                        provider.fetch_country_code(client), timeout=3.0
+                    )
                     logger.debug(f"Country code detected via {provider.name}: {code}")
                     return code
                 except Exception as e:

@@ -46,6 +46,7 @@ def build_llm_default_headers(provider_config: dict | None) -> dict[str, str]:
         headers["User-Agent"] = DEFAULT_USER_AGENT
     return headers
 
+
 class OpenAICompatibleLLMClient(LLMModelClient):
     def __init__(self, model: ModelInfo):
         super().__init__(model)
@@ -74,7 +75,9 @@ class OpenAICompatibleLLMClient(LLMModelClient):
             "model": self.model.model_name,
             "messages": [provider_message_dict(m) for m in request.messages],
             "tools": request.tools if request.tools else NOT_GIVEN,
-            "tool_choice": request.tool_choice if request.tool_choice != "none" else NOT_GIVEN,
+            "tool_choice": request.tool_choice
+            if request.tool_choice != "none"
+            else NOT_GIVEN,
             "temperature": temperature if temperature is not None else NOT_GIVEN,
             "timeout": timeout if timeout is not None else NOT_GIVEN,
         }
@@ -86,7 +89,9 @@ class OpenAICompatibleLLMClient(LLMModelClient):
     async def chat(self, request: LLMRequest, **kwargs) -> LLMResponse:
         async with self._build_client() as client:
             messages = await resolve_media_references(request.messages)
-            request_kwargs = self._build_request_kwargs(request, messages=messages, **kwargs)
+            request_kwargs = self._build_request_kwargs(
+                request, messages=messages, **kwargs
+            )
             start_time = time.perf_counter()
             # APIStatusError: HTTP errors, e.g. unsupported function calling,
             # invalid API keys (401), or missing permissions (403).
@@ -94,7 +99,9 @@ class OpenAICompatibleLLMClient(LLMModelClient):
             # APIConnectionError: connection failure, e.g. an unreachable base_url.
             response = await client.chat.completions.create(**request_kwargs)
             if not isinstance(getattr(response, "choices", None), list):
-                raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
+                raise ProviderAPIError(
+                    f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}"
+                )
             end_time = time.perf_counter()
         llm_resp = LLMResponse("")
         llm_resp.time_consumed = round(end_time - start_time, 2)
@@ -102,18 +109,19 @@ class OpenAICompatibleLLMClient(LLMModelClient):
             message = response.choices[0].message
 
             if message.tool_calls:
-
                 for tool_call in message.tool_calls:
                     name = tool_call.function.name
 
-                    llm_resp.tool_calls.append({
-                        "id": tool_call.id,
-                        "type": "function",
-                        "function": {
-                            "name": name,
-                            "arguments": tool_call.function.arguments
+                    llm_resp.tool_calls.append(
+                        {
+                            "id": tool_call.id,
+                            "type": "function",
+                            "function": {
+                                "name": name,
+                                "arguments": tool_call.function.arguments,
+                            },
                         }
-                    })
+                    )
 
             content = message.content if message.content else ""
             reasoning_content = getattr(message, "reasoning_content", "")
@@ -126,10 +134,14 @@ class OpenAICompatibleLLMClient(LLMModelClient):
                 # cached tokens (prompt_tokens_details.cached_tokens)
                 prompt_details = getattr(response.usage, "prompt_tokens_details", None)
                 if prompt_details:
-                    llm_resp.cached_tokens = getattr(prompt_details, "cached_tokens", None)
+                    llm_resp.cached_tokens = getattr(
+                        prompt_details, "cached_tokens", None
+                    )
         return llm_resp
 
-    async def chat_stream(self, request: LLMRequest, **kwargs) -> AsyncGenerator[LLMStreamChunk, None]:
+    async def chat_stream(
+        self, request: LLMRequest, **kwargs
+    ) -> AsyncGenerator[LLMStreamChunk, None]:
         async with self._build_client() as client:
             messages = await resolve_media_references(request.messages)
             request_kwargs = self._build_request_kwargs(
@@ -143,15 +155,25 @@ class OpenAICompatibleLLMClient(LLMModelClient):
             # APIConnectionError: connection failure, e.g. an unreachable base_url.
             stream = await client.chat.completions.create(**request_kwargs)
             if not hasattr(stream, "__aiter__"):
-                raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(stream).__name__}): {stream!r}")
+                raise ProviderAPIError(
+                    f"Invalid OpenAI-compatible API response ({type(stream).__name__}): {stream!r}"
+                )
             async for event in stream:
                 if not isinstance(getattr(event, "choices", None), list):
-                    raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(event).__name__}): {event!r}")
+                    raise ProviderAPIError(
+                        f"Invalid OpenAI-compatible API response ({type(event).__name__}): {event!r}"
+                    )
                 # Usage-only event (sent by OpenAI API after the final choice chunk)
                 if not event.choices:
                     if event.usage:
-                        prompt_details = getattr(event.usage, "prompt_tokens_details", None)
-                        cached = getattr(prompt_details, "cached_tokens", None) if prompt_details else None
+                        prompt_details = getattr(
+                            event.usage, "prompt_tokens_details", None
+                        )
+                        cached = (
+                            getattr(prompt_details, "cached_tokens", None)
+                            if prompt_details
+                            else None
+                        )
                         yield LLMStreamChunk(
                             is_final=True,
                             usage={
@@ -184,8 +206,12 @@ class OpenAICompatibleLLMClient(LLMModelClient):
                             "id": tc.id or "",
                             "type": "function",
                             "function": {
-                                "name": tc.function.name if tc.function and tc.function.name else "",
-                                "arguments": tc.function.arguments if tc.function and tc.function.arguments else "",
+                                "name": tc.function.name
+                                if tc.function and tc.function.name
+                                else "",
+                                "arguments": tc.function.arguments
+                                if tc.function and tc.function.arguments
+                                else "",
                             },
                         }
                         chunk.tool_calls_delta.append(fragment)
@@ -197,7 +223,6 @@ class OpenAICompatibleLLMClient(LLMModelClient):
                     chunk.finish_reason = finish_reason
 
                 yield chunk
-
 
 
 class OpenAICompatibleTTSClient(TTSModelClient):
@@ -222,20 +247,26 @@ class OpenAICompatibleTTSClient(TTSModelClient):
 
     async def text_to_speech(self, text: str, **kwargs) -> Record:
         section_advanced = self.model.provider_config.get("section_advanced")
-        default_headers = section_advanced.get("headers", {}) if isinstance(section_advanced, dict) else {}
+        default_headers = (
+            section_advanced.get("headers", {})
+            if isinstance(section_advanced, dict)
+            else {}
+        )
         if not isinstance(default_headers, dict) or not default_headers:
             default_headers = None
-        async with AsyncOpenAI(
-            api_key=self.model.provider_config.get("api_key", ""),
-            base_url=self.model.provider_config.get("base_url", ""),
-            default_headers=default_headers,
-        ) as client:
-            async with client.audio.speech.with_streaming_response.create(
-                    **self._build_request_kwargs(text, **kwargs)
-            ) as response:
-                audio_bytes = b""
-                async for chunk in response.iter_bytes():
-                    audio_bytes += chunk
+        async with (
+            AsyncOpenAI(
+                api_key=self.model.provider_config.get("api_key", ""),
+                base_url=self.model.provider_config.get("base_url", ""),
+                default_headers=default_headers,
+            ) as client,
+            client.audio.speech.with_streaming_response.create(
+                **self._build_request_kwargs(text, **kwargs)
+            ) as response,
+        ):
+            audio_bytes = b""
+            async for chunk in response.iter_bytes():
+                audio_bytes += chunk
 
         b64_str = base64.b64encode(audio_bytes).decode("utf-8")
         return Record(record=b64_str)
@@ -251,7 +282,11 @@ class OpenAICompatibleSTTClient(STTModelClient):
         provider_config = self.model.provider_config or {}
         model_config = self.model.model_config or {}
         section_advanced = provider_config.get("section_advanced")
-        default_headers = section_advanced.get("headers", {}) if isinstance(section_advanced, dict) else {}
+        default_headers = (
+            section_advanced.get("headers", {})
+            if isinstance(section_advanced, dict)
+            else {}
+        )
         if not isinstance(default_headers, dict) or not default_headers:
             default_headers = None
         timeout = model_config.get("timeout", 120)
@@ -288,5 +323,7 @@ class OpenAICompatibleSTTClient(STTModelClient):
                 **self._build_request_kwargs(record_path, **kwargs)
             )
         if not hasattr(response, "text"):
-            raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
+            raise ProviderAPIError(
+                f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}"
+            )
         return response.text or ""

@@ -27,7 +27,7 @@ class BaseAdapter(ABC):
     Shared client resources remain owned by the adapter.
     """
 
-    def __init__(self, ctx: AdapterContext):
+    def __init__(self, ctx: AdapterContext) -> None:
         self.ctx = ctx
         self.info = ctx.info
         self.config = ctx.info.config
@@ -37,7 +37,9 @@ class BaseAdapter(ABC):
         self._capabilities: dict[type[BaseCapability[Any]], BaseCapability[Any]] = {}
 
     @property
-    @deprecated("message_types is deprecated; use IMCapability.get_message_metadata().supported_elements instead")
+    @deprecated(
+        "message_types is deprecated; use IMCapability.get_message_metadata().supported_elements instead"
+    )
     def message_types(self) -> list[str]:
         """Expose the live IM declaration for existing plugins without loading resources."""
         from .capabilities import IMCapability
@@ -51,7 +53,9 @@ class BaseAdapter(ABC):
         return im._supported_elements
 
     @message_types.setter
-    @deprecated("message_types is deprecated; use IMCapability.get_message_metadata().supported_elements instead")
+    @deprecated(
+        "message_types is deprecated; use IMCapability.get_message_metadata().supported_elements instead"
+    )
     def message_types(self, value: list[str]) -> None:
         from .capabilities import IMCapability
 
@@ -68,7 +72,9 @@ class BaseAdapter(ABC):
         return MappingProxyType(self._capabilities)
 
     def register_capability(
-        self, capability_type: type[CapabilityT], capability: CapabilityT,
+        self,
+        capability_type: type[CapabilityT],
+        capability: CapabilityT,
     ) -> CapabilityT:
         """Register an owned instance under its type and return that instance.
 
@@ -80,10 +86,14 @@ class BaseAdapter(ABC):
         return capability
 
     def unregister_capability(
-        self, capability_type: type[CapabilityT], capability: CapabilityT,
+        self,
+        capability_type: type[CapabilityT],
+        capability: CapabilityT,
     ) -> bool:
         """Remove only the exact registered instance; resource cleanup is separate."""
-        if not isinstance(capability_type, type) or not issubclass(capability_type, BaseCapability):
+        if not isinstance(capability_type, type) or not issubclass(
+            capability_type, BaseCapability
+        ):
             raise TypeError("capability_type must be a BaseCapability subclass")
         if not isinstance(capability, BaseCapability):
             raise TypeError("capability must be a BaseCapability instance")
@@ -94,9 +104,13 @@ class BaseAdapter(ABC):
         return True
 
     def _validate_capability_registration(
-        self, capability_type: type[CapabilityT], capability: CapabilityT,
+        self,
+        capability_type: type[CapabilityT],
+        capability: CapabilityT,
     ) -> None:
-        if not isinstance(capability_type, type) or not issubclass(capability_type, BaseCapability):
+        if not isinstance(capability_type, type) or not issubclass(
+            capability_type, BaseCapability
+        ):
             raise TypeError("capability_type must be a BaseCapability subclass")
         if not isinstance(capability, BaseCapability):
             raise TypeError("capability must be a BaseCapability instance")
@@ -114,13 +128,17 @@ class BaseAdapter(ABC):
                 raise ValueError("a capability of this kind is already registered")
 
     def get_capability(
-        self, capability_type: type[CapabilityT],
+        self,
+        capability_type: type[CapabilityT],
     ) -> CapabilityT:
         """Return the unique matching capability, or raise ValueError."""
-        if not isinstance(capability_type, type) or not issubclass(capability_type, BaseCapability):
+        if not isinstance(capability_type, type) or not issubclass(
+            capability_type, BaseCapability
+        ):
             raise TypeError("capability_type must be a BaseCapability subclass")
         matches = [
-            capability for capability in self._capabilities.values()
+            capability
+            for capability in self._capabilities.values()
             if isinstance(capability, capability_type)
         ]
         if len(matches) != 1:
@@ -140,13 +158,13 @@ class BaseAdapter(ABC):
     def _capability_kinds(capability: BaseCapability[Any]) -> set[type]:
         """Direct BaseCapability subclasses define kinds, including custom kinds."""
         return {
-            cls for cls in type(capability).__mro__
-            if BaseCapability in cls.__bases__
+            cls for cls in type(capability).__mro__ if BaseCapability in cls.__bases__
         } or {BaseCapability}
 
     @classmethod
     def create_qrcode_login_handler(
-        cls, config: dict[str, Any],
+        cls,
+        config: dict[str, Any],
     ) -> QRCodeLoginHandler | None:
         return None
 
@@ -157,7 +175,9 @@ class BaseAdapter(ABC):
         capability_type: type[BaseCapability[Any]],
         permission: str,
     ) -> bool:
-        return self.access.is_allowed(target_id, capability_type=capability_type, permission=permission)
+        return self.access.is_allowed(
+            target_id, capability_type=capability_type, permission=permission
+        )
 
     def publish(self, event: object) -> None:
         """Queue an event without interpreting capability-specific data."""
@@ -221,11 +241,16 @@ class BaseCapability(ABC, Generic[AdapterT]):
         return self._capability_type
 
     def is_allowed(
-        self, target_id: AdapterTargetId | None, *, permission: str,
+        self,
+        target_id: AdapterTargetId | None,
+        *,
+        permission: str,
     ) -> bool:
         """Check access using this object's registered capability type."""
         return self.adapter.is_allowed(
-            target_id, capability_type=self.capability_type, permission=permission,
+            target_id,
+            capability_type=self.capability_type,
+            permission=permission,
         )
 
     def publish(self, event: object) -> None:

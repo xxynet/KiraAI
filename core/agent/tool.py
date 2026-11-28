@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from typing import Any
 
 from core.chat.message_elements import File, Image, Record
 from core.utils.path_utils import get_data_path
@@ -39,15 +40,13 @@ def truncate_tool_output(text: str, max_tokens: int) -> str:
 @dataclass
 class ToolSet:
     """A set of tools"""
+
     tools: list[BaseTool] = field(default_factory=list)
 
-    def __contains__(self, item):
-        for tool in self.tools:
-            if tool.name == item:
-                return True
-        return False
+    def __contains__(self, item) -> bool:
+        return any(tool.name == item for tool in self.tools)
 
-    def add(self, *tools: BaseTool | type[BaseTool]):
+    def add(self, *tools: BaseTool | type[BaseTool]) -> None:
         for tool in tools:
             if isinstance(tool, type):
                 tool_inst = tool()
@@ -60,22 +59,19 @@ class ToolSet:
                     self.tools.pop(i)
             self.tools.append(tool_inst)
 
-    def remove(self, *tool_names: str):
+    def remove(self, *tool_names: str) -> None:
         name_set = set(tool_names)
         self.tools = [t for t in self.tools if t.name not in name_set]
 
-    def get(self, tool_name: str):
+    def get(self, tool_name: str) -> BaseTool | None:
         for tool in self.tools:
             if tool.name == tool_name:
                 return tool
 
-    def to_list(self):
-        tool_list = []
-        for tool in self.tools:
-            tool_list.append({
-                "type": "function",
-                "function": tool.get_schema()
-            })
+    def to_list(self) -> list[Any]:
+        tool_list = [
+            {"type": "function", "function": tool.get_schema()} for tool in self.tools
+        ]
         return tool_list
 
 
@@ -96,7 +92,7 @@ class ToolResult:
 
     result_str: str = field(default="", init=False, repr=False)
 
-    async def assemble_result(self):
+    async def assemble_result(self) -> str:
         attachments_text = ""
         if self.attachments:
             data_root = os.path.abspath(str(get_data_path()))

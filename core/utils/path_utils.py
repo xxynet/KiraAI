@@ -34,7 +34,11 @@ def get_data_path() -> Path:
 
 def get_configured_data_path() -> Path:
     """Return the configured data path without resolving symlinks or junctions."""
-    return _configured_data_dir if _configured_data_dir is not None else get_root_path() / "data"
+    return (
+        _configured_data_dir
+        if _configured_data_dir is not None
+        else get_root_path() / "data"
+    )
 
 
 def get_webui_dist_path() -> Path:
@@ -52,6 +56,7 @@ def get_config_path() -> Path:
 
 # ─── Archive extraction safety (Zip-Slip guard) ──────────────────────────────
 
+
 def is_within_directory(directory: Path, target: Path) -> bool:
     """Return True if ``target`` resolves to a path inside ``directory``.
 
@@ -65,13 +70,23 @@ def is_within_directory(directory: Path, target: Path) -> bool:
     return target == directory or directory in target.parents
 
 
-_ICON_EXTENSIONS = frozenset({
-    ".avif", ".gif", ".ico", ".jpeg", ".jpg", ".png", ".svg", ".webp",
-})
+_ICON_EXTENSIONS = frozenset(
+    {
+        ".avif",
+        ".gif",
+        ".ico",
+        ".jpeg",
+        ".jpg",
+        ".png",
+        ".svg",
+        ".webp",
+    }
+)
 
 
-def resolve_manifest_icon_path(manifest_dir: Path, icon: object,
-                               extensions: frozenset | None = None) -> Path | None:
+def resolve_manifest_icon_path(
+    manifest_dir: Path, icon: object, extensions: frozenset | None = None
+) -> Path | None:
     """Return a safe local icon file referenced by a manifest.
 
     Manifest icons are intentionally relative to the directory containing the

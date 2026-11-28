@@ -17,17 +17,21 @@ class BuildRequestStage(BaseStage[IMBatchContext]):
         session = await services.session_manager.get_session(sid, ensure_session=True)
         ctx.stored_session = session
         if not session.session_title:
-            await services.session_manager.update_session(sid, title=event.session.session_title)
+            await services.session_manager.update_session(
+                sid, title=event.session.session_title
+            )
         session_title = session.session_title or event.session.session_title
 
         # Build chat environment
         chat_env = {
             "platform": event.adapter.platform,
             "adapter": event.adapter.name,
-            "chat_type": 'GroupMessage' if event.is_group_message() else 'DirectMessage',
+            "chat_type": "GroupMessage"
+            if event.is_group_message()
+            else "DirectMessage",
             "self_id": event.self_id,
             "session_title": session_title,
-            "session_description": event.session.session_description
+            "session_description": event.session.session_description,
         }
 
         # Get chat history memory
@@ -45,36 +49,46 @@ class BuildRequestStage(BaseStage[IMBatchContext]):
                 allowed_skills.append(s)
         capability_prompts = []
         if allowed_skills:
-            capability_prompts.append(services.skills_manager.build_skills_prompt(allowed_skills))
+            capability_prompts.append(
+                services.skills_manager.build_skills_prompt(allowed_skills)
+            )
         subagent_prompt = services.subagent_manager.presets.build_presets_prompt(sid)
         if subagent_prompt is not None:
             capability_prompts.append(subagent_prompt)
         if capability_prompts:
             for i, p in enumerate(agent_prompt_list):
                 if p.name == "tools":
-                    agent_prompt_list[i + 1:i + 1] = capability_prompts
+                    agent_prompt_list[i + 1 : i + 1] = capability_prompts
                     break
 
         model_group: list[LLMModelClient] = []
         if event.model_group:
-            model_group = [m for m in event.model_group if isinstance(m, LLMModelClient)]
+            model_group = [
+                m for m in event.model_group if isinstance(m, LLMModelClient)
+            ]
         session_model = session.data.get("llm_model")
         if not model_group and session_model is not None:
             try:
                 model_group = [services.provider_mgr.get_llm(session_model)]
             except (ValueError, ProviderAPIError) as exc:
-                llm_logger.error("Session %s LLM %s is unavailable: %s", sid, session_model, exc)
+                llm_logger.error(
+                    "Session %s LLM %s is unavailable: %s", sid, session_model, exc
+                )
                 return False
         if not model_group:
             # Get default LLM model client
             try:
                 default_llm = services.provider_mgr.get_default_llm()
                 if not default_llm:
-                    llm_logger.error("Default LLM model not configured, please configure it in Configuration")
+                    llm_logger.error(
+                        "Default LLM model not configured, please configure it in Configuration"
+                    )
                     return False
                 model_group = [default_llm]
             except Exception as _:
-                llm_logger.error("Default LLM model not configured, please configure it in Configuration")
+                llm_logger.error(
+                    "Default LLM model not configured, please configure it in Configuration"
+                )
                 return False
 
         # Filter tools by scope
@@ -83,9 +97,14 @@ class BuildRequestStage(BaseStage[IMBatchContext]):
         tool_set = services.tool_manager.build_tool_set()
         # Remove tools blocked by MCP server scope
         tool_set.tools = [
-            t for t in tool_set.tools
-            if not (tool_server_map.get(t.name)
-                    and not services.mcp_manager.is_server_allowed(tool_server_map[t.name], sid))
+            t
+            for t in tool_set.tools
+            if not (
+                tool_server_map.get(t.name)
+                and not services.mcp_manager.is_server_allowed(
+                    tool_server_map[t.name], sid
+                )
+            )
         ]
 
         request = LLMRequest(messages=session_memory, tool_set=tool_set)
@@ -93,12 +112,14 @@ class BuildRequestStage(BaseStage[IMBatchContext]):
 
         # Add received im messages
         for message in event.messages:
-            request.user_prompt.append(Prompt(
-                message.message_str,
-                name="message",
-                source="system",
-                render_template=False,
-            ))
+            request.user_prompt.append(
+                Prompt(
+                    message.message_str,
+                    name="message",
+                    source="system",
+                    render_template=False,
+                )
+            )
 
         # Build tag set
         tag_set = TagSet()

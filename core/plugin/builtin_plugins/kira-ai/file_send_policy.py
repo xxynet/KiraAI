@@ -25,8 +25,19 @@ FILE_TAG_BASE_PATHS = ("data/files", "data/temp")
 
 # Mirrors the restricted keyword list of the agent plugin's read_file tool
 # (core/plugin/builtin_plugins/agent/main.py); keep the two lists in sync.
-RESTRICTED_PATHS = ['~/.ssh/', '~/.gnupg/', '~/.aws/', '~/.config/gh/', '.pem',
-                    '.p12', 'key', 'secret', 'password', 'token', 'credential']
+RESTRICTED_PATHS = [
+    "~/.ssh/",
+    "~/.gnupg/",
+    "~/.aws/",
+    "~/.config/gh/",
+    ".pem",
+    ".p12",
+    "key",
+    "secret",
+    "password",
+    "token",
+    "credential",
+]
 
 # Session permission modes, mirroring the agent plugin's file_access config.
 ALLOW_LIST = "allow_list"
@@ -51,7 +62,9 @@ def read_agent_file_access() -> dict:
     except FileNotFoundError:
         return {}
     except Exception as e:
-        message_logger.warning(f"Failed to read agent plugin config for <file> tag: {e}")
+        message_logger.warning(
+            f"Failed to read agent plugin config for <file> tag: {e}"
+        )
         return {}
     if not isinstance(cfg, dict):
         return {}
@@ -171,10 +184,14 @@ def resolve_local_send_path(value: str, sid: str = "") -> str | None:
     if not path_matches_prefixes(abs_path, base_prefixes):
         section = read_agent_file_access()
         if not path_matches_prefixes(abs_path, collect_extra_send_prefixes(section)):
-            message_logger.warning(f"<file> tag rejected path outside send policy: {normalized}")
+            message_logger.warning(
+                f"<file> tag rejected path outside send policy: {normalized}"
+            )
             return None
         if not is_session_allowed_for_extra_paths(sid, section):
-            message_logger.warning(f"<file> tag rejected extra path for session {sid or 'unknown'}")
+            message_logger.warning(
+                f"<file> tag rejected extra path for session {sid or 'unknown'}"
+            )
             return None
 
     return abs_path

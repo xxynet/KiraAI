@@ -95,16 +95,20 @@ class LLMModelClient(BaseModelClient):
     async def health_check(self) -> None:
         from core.agent.message import OpenAIMessage
 
-        await self.chat(LLMRequest(
-            messages=[OpenAIMessage(role="user", content="Say 'pong'")],
-            tools=None,
-            tool_choice="none",
-        ))
+        await self.chat(
+            LLMRequest(
+                messages=[OpenAIMessage(role="user", content="Say 'pong'")],
+                tools=None,
+                tool_choice="none",
+            )
+        )
 
     async def chat(self, request: LLMRequest, **kwargs) -> LLMResponse:
         pass
 
-    async def chat_stream(self, request: LLMRequest, **kwargs) -> AsyncGenerator[LLMStreamChunk, None]:
+    async def chat_stream(
+        self, request: LLMRequest, **kwargs
+    ) -> AsyncGenerator[LLMStreamChunk, None]:
         """Default fallback: wraps the non-streaming chat() as a single-chunk stream."""
         resp = await self.chat(request, **kwargs)
         usage = None
@@ -166,7 +170,9 @@ class VideoModelClient(BaseModelClient):
     def __init__(self, model: ModelInfo):
         super().__init__(model)
 
-    async def generate_video(self, prompt: str, ref: list[Image] | None = None, duration: int = 5, **kwargs) -> Video:
+    async def generate_video(
+        self, prompt: str, ref: list[Image] | None = None, duration: int = 5, **kwargs
+    ) -> Video:
         pass
 
 
@@ -210,11 +216,7 @@ class RerankModelClient(BaseModelClient):
 
     @abstractmethod
     async def rerank(
-        self,
-        query: str,
-        documents: list[str],
-        top_n: int | None = None,
-        **kwargs
+        self, query: str, documents: list[str], top_n: int | None = None, **kwargs
     ) -> list[RerankResult]:
         """
         Return the results sorted by relevance (High -> Low)
@@ -233,7 +235,10 @@ class DecisionModelClient(BaseModelClient):
 
     @abstractmethod
     async def noul(
-        self, state: DecisionContent, instructions: DecisionContent | None = None, *,
+        self,
+        state: DecisionContent,
+        instructions: DecisionContent | None = None,
+        *,
         criteria: dict[Literal["true", "false"], DecisionContent | None] | None = None,
     ) -> NoulResponse:
         """Return the probability that a yes/no question is true."""
@@ -241,7 +246,10 @@ class DecisionModelClient(BaseModelClient):
 
     @abstractmethod
     async def choice(
-        self, state: DecisionContent, instructions: DecisionContent | None = None, *,
+        self,
+        state: DecisionContent,
+        instructions: DecisionContent | None = None,
+        *,
         criteria: dict[str, DecisionContent | None],
     ) -> ChoiceResponse:
         """Select one option from named criteria."""
@@ -249,7 +257,10 @@ class DecisionModelClient(BaseModelClient):
 
     @abstractmethod
     async def score(
-        self, state: DecisionContent, instructions: DecisionContent | None = None, *,
+        self,
+        state: DecisionContent,
+        instructions: DecisionContent | None = None,
+        *,
         criteria: list[DecisionContent],
     ) -> ScoreResponse:
         """Rate the state against ordered descriptive levels."""
@@ -272,7 +283,7 @@ class BaseProvider(ABC):
     async def get_model_list(self, model_type: str) -> list[dict]:
         """List models for a capability, defaulting to the provider's existing catalog."""
         return await self.get_llm_list()
-    
+
     async def get_llm_list(self) -> list[dict]:
         """
         Fetch available models from the provider's remote API.

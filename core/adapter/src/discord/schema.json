@@ -5,7 +5,10 @@
     "default": "",
     "hint": "Discord Bot Token (from Discord Developer Portal)",
     "locales": {
-      "zh": { "name": "Bot Token", "hint": "Discord Bot Token（从 Discord 开发者门户获取）" }
+      "zh": {
+        "name": "Bot Token",
+        "hint": "Discord Bot Token（从 Discord 开发者门户获取）"
+      }
     }
   },
   "proxy": {
@@ -14,13 +17,21 @@
     "default": "",
     "hint": "HTTP proxy URL for connecting to Discord, e.g. http://127.0.0.1:7890",
     "locales": {
-      "zh": { "name": "代理", "hint": "连接 Discord 用的 HTTP 代理地址，如 http://127.0.0.1:7890" }
+      "zh": {
+        "name": "代理",
+        "hint": "连接 Discord 用的 HTTP 代理地址，如 http://127.0.0.1:7890"
+      }
     }
   },
   "intents": {
     "name": "Gateway Intents",
     "type": "list",
-    "default": ["guilds", "guild_messages", "message_content", "direct_messages"],
+    "default": [
+      "guilds",
+      "guild_messages",
+      "message_content",
+      "direct_messages"
+    ],
     "hint": "Discord Gateway Intents to enable",
     "locales": {
       "zh": { "name": "网关意图", "hint": "需要启用的 Discord Gateway Intents" }
@@ -42,7 +53,10 @@
     "default": [],
     "hint": "Channel IDs allow list (when permission mode is allow_list)",
     "locales": {
-      "zh": { "name": "频道白名单", "hint": "频道 ID 白名单（权限模式为白名单时生效）" }
+      "zh": {
+        "name": "频道白名单",
+        "hint": "频道 ID 白名单（权限模式为白名单时生效）"
+      }
     }
   },
   "user_allow_list": {
@@ -51,7 +65,10 @@
     "default": [],
     "hint": "User IDs allow list (when permission mode is allow_list)",
     "locales": {
-      "zh": { "name": "用户白名单", "hint": "用户 ID 白名单（权限模式为白名单时生效）" }
+      "zh": {
+        "name": "用户白名单",
+        "hint": "用户 ID 白名单（权限模式为白名单时生效）"
+      }
     }
   },
   "group_deny_list": {
@@ -60,7 +77,10 @@
     "default": [],
     "hint": "Channel IDs deny list (when permission mode is deny_list)",
     "locales": {
-      "zh": { "name": "频道黑名单", "hint": "频道 ID 黑名单（权限模式为黑名单时生效）" }
+      "zh": {
+        "name": "频道黑名单",
+        "hint": "频道 ID 黑名单（权限模式为黑名单时生效）"
+      }
     }
   },
   "user_deny_list": {
@@ -69,7 +89,10 @@
     "default": [],
     "hint": "User IDs deny list (when permission mode is deny_list)",
     "locales": {
-      "zh": { "name": "用户黑名单", "hint": "用户 ID 黑名单（权限模式为黑名单时生效）" }
+      "zh": {
+        "name": "用户黑名单",
+        "hint": "用户 ID 黑名单（权限模式为黑名单时生效）"
+      }
     }
   },
   "debug_mode": {
@@ -78,7 +101,10 @@
     "default": false,
     "hint": "Print received raw messages at DEBUG level",
     "locales": {
-      "zh": { "name": "调试模式", "hint": "开启后，会以 DEBUG 等级打印收到的原始消息" }
+      "zh": {
+        "name": "调试模式",
+        "hint": "开启后，会以 DEBUG 等级打印收到的原始消息"
+      }
     }
   },
   "debug_mode_list": {
@@ -87,7 +113,10 @@
     "default": [],
     "hint": "Channels to enable debug mode for, e.g.:\ngm:<channel_id>\ndm:<user_id>",
     "locales": {
-      "zh": { "name": "调试模式频道", "hint": "要开启调试模式的频道，例如：\ngm:<channel_id>\ndm:<user_id>" }
+      "zh": {
+        "name": "调试模式频道",
+        "hint": "要开启调试模式的频道，例如：\ngm:<channel_id>\ndm:<user_id>"
+      }
     }
   },
   "slash_guild_ids": {
@@ -96,7 +125,10 @@
     "default": [],
     "hint": "Guild IDs to scope slash commands to (global commands if empty)",
     "locales": {
-      "zh": { "name": "斜杠命令服务器 ID", "hint": "限定斜杠命令的服务器 ID（留空则为全局命令）" }
+      "zh": {
+        "name": "斜杠命令服务器 ID",
+        "hint": "限定斜杠命令的服务器 ID（留空则为全局命令）"
+      }
     }
   },
   "auto_sync_commands": {
@@ -105,7 +137,10 @@
     "default": true,
     "hint": "Automatically sync slash commands with Discord on startup",
     "locales": {
-      "zh": { "name": "自动同步命令", "hint": "启动时自动与 Discord 同步斜杠命令" }
+      "zh": {
+        "name": "自动同步命令",
+        "hint": "启动时自动与 Discord 同步斜杠命令"
+      }
     }
   }
 }

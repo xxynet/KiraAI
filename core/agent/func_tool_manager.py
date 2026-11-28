@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from deprecated import deprecated
 
@@ -23,16 +23,16 @@ if TYPE_CHECKING:
 class _LegacyFuncTool(BaseTool):
     """Wraps a legacy (name, description, parameters, func) quadruple as a BaseTool."""
 
-    def __init__(self, name: str, description: str, parameters: dict, func):
+    def __init__(self, name: str, description: str, parameters: dict, func) -> None:
         self.name = name
         self.description = description
         self.parameters = parameters
         self._func = func
 
-    async def execute(self, *args, **kwargs):
+    async def execute(self, *args, **kwargs) -> Any:
         return await self._func(*args, **kwargs)
 
-    def get_schema(self):
+    def get_schema(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "description": self.description,
@@ -41,7 +41,10 @@ class _LegacyFuncTool(BaseTool):
 
 
 class FuncToolManager:
-    def __init__(self, config: ToolExecutionConfig | Callable[[], ToolExecutionConfig] | None = None):
+    def __init__(
+        self,
+        config: ToolExecutionConfig | Callable[[], ToolExecutionConfig] | None = None,
+    ) -> None:
         self.config = config if config is not None else ToolExecutionConfig()
 
         self.tool_set = ToolSet()
@@ -53,26 +56,32 @@ class FuncToolManager:
         return self._config() if callable(self._config) else self._config
 
     @config.setter
-    def config(self, config: ToolExecutionConfig | Callable[[], ToolExecutionConfig]) -> None:
+    def config(
+        self, config: ToolExecutionConfig | Callable[[], ToolExecutionConfig]
+    ) -> None:
         self._config = config
 
-    def register_tool(self, name, description, parameters, func):
+    def register_tool(self, name, description, parameters, func) -> None:
         """Register a tool"""
-        self.tool_set.add(_LegacyFuncTool(
-            name=name,
-            description=description,
-            parameters=parameters,
-            func=func,
-        ))
+        self.tool_set.add(
+            _LegacyFuncTool(
+                name=name,
+                description=description,
+                parameters=parameters,
+                func=func,
+            )
+        )
 
-    def unregister_tool(self, name: str):
+    def unregister_tool(self, name: str) -> None:
         self.tool_set.remove(name)
 
     def build_tool_set(self) -> ToolSet:
         """Return a request-local copy of the registered tools."""
         return ToolSet(tools=self.tool_set.tools.copy())
 
-    @deprecated("Use IMToolExecutor(event).execute_tools with an IM result callback instead")
+    @deprecated(
+        "Use IMToolExecutor(event).execute_tools with an IM result callback instead"
+    )
     async def execute_tool(
         self,
         event: KiraMessageBatchEvent,
@@ -85,7 +94,9 @@ class FuncToolManager:
         from core.plugin.handlers import EventType, event_handler_reg
 
         async def on_tool_result(result: ToolResult) -> bool:
-            for handler in event_handler_reg.get_handlers(event_type=EventType.ON_TOOL_RESULT):
+            for handler in event_handler_reg.get_handlers(
+                event_type=EventType.ON_TOOL_RESULT
+            ):
                 await handler.exec_handler(event, result)
                 if event.is_stopped:
                     logger.info("Event stopped while ON_TOOL_RESULT stage")
@@ -93,7 +104,11 @@ class FuncToolManager:
             return True
 
         await self.execute_tools(
-            resp, tool_set, config=config, tool_executor=IMToolExecutor(event), on_tool_result=on_tool_result,
+            resp,
+            tool_set,
+            config=config,
+            tool_executor=IMToolExecutor(event),
+            on_tool_result=on_tool_result,
         )
 
     @deprecated("Use ToolExecutor.execute_tools instead")
@@ -114,6 +129,8 @@ class FuncToolManager:
         """
         executor = tool_executor if tool_executor is not None else self.tool_executor
         await executor.execute_tools(
-            resp, tool_set, config=config if config is not None else self.config,
+            resp,
+            tool_set,
+            config=config if config is not None else self.config,
             on_tool_result=on_tool_result,
         )

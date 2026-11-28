@@ -17,8 +17,8 @@ def isolated_plugin_components(monkeypatch):
 
 @pytest.mark.anyio
 async def test_register_subagent_is_plugin_owned_and_updates_settings_and_scope(tmp_path):
-    from core.agent.subagent_presets import SubAgentPreset as StoredSubAgentPreset
     from core.agent.subagent_presets import ReadOnlyPresetError, SubAgentPresetStore
+    from core.agent.subagent_presets import SubAgentPreset as StoredSubAgentPreset
     from core.plugin import SubAgentPreset
 
     store = SubAgentPresetStore(tmp_path / "presets.json")
@@ -64,11 +64,14 @@ async def test_register_subagent_is_plugin_owned_and_updates_settings_and_scope(
 
 @pytest.mark.anyio
 async def test_register_subagent_rejects_conflicts_and_invalid_defaults(tmp_path):
-    from core.agent.subagent_presets import DuplicatePresetNameError
-    from core.agent.subagent_presets import SubAgentPreset as StoredSubAgentPreset
-    from core.agent.subagent_presets import SubAgentPresetStore
-    from core.plugin import SubAgentPreset
     from pydantic import ValidationError
+
+    from core.agent.subagent_presets import (
+        DuplicatePresetNameError,
+        SubAgentPresetStore,
+    )
+    from core.agent.subagent_presets import SubAgentPreset as StoredSubAgentPreset
+    from core.plugin import SubAgentPreset
 
     store = SubAgentPresetStore(tmp_path / "presets.json")
     context = object.__new__(PluginContext)
@@ -90,9 +93,10 @@ async def test_register_subagent_rejects_conflicts_and_invalid_defaults(tmp_path
 
 @pytest.mark.anyio
 async def test_register_subagent_only_accepts_plugin_descriptor():
+    from pydantic import BaseModel
+
     from core.agent.subagent_presets import SubAgentPreset as StoredSubAgentPreset
     from core.plugin import SubAgentPreset
-    from pydantic import BaseModel
 
     assert not issubclass(SubAgentPreset, BaseModel)
     context = object.__new__(PluginContext)

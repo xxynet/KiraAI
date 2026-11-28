@@ -5,7 +5,10 @@
     "level": "info",
     "hint": "See the [BiliBili Adapter](https://docs.kira-ai.top/configuration/adapter/bilibili.html) guide for setup and configuration details.",
     "locales": {
-      "zh": { "name": "文档", "hint": "详见 [BiliBili 适配器](https://docs.kira-ai.top/zh/configuration/adapter/bilibili.html) 的配置说明。" }
+      "zh": {
+        "name": "文档",
+        "hint": "详见 [BiliBili 适配器](https://docs.kira-ai.top/zh/configuration/adapter/bilibili.html) 的配置说明。"
+      }
     }
   },
   "bot_uid": {
@@ -14,7 +17,10 @@
     "default": "",
     "hint": "Filled automatically by QR login, or enter the account UID manually",
     "locales": {
-      "zh": { "name": "机器人 UID", "hint": "扫码登录后自动填写，也可手动输入账号 UID" }
+      "zh": {
+        "name": "机器人 UID",
+        "hint": "扫码登录后自动填写，也可手动输入账号 UID"
+      }
     }
   },
   "enable_im": {
@@ -33,7 +39,10 @@
     "default": "allow_list",
     "hint": "Access rules for incoming private messages and cross-session notifications",
     "locales": {
-      "zh": { "name": "私信权限模式", "hint": "控制私信接收及跨会话通知的黑白名单规则" }
+      "zh": {
+        "name": "私信权限模式",
+        "hint": "控制私信接收及跨会话通知的黑白名单规则"
+      }
     }
   },
   "user_allow_list": {
@@ -42,7 +51,10 @@
     "default": [],
     "hint": "User UIDs allowed in allow-list mode",
     "locales": {
-      "zh": { "name": "私信白名单", "hint": "白名单模式下允许接收私信的用户 UID" }
+      "zh": {
+        "name": "私信白名单",
+        "hint": "白名单模式下允许接收私信的用户 UID"
+      }
     }
   },
   "user_deny_list": {
@@ -51,7 +63,10 @@
     "default": [],
     "hint": "User UIDs blocked in deny-list mode",
     "locales": {
-      "zh": { "name": "私信黑名单", "hint": "黑名单模式下拒绝接收私信的用户 UID" }
+      "zh": {
+        "name": "私信黑名单",
+        "hint": "黑名单模式下拒绝接收私信的用户 UID"
+      }
     }
   },
   "enable_comment_notifications": {
@@ -60,7 +75,10 @@
     "default": true,
     "hint": "Receive new comments replying to or mentioning this account after startup. Requires login; no video BVID is needed.",
     "locales": {
-      "zh": { "name": "监听回复与 @ 评论", "hint": "监听启动后回复或 @ 此账号的新评论。需要登录，无需配置视频 BVID。" }
+      "zh": {
+        "name": "监听回复与 @ 评论",
+        "hint": "监听启动后回复或 @ 此账号的新评论。需要登录，无需配置视频 BVID。"
+      }
     }
   },
   "listening_bvid": {
@@ -78,7 +96,10 @@
     "default": 20.0,
     "hint": "Video comments and account comment notifications polling interval in seconds",
     "locales": {
-      "zh": { "name": "轮询间隔", "hint": "视频评论及账号评论通知的轮询间隔秒数" }
+      "zh": {
+        "name": "轮询间隔",
+        "hint": "视频评论及账号评论通知的轮询间隔秒数"
+      }
     }
   },
   "message_process_interval": {
@@ -114,7 +135,10 @@
     "default": "",
     "hint": "Device identifier filled automatically by QR login; bilibili-api generates it when omitted",
     "locales": {
-      "zh": { "name": "buvid3", "hint": "扫码登录时自动填写的设备标识；留空时由 bilibili-api 自动生成" }
+      "zh": {
+        "name": "buvid3",
+        "hint": "扫码登录时自动填写的设备标识；留空时由 bilibili-api 自动生成"
+      }
     }
   },
   "dedeuserid": {
@@ -132,7 +156,10 @@
     "default": "",
     "hint": "ac_time_value（From LocalStorage）",
     "locales": {
-      "zh": { "name": "ac_time_value", "hint": "ac_time_value（从 LocalStorage 获取）" }
+      "zh": {
+        "name": "ac_time_value",
+        "hint": "ac_time_value（从 LocalStorage 获取）"
+      }
     }
   }
 }

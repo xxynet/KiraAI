@@ -11,7 +11,7 @@ import os
 import tempfile
 import threading
 from collections.abc import Iterable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from contextvars import ContextVar
 from io import BytesIO
 from pathlib import Path
@@ -39,7 +39,8 @@ class _MediaScope:
 
 
 _current_media_scope: ContextVar[_MediaScope | None] = ContextVar(
-    "session_media_scope", default=None,
+    "session_media_scope",
+    default=None,
 )
 
 
@@ -104,8 +105,11 @@ def _validate_image(raw_data: bytes) -> None:
         with PILImage.open(BytesIO(raw_data)) as image:
             image.load()
     except (
-        OSError, SyntaxError, ValueError,
-        PILImage.DecompressionBombError, PILImage.DecompressionBombWarning,
+        OSError,
+        SyntaxError,
+        ValueError,
+        PILImage.DecompressionBombError,
+        PILImage.DecompressionBombWarning,
     ) as exc:
         raise ValueError("Invalid image data") from exc
 
@@ -147,7 +151,11 @@ async def store_session_media(
         # Serialize publication and deletion; keep the pin after the worker finishes.
         with _media_lock:
             resolved_target = target.resolve()
-            if scope is not None and not scope.closed and resolved_target not in scope.paths:
+            if (
+                scope is not None
+                and not scope.closed
+                and resolved_target not in scope.paths
+            ):
                 scope.paths.add(resolved_target)
                 _protected_media_paths[resolved_target] = (
                     _protected_media_paths.get(resolved_target, 0) + 1
@@ -166,10 +174,8 @@ async def store_session_media(
                     temporary_file.write(raw_data)
                     temporary_file.flush()
                     os.fsync(temporary_file.fileno())
-                try:
+                with suppress(FileExistsError):
                     os.link(temporary_path, target)
-                except FileExistsError:
-                    pass
             finally:
                 Path(temporary_path).unlink(missing_ok=True)
 
@@ -196,11 +202,17 @@ async def resolve_media_reference(reference: dict) -> dict:
     root = _media_root().resolve()
     target = (get_data_path() / relative_path).resolve()
     if not is_within_directory(root, target) or not target.is_file():
-        raise ValueError("Media reference points outside session media or no longer exists")
+        raise ValueError(
+            "Media reference points outside session media or no longer exists"
+        )
 
     raw_data = await asyncio.to_thread(target.read_bytes)
     await asyncio.to_thread(_validate_image, raw_data)
-    mime_type = reference.get("mime_type") or mimetypes.guess_type(target.name)[0] or "image/jpeg"
+    mime_type = (
+        reference.get("mime_type")
+        or mimetypes.guess_type(target.name)[0]
+        or "image/jpeg"
+    )
     encoded_data = base64.b64encode(raw_data).decode("ascii")
     image_url = {"url": f"data:{mime_type};base64,{encoded_data}"}
     if reference.get("detail"):
@@ -224,9 +236,13 @@ async def resolve_media_references(messages: Iterable[object]) -> list[dict]:
                     except (OSError, ValueError, RuntimeError) as exc:
                         logger.warning(
                             "Image unavailable at %r: %s: %s",
-                            part.get("path"), type(exc).__name__, exc,
+                            part.get("path"),
+                            type(exc).__name__,
+                            exc,
                         )
-                        resolved_content.append({"type": "text", "text": "[image unavailable]"})
+                        resolved_content.append(
+                            {"type": "text", "text": "[image unavailable]"}
+                        )
                 else:
                     resolved_content.append(part)
             resolved_message["content"] = resolved_content
@@ -250,7 +266,9 @@ def collect_media_reference_paths(memory: object) -> set[str]:
         elif isinstance(item, dict):
             if item.get("type") == MEDIA_REF_TYPE and isinstance(item.get("path"), str):
                 paths.add(item["path"])
-            pending.extend(value for value in item.values() if isinstance(value, (dict, list)))
+            pending.extend(
+                value for value in item.values() if isinstance(value, (dict, list))
+            )
     return paths
 
 
@@ -269,7 +287,10 @@ def cleanup_session_media(session_id: str, memory: Iterable[object]) -> None:
             directory_path = Path(directory)
             for filename in filenames:
                 file_path = (directory_path / filename).resolve()
-                if is_within_directory(session_dir, file_path) and file_path not in retained:
+                if (
+                    is_within_directory(session_dir, file_path)
+                    and file_path not in retained
+                ):
                     file_path.unlink(missing_ok=True)
             if directory_path != session_dir and not any(directory_path.iterdir()):
                 directory_path.rmdir()

@@ -6,7 +6,10 @@
       "default": "https://ark.cn-beijing.volces.com/api/v3",
       "hint": "火山平台 base url，可根据需要更换",
       "locales": {
-        "en": { "name": "Base URL", "hint": "Volcengine base URL, can be changed as needed" }
+        "en": {
+          "name": "Base URL",
+          "hint": "Volcengine base URL, can be changed as needed"
+        }
       }
     },
     "api_key": {
@@ -15,7 +18,10 @@
       "default": null,
       "hint": "火山平台 API 密钥，可进入 https://console.volcengine.com/ark/ 获取",
       "locales": {
-        "en": { "name": "API Key", "hint": "Volcengine API Key, get it from https://console.volcengine.com/ark/" }
+        "en": {
+          "name": "API Key",
+          "hint": "Volcengine API Key, get it from https://console.volcengine.com/ark/"
+        }
       }
     }
   },
@@ -37,7 +43,10 @@
         "hint": "高级模型配置选项",
         "collapsed": true,
         "locales": {
-          "en": { "name": "Advanced Settings", "hint": "Advanced model configuration options" }
+          "en": {
+            "name": "Advanced Settings",
+            "hint": "Advanced model configuration options"
+          }
         },
         "fields": {
           "temperature": {
@@ -57,7 +66,10 @@
             "default": {},
             "hint": "合并到请求体中的额外字段（JSON 对象）",
             "locales": {
-              "en": { "name": "Extra Body", "hint": "Additional fields merged into the request body (JSON object)" }
+              "en": {
+                "name": "Extra Body",
+                "hint": "Additional fields merged into the request body (JSON object)"
+              }
             }
           }
         }
@@ -93,7 +105,10 @@
         "min": 0,
         "hint": "超过此阈值（秒）的请求将被记录为慢请求",
         "locales": {
-          "en": { "name": "Slow Request Threshold", "hint": "Requests slower than this threshold (seconds) will be logged as slow requests" }
+          "en": {
+            "name": "Slow Request Threshold",
+            "hint": "Requests slower than this threshold (seconds) will be logged as slow requests"
+          }
         }
       }
     }

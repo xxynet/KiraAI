@@ -5,7 +5,10 @@
     "level": "info",
     "hint": "详见 [QQ 适配器](https://docs.kira-ai.top/zh/configuration/adapter/qq.html) 的配置说明。",
     "locales": {
-      "en": { "name": "Documentation", "hint": "See the [QQ Adapter](https://docs.kira-ai.top/configuration/adapter/qq.html) guide for setup and configuration details." }
+      "en": {
+        "name": "Documentation",
+        "hint": "See the [QQ Adapter](https://docs.kira-ai.top/configuration/adapter/qq.html) guide for setup and configuration details."
+      }
     }
   },
   "bot_pid": {
@@ -42,7 +45,10 @@
     "default": "allow_list",
     "hint": "白名单（allow）或黑名单（deny）模式",
     "locales": {
-      "zh": { "name": "权限模式", "hint": "白名单（allow）或黑名单（deny）模式" }
+      "zh": {
+        "name": "权限模式",
+        "hint": "白名单（allow）或黑名单（deny）模式"
+      }
     }
   },
   "group_allow_list": {
@@ -51,7 +57,10 @@
     "default": [],
     "hint": "群聊白名单，当 permission mode 为 allow list 时起作用",
     "locales": {
-      "zh": { "name": "群聊白名单", "hint": "群聊白名单，当权限模式为白名单时起作用" }
+      "zh": {
+        "name": "群聊白名单",
+        "hint": "群聊白名单，当权限模式为白名单时起作用"
+      }
     }
   },
   "user_allow_list": {
@@ -60,7 +69,10 @@
     "default": [],
     "hint": "私聊白名单，当 permission mode 为 allow list 时起作用",
     "locales": {
-      "zh": { "name": "私聊白名单", "hint": "私聊白名单，当权限模式为白名单时起作用" }
+      "zh": {
+        "name": "私聊白名单",
+        "hint": "私聊白名单，当权限模式为白名单时起作用"
+      }
     }
   },
   "group_deny_list": {
@@ -69,7 +81,10 @@
     "default": [],
     "hint": "群聊黑名单，当 permission mode 为 deny list 时起作用",
     "locales": {
-      "zh": { "name": "群聊黑名单", "hint": "群聊黑名单，当权限模式为黑名单时起作用" }
+      "zh": {
+        "name": "群聊黑名单",
+        "hint": "群聊黑名单，当权限模式为黑名单时起作用"
+      }
     }
   },
   "user_deny_list": {
@@ -78,7 +93,10 @@
     "default": [],
     "hint": "私聊黑名单，当 permission mode 为 deny list 时起作用",
     "locales": {
-      "zh": { "name": "私聊黑名单", "hint": "私聊黑名单，当权限模式为黑名单时起作用" }
+      "zh": {
+        "name": "私聊黑名单",
+        "hint": "私聊黑名单，当权限模式为黑名单时起作用"
+      }
     }
   },
   "debug_mode": {
@@ -87,7 +105,10 @@
     "default": false,
     "hint": "开启时，会以 DEBUG 等级打印收到的原始消息",
     "locales": {
-      "en": { "name": "Debug Mode", "hint": "Print received raw messages at DEBUG level" }
+      "en": {
+        "name": "Debug Mode",
+        "hint": "Print received raw messages at DEBUG level"
+      }
     }
   },
   "debug_mode_list": {
@@ -96,7 +117,10 @@
     "default": [],
     "hint": "要开启调试模式的会话，默认为所有接收消息的会话，例：\n私聊：dm:xxxx\n群聊：gm:xxxx",
     "locales": {
-      "en": { "name": "Debug Mode Sessions", "hint": "Sessions to enable debug mode for (all by default), e.g.:\ndm:xxxx\ngm:xxxx" }
+      "en": {
+        "name": "Debug Mode Sessions",
+        "hint": "Sessions to enable debug mode for (all by default), e.g.:\ndm:xxxx\ngm:xxxx"
+      }
     }
   }
 }

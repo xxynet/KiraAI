@@ -25,14 +25,16 @@ class EventType(Enum):
     ON_IM_BATCH_MESSAGE = "on_im_batch_message"  # 消息合并后
     ON_LLM_REQUEST = "on_llm_request"  # LLM请求前
     ON_LLM_RESPONSE = "on_llm_response"  # LLM 原始输出
-    AFTER_XML_PARSE = "after_xml_parse"  # XML 解析后 (list[MessageChain | RootTagAction])
+    AFTER_XML_PARSE = (
+        "after_xml_parse"  # XML 解析后 (list[MessageChain | RootTagAction])
+    )
     ON_TOOL_CALL = "on_tool_call"  # Before executing a resolved tool call
     ON_TOOL_RESULT = "on_tool_result"  # 工具调用结果
     ON_MESSAGE_SENT = "on_message_sent"  # 单条消息发送后
     ON_STEP_RESULT = "on_step_result"  # Agent 步骤结果
     ON_FINAL_RESULT = "on_final_result"  # 最终消息结果
-    ON_LOADED = "on_loaded"            # 所有插件加载完成后
-    ON_SHUTDOWN = "on_shutdown"        # 系统即将关闭
+    ON_LOADED = "on_loaded"  # 所有插件加载完成后
+    ON_SHUTDOWN = "on_shutdown"  # 系统即将关闭
     ON_EXCEPTION = "on_exception"  # 异常发生时
     ON_CUSTOM_EVENT = "on_custom_event"  # 插件自定义事件
 
@@ -63,10 +65,12 @@ class EventHandler:
             await self.handler(*args, **kwargs)
         except Exception as e:
             import traceback as tb
+
             logger.error(tb.format_exc())
             if self.event_type != EventType.ON_EXCEPTION:
                 from core.chat.message_utils import KiraExceptionEvent
                 from core.plugin.registry import get_obj_plugin_id
+
                 exc_event = KiraExceptionEvent(
                     name=type(e).__name__,
                     message=str(e),
@@ -74,7 +78,7 @@ class EventHandler:
                     stage=self.event_type.value,
                     source="plugin",
                     comp_id=get_obj_plugin_id(self.handler),
-                    e=e
+                    e=e,
                 )
                 for h in event_handler_reg.get_handlers(EventType.ON_EXCEPTION):
                     try:
@@ -86,10 +90,10 @@ class EventHandler:
 
 
 class EventHandlerRegistry:
-    def __init__(self):
+    def __init__(self) -> None:
         self._handlers: dict[Any, list[EventHandler]] = {}
 
-    def register(self, eh: EventHandler):
+    def register(self, eh: EventHandler) -> None:
         self._handlers.setdefault(eh.event_type, [])
         self._handlers[eh.event_type].append(eh)
         self._handlers[eh.event_type].sort(reverse=True)
@@ -97,7 +101,7 @@ class EventHandlerRegistry:
     def get_handlers(self, event_type: EventType) -> list[EventHandler]:
         return self._handlers.setdefault(event_type, [])
 
-    def del_handler(self, handler: EventHandler):
+    def del_handler(self, handler: EventHandler) -> None:
         for hl in self._handlers.values():
             if handler in hl:
                 hl.remove(handler)

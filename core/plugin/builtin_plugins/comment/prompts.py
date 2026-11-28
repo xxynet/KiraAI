@@ -28,7 +28,9 @@ Reply to the comment. Output only the reply content, without anything extra.""",
 }
 
 
-def build_comment_prompt(persona: str, comment_content: str, lang: str | None = "en") -> str:
+def build_comment_prompt(
+    persona: str, comment_content: str, lang: str | None = "en"
+) -> str:
     """Render a localized comment prompt, falling back to English."""
     base_lang = (lang or "en").split("_")[0].split("-")[0].lower()
     template = COMMENT_TEMPLATES.get(base_lang, COMMENT_TEMPLATES["en"])

@@ -40,7 +40,7 @@ def generate_model_id(provider_config: dict) -> str:
             return model_id
 
 
-def validate_model_names(models: dict):
+def validate_model_names(models: dict) -> None:
     """Require unique upstream names within one provider and model type."""
     if not isinstance(models, dict):
         raise ValueError("Invalid model configuration group")

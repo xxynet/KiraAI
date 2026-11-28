@@ -12,7 +12,9 @@ def build_tool_execution_config(config: "KiraConfig") -> ToolExecutionConfig:
     defaults = ToolExecutionConfig()
     # Keep the persisted key while naming the actual per-step limit explicitly.
     try:
-        max_calls = max(0, int(config.get_config("bot_config.agent.max_tool_calls_per_turn")))
+        max_calls = max(
+            0, int(config.get_config("bot_config.agent.max_tool_calls_per_turn"))
+        )
     except (TypeError, ValueError, OverflowError):
         max_calls = defaults.max_tool_calls_per_step
 
@@ -27,9 +29,14 @@ def build_tool_execution_config(config: "KiraConfig") -> ToolExecutionConfig:
         timeout = defaults.tool_call_timeout
 
     output_tokens = config.get_config(
-        "bot_config.agent.max_tool_output_tokens", defaults.max_tool_output_tokens,
+        "bot_config.agent.max_tool_output_tokens",
+        defaults.max_tool_output_tokens,
     )
-    if not isinstance(output_tokens, int) or isinstance(output_tokens, bool) or output_tokens < 0:
+    if (
+        not isinstance(output_tokens, int)
+        or isinstance(output_tokens, bool)
+        or output_tokens < 0
+    ):
         output_tokens = defaults.max_tool_output_tokens
 
     return ToolExecutionConfig(

@@ -66,13 +66,22 @@ async def _load_reference_images(path: str) -> list[Image]:
             ref_file = get_data_path() / p
         try:
             if not await asyncio.to_thread(ref_file.is_file):
-                message_logger.warning(f"Image reference not found: {ref_file}, skipped")
+                message_logger.warning(
+                    f"Image reference not found: {ref_file}, skipped"
+                )
                 continue
             bs64 = await image_to_base64(str(ref_file))
             mime = await asyncio.to_thread(_reference_image_mime, bs64)
-        except (OSError, ValueError, SyntaxError,
-                PILImage.DecompressionBombError, PILImage.DecompressionBombWarning) as exc:
-            message_logger.warning(f"Image reference could not be loaded: {ref_file}, skipped: {exc}")
+        except (
+            OSError,
+            ValueError,
+            SyntaxError,
+            PILImage.DecompressionBombError,
+            PILImage.DecompressionBombWarning,
+        ) as exc:
+            message_logger.warning(
+                f"Image reference could not be loaded: {ref_file}, skipped: {exc}"
+            )
             continue
         ref_images.append(Image(image=bs64, name=p, mime=mime))
     return ref_images
@@ -95,6 +104,7 @@ def build_emoji_tag(emoji_json: dict[str, str]) -> type[BaseTag]:
 
         async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:
             return [Emoji(value)]
+
     return EmojiTag
 
 
@@ -108,9 +118,9 @@ class AtTag(BaseTag):
 
 class ImgTag(BaseTag):
     name = "img"
-    description = "<img path=\"image_path(s)\">prompt for image generator</img> # 用于发送图片。请勿滥用，仅在用户请求看照片时使用，需要详细的绘画提示词。可选属性 path 指定参考图片路径（支持绝对路径、相对路径 data/files/*、data/temp/*），多张图片用英文逗号分隔，使用 path 属性时将基于参考图片进行图生图。"
+    description = '<img path="image_path(s)">prompt for image generator</img> # 用于发送图片。请勿滥用，仅在用户请求看照片时使用，需要详细的绘画提示词。可选属性 path 指定参考图片路径（支持绝对路径、相对路径 data/files/*、data/temp/*），多张图片用英文逗号分隔，使用 path 属性时将基于参考图片进行图生图。'
 
-    def __init__(self, ctx):
+    def __init__(self, ctx) -> None:
         super().__init__(ctx=ctx)
 
     async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:
@@ -124,10 +134,14 @@ class ImgTag(BaseTag):
                 message_logger.error(f"Failed to get image client: {exc}")
                 return []
             if not image_client:
-                message_logger.error("Failed to get image client, please set default image model in Configuration")
+                message_logger.error(
+                    "Failed to get image client, please set default image model in Configuration"
+                )
                 return []
             if not ref_images:
-                message_logger.warning("No valid reference images found, falling back to text-to-image")
+                message_logger.warning(
+                    "No valid reference images found, falling back to text-to-image"
+                )
                 img_res = await generate_image(image_client, value)
                 return [img_res] if img_res else []
             img_res = await image_to_image(image_client, value, image=ref_images)
@@ -140,7 +154,9 @@ class ImgTag(BaseTag):
                 message_logger.error(f"Failed to get image client: {exc}")
                 return []
             if not image_client:
-                message_logger.error("Failed to get image client, please set default image model in Configuration")
+                message_logger.error(
+                    "Failed to get image client, please set default image model in Configuration"
+                )
                 return []
             img_res = await generate_image(image_client, value)
             return [img_res] if img_res else []
@@ -150,7 +166,7 @@ class VideoTag(BaseTag):
     name = "video"
     description = "<video>prompt for video generator</video> # Generate a video with detailed video generation prompt"
 
-    def __init__(self, ctx):
+    def __init__(self, ctx) -> None:
         super().__init__(ctx=ctx)
 
     async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:
@@ -162,7 +178,9 @@ class VideoTag(BaseTag):
             provider_logger.error(f"Failed to get video client: {exc}")
             return []
         if not video_client:
-            provider_logger.error("Failed to get video client, please set default video model in Configuration")
+            provider_logger.error(
+                "Failed to get video client, please set default video model in Configuration"
+            )
             return []
 
         provider_name = video_client.model.provider_name
@@ -196,19 +214,23 @@ class RecordTag(BaseTag):
     name = "record"
     description = "<record>record_text</record> # 用于发送语音，record_text为要发送的语音文本，不能和其他msg内标签混用，用户给你发语音或者用户要求你发语音时使用（收到语音消息类似这样：[Record voice_message]）"
 
-    def __init__(self, ctx):
+    def __init__(self, ctx) -> None:
         super().__init__(ctx=ctx)
 
     async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:
         try:
             tts_client = self.ctx.provider_mgr.get_default_tts()
             if not tts_client:
-                message_logger.error("Failed to get TTS client, please set default TTS model in Configuration")
+                message_logger.error(
+                    "Failed to get TTS client, please set default TTS model in Configuration"
+                )
                 return []
             record_obj = await text_to_speech(tts_client, value)
             return [record_obj]
         except Exception as e:
-            message_logger.error(f"an error occurred while generating voice message: {e}")
+            message_logger.error(
+                f"an error occurred while generating voice message: {e}"
+            )
             return [Text(f"<record>{value}</record>")]
 
 
@@ -223,8 +245,8 @@ class PokeTag(BaseTag):
 class SelfieTag(BaseTag):
     name = "selfie"
     description = (
-        '<selfie path="image_path(s)">prompt for image generator, use \'the character\' '
-        'to refer to the character in the first reference image</selfie> # Send a specific '
+        "<selfie path=\"image_path(s)\">prompt for image generator, use 'the character' "
+        "to refer to the character in the first reference image</selfie> # Send a specific "
         "image, such as a selfie or any image with the character in it. The first reference "
         "image is always the active persona's configured reference image. DO NOT describe "
         "the character's appearance, the first reference image already has it. Optional "
@@ -232,27 +254,29 @@ class SelfieTag(BaseTag):
         "absolute paths and paths relative to data/, such as data/files/* or data/temp/*."
     )
 
-    def __init__(self, ctx):
+    def __init__(self, ctx) -> None:
         super().__init__(ctx=ctx)
 
     async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:
         try:
             ref_file = await self.ctx.persona_mgr.get_reference_image()
             if ref_file is None:
-                message_logger.warning("Active persona selfie reference image not set or missing, skipped generation")
+                message_logger.warning(
+                    "Active persona selfie reference image not set or missing, skipped generation"
+                )
                 return []
             image_client = self.ctx.provider_mgr.get_default_image()
             if not image_client:
-                message_logger.error("Failed to get image client, please set default image model in Configuration")
+                message_logger.error(
+                    "Failed to get image client, please set default image model in Configuration"
+                )
                 return []
             bs64 = await image_to_base64(str(ref_file))
             ref_images = [Image(image=bs64, name=ref_file.name)]
             path = kwargs.get("path")
             if path:
                 ref_images.extend(await _load_reference_images(path))
-            img_res = await image_to_image(
-                image_client, value, image=ref_images
-            )
+            img_res = await image_to_image(image_client, value, image=ref_images)
             if img_res:
                 return [img_res]
             message_logger.warning("Invalid selfie image result")
@@ -276,18 +300,22 @@ def build_file_tag(sid: str = ""):
             "defaults to `file`."
         )
 
-        def __init__(self):
+        def __init__(self) -> None:
             super().__init__()
             self.sid = sid
 
-        async def _resolve_local_file(self, value: str) -> tuple[str | None, str | None]:
+        async def _resolve_local_file(
+            self, value: str
+        ) -> tuple[str | None, str | None]:
             """Resolve a local path through the send policy (see file_send_policy).
 
             Returns ``(file_string, name)``, or ``(None, None)`` when the path
             is not sendable or does not point to an existing regular file.
             """
             abs_path = await asyncio.to_thread(resolve_local_send_path, value, self.sid)
-            if abs_path is None or not await asyncio.to_thread(os.path.isfile, abs_path):
+            if abs_path is None or not await asyncio.to_thread(
+                os.path.isfile, abs_path
+            ):
                 return None, None
             return abs_path, Path(abs_path).name
 
@@ -327,9 +355,6 @@ class ForwardTag(BaseTag):
 
     async def handle(self, value: str, **kwargs) -> list[BaseMessageElement]:
         merge = kwargs.get("merge")
-        if merge == "false":
-            merge = False
-        else:
-            merge = True
+        merge = merge != "false"
         message_id = [x.strip() for x in value.split(",") if x.strip()]
         return [Forward(message_id=message_id, merge=merge)]

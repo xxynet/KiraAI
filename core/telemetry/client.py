@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import hashlib
 import hmac
 import json
@@ -47,7 +48,9 @@ class TelemetryClient:
     All network errors are caught and logged to avoid blocking the main application.
     """
 
-    def __init__(self, db: DatabaseService, config: KiraConfig, stats: Statistics | None = None):
+    def __init__(
+        self, db: DatabaseService, config: KiraConfig, stats: Statistics | None = None
+    ):
         self.db = db
         self.config = config
         self.stats = stats
@@ -64,9 +67,13 @@ class TelemetryClient:
         self.secret_key: str | None = self.telemetry_config.get("secret_key")
         self.machine_id: str | None = None
         launch_source = os.environ.get("KIRA_LAUNCH_SOURCE")
-        self.launch_source = launch_source if launch_source in ("launcher", "android") else "core"
+        self.launch_source = (
+            launch_source if launch_source in ("launcher", "android") else "core"
+        )
 
-        self.server_url: str = os.environ.get("KIRA_TELEMETRY_SERVER", "https://telemetry.kira-ai.top/api/v1")
+        self.server_url: str = os.environ.get(
+            "KIRA_TELEMETRY_SERVER", "https://telemetry.kira-ai.top/api/v1"
+        )
         self.heartbeat_interval: int = 300  # 5 minutes
         self._http_client: httpx.AsyncClient | None = None
         self.country_code: str | None = None
@@ -93,7 +100,9 @@ class TelemetryClient:
             return
 
         # Use a transport with proxy=None to bypass HTTP_PROXY / HTTPS_PROXY env vars
-        self._http_client = httpx.AsyncClient(timeout=10.0, transport=httpx.AsyncHTTPTransport(proxy=None))
+        self._http_client = httpx.AsyncClient(
+            timeout=10.0, transport=httpx.AsyncHTTPTransport(proxy=None)
+        )
         self._shutdown_event = asyncio.Event()
 
         # Start background workers immediately — they tolerate missing UUID/secret
@@ -116,13 +125,21 @@ class TelemetryClient:
                 self.country_code = await fetch_country_code()
                 self.send_system_startup()
                 if post_event:
-                    self.send_event(post_event, {
-                        "reason": "user_requested",
-                        "client_uuid": self.client_uuid,
-                    }, force=True)
-                logger.debug(f"Telemetry provisioning complete (UUID: {self.client_uuid}).")
+                    self.send_event(
+                        post_event,
+                        {
+                            "reason": "user_requested",
+                            "client_uuid": self.client_uuid,
+                        },
+                        force=True,
+                    )
+                logger.debug(
+                    f"Telemetry provisioning complete (UUID: {self.client_uuid})."
+                )
             else:
-                logger.warning("Telemetry client failed to acquire UUID; events will be dropped.")
+                logger.warning(
+                    "Telemetry client failed to acquire UUID; events will be dropped."
+                )
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -135,10 +152,8 @@ class TelemetryClient:
 
             if self._init_task and not self._init_task.done():
                 self._init_task.cancel()
-                try:
+                with contextlib.suppress(asyncio.CancelledError, Exception):
                     await self._init_task
-                except (asyncio.CancelledError, Exception):
-                    pass
 
             # Cancel stats/heartbeat first — stats_loop finally block
             # guarantees _report_lock is released on cancellation.
@@ -150,30 +165,36 @@ class TelemetryClient:
                     except asyncio.CancelledError:
                         pass
                     except Exception as e:
-                        logger.debug(f"Telemetry task {task.get_name()} raised on shutdown: {e}")
+                        logger.debug(
+                            f"Telemetry task {task.get_name()} raised on shutdown: {e}"
+                        )
 
             # Now safe — lock is guaranteed free
             await self._report_stats()
 
             started_ts = self.stats.get_stats("started_ts") if self.stats else None
             if started_ts:
-                uptime_ms = int((datetime.now(timezone.utc).timestamp() - started_ts) * 1000)
+                uptime_ms = int(
+                    (datetime.now(timezone.utc).timestamp() - started_ts) * 1000
+                )
                 self.send_system_shutdown(uptime_ms)
 
             # Restart worker if it already exited but events remain in queue
-            if self._worker_task is None or (self._worker_task.done() and not self._send_queue.empty()):
+            if self._worker_task is None or (
+                self._worker_task.done() and not self._send_queue.empty()
+            ):
                 self._worker_task = asyncio.create_task(self._send_worker())
 
             if self._worker_task and not self._worker_task.done():
                 try:
                     await asyncio.wait_for(self._worker_task, timeout=5.0)
                 except asyncio.TimeoutError:
-                    logger.warning("Telemetry worker did not drain in time; cancelling.")
+                    logger.warning(
+                        "Telemetry worker did not drain in time; cancelling."
+                    )
                     self._worker_task.cancel()
-                    try:
+                    with contextlib.suppress(asyncio.CancelledError):
                         await self._worker_task
-                    except asyncio.CancelledError:
-                        pass
                 except Exception as e:
                     logger.debug(f"Telemetry worker raised on drain: {e}")
 
@@ -189,11 +210,18 @@ class TelemetryClient:
     # Public API
     # ------------------------------------------------------------------
     def is_enabled(self) -> bool:
-        return self.enabled and self.client_uuid is not None and self.secret_key is not None
+        return (
+            self.enabled
+            and self.client_uuid is not None
+            and self.secret_key is not None
+        )
 
     def send_event(
-        self, event_type: str, data: dict[str, Any],
-        force: bool = False, on_success: Any | None = None,
+        self,
+        event_type: str,
+        data: dict[str, Any],
+        force: bool = False,
+        on_success: Any | None = None,
     ) -> None:
         """
         Fire-and-forget event submission.
@@ -228,10 +256,14 @@ class TelemetryClient:
                 logger.error("Cannot toggle telemetry: client not initialized.")
                 return False
 
-            self.send_event(TelemetryEventType.TELEMETRY_DISABLED, {
-                "reason": "user_requested",
-                "client_uuid": self.client_uuid,
-            }, force=True)
+            self.send_event(
+                TelemetryEventType.TELEMETRY_DISABLED,
+                {
+                    "reason": "user_requested",
+                    "client_uuid": self.client_uuid,
+                },
+                force=True,
+            )
 
         self.enabled = enabled
         self._persist_config()
@@ -250,7 +282,9 @@ class TelemetryClient:
             return True
 
         if not self._http_client:
-            self._http_client = httpx.AsyncClient(timeout=10.0, transport=httpx.AsyncHTTPTransport(proxy=None))
+            self._http_client = httpx.AsyncClient(
+                timeout=10.0, transport=httpx.AsyncHTTPTransport(proxy=None)
+            )
 
         self.enabled = True
         self._persist_config()
@@ -260,17 +294,23 @@ class TelemetryClient:
 
         if not self.client_uuid or not self.secret_key:
             # UUID missing — provision in background, start workers now
-            self._init_task = asyncio.create_task(self._initialize_background(TelemetryEventType.TELEMETRY_ENABLED))
+            self._init_task = asyncio.create_task(
+                self._initialize_background(TelemetryEventType.TELEMETRY_ENABLED)
+            )
             self._ensure_workers_running()
             logger.info("Telemetry re-enabled (background provisioning in progress).")
             return True
 
         # UUID already available — fast path
         self._ensure_workers_running()
-        self.send_event(TelemetryEventType.TELEMETRY_ENABLED, {
-            "reason": "user_requested",
-            "client_uuid": self.client_uuid,
-        }, force=True)
+        self.send_event(
+            TelemetryEventType.TELEMETRY_ENABLED,
+            {
+                "reason": "user_requested",
+                "client_uuid": self.client_uuid,
+            },
+            force=True,
+        )
 
         logger.info("Telemetry reopened.")
         return True
@@ -354,7 +394,9 @@ class TelemetryClient:
         """Background loop that sends heartbeat events periodically."""
         while not self._shutdown_event.is_set():
             try:
-                await asyncio.wait_for(self._shutdown_event.wait(), timeout=float(self.heartbeat_interval))
+                await asyncio.wait_for(
+                    self._shutdown_event.wait(), timeout=float(self.heartbeat_interval)
+                )
             except asyncio.TimeoutError:
                 pass
             else:
@@ -362,7 +404,9 @@ class TelemetryClient:
 
             started_ts = self.stats.get_stats("started_ts") if self.stats else None
             if started_ts:
-                uptime_ms = int((datetime.now(timezone.utc).timestamp() - started_ts) * 1000)
+                uptime_ms = int(
+                    (datetime.now(timezone.utc).timestamp() - started_ts) * 1000
+                )
                 self.send_heartbeat(uptime_ms=uptime_ms)
 
     async def _send_worker(self) -> None:
@@ -399,11 +443,17 @@ class TelemetryClient:
                         logger.warning(f"Telemetry on_success callback failed: {e}")
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 403:
-                    logger.warning("Telemetry rejected by server (disabled or bad signature).")
+                    logger.warning(
+                        "Telemetry rejected by server (disabled or bad signature)."
+                    )
                 else:
-                    logger.warning(f"Telemetry server returned {e.response.status_code}: {e}")
+                    logger.warning(
+                        f"Telemetry server returned {e.response.status_code}: {e}"
+                    )
             except Exception as e:
-                logger.warning(f"Failed to send telemetry event: {type(e).__name__}: {e}")
+                logger.warning(
+                    f"Failed to send telemetry event: {type(e).__name__}: {e}"
+                )
 
     # ------------------------------------------------------------------
     # Convenience helpers for common events
@@ -423,16 +473,22 @@ class TelemetryClient:
         self.send_event(TelemetryEventType.SYSTEM_STARTUP, data)
 
     def send_system_shutdown(self, uptime_duration_ms: int) -> None:
-        self.send_event(TelemetryEventType.SYSTEM_SHUTDOWN, {
-            "uptime_duration_ms": uptime_duration_ms,
-            "launch_source": self.launch_source,
-        })
+        self.send_event(
+            TelemetryEventType.SYSTEM_SHUTDOWN,
+            {
+                "uptime_duration_ms": uptime_duration_ms,
+                "launch_source": self.launch_source,
+            },
+        )
 
     def send_heartbeat(self, uptime_ms: int, active_connections: int = 0) -> None:
-        self.send_event(TelemetryEventType.HEARTBEAT, {
-            "uptime_ms": uptime_ms,
-            "active_connections": active_connections,
-        })
+        self.send_event(
+            TelemetryEventType.HEARTBEAT,
+            {
+                "uptime_ms": uptime_ms,
+                "active_connections": active_connections,
+            },
+        )
 
     # ------------------------------------------------------------------
     # Hourly stats aggregation
@@ -477,12 +533,20 @@ class TelemetryClient:
                     ids = msg_ids_by_hour.get(hour_ts, [])
                     if not ids:
                         continue
-                    self.send_event(TelemetryEventType.MESSAGE_STATS, {
-                        "hour": datetime.fromtimestamp(hour_ts, tz=timezone.utc).isoformat(),
-                        "total_messages": sum(platforms.values()),
-                        "messages_by_platform": platforms,
-                        "time_window_minutes": 60,
-                    }, on_success=lambda ids=ids: self.db.mark_telemetry_messages_by_ids(ids))
+                    self.send_event(
+                        TelemetryEventType.MESSAGE_STATS,
+                        {
+                            "hour": datetime.fromtimestamp(
+                                hour_ts, tz=timezone.utc
+                            ).isoformat(),
+                            "total_messages": sum(platforms.values()),
+                            "messages_by_platform": platforms,
+                            "time_window_minutes": 60,
+                        },
+                        on_success=lambda ids=ids: (
+                            self.db.mark_telemetry_messages_by_ids(ids)
+                        ),
+                    )
                     event_count += 1
 
             # LLM usage stats — one event per hour, models nested. Same single-snapshot
@@ -504,9 +568,17 @@ class TelemetryClient:
                     for r in rows:
                         source_models = per_source.setdefault(r["source"], {})
                         for model_totals in (per_model, source_models):
-                            m = model_totals.setdefault(r["model"], {
-                                "calls": 0, "success": 0, "input": 0, "output": 0, "cached": 0, "resp_ms": 0,
-                            })
+                            m = model_totals.setdefault(
+                                r["model"],
+                                {
+                                    "calls": 0,
+                                    "success": 0,
+                                    "input": 0,
+                                    "output": 0,
+                                    "cached": 0,
+                                    "resp_ms": 0,
+                                },
+                            )
                             m["calls"] += 1
                             m["success"] += int(r["success"])
                             m["input"] += r["input_tokens"]
@@ -519,20 +591,31 @@ class TelemetryClient:
                     total_output = sum(m["output"] for m in per_model.values())
                     total_cached = sum(m["cached"] for m in per_model.values())
                     total_resp_ms = sum(m["resp_ms"] for m in per_model.values())
-                    self.send_event(TelemetryEventType.LLM_USAGE, {
-                        "hour": datetime.fromtimestamp(hour_ts, tz=timezone.utc).isoformat(),
-                        "total_calls": total_calls,
-                        "success_calls": total_success,
-                        "failed_calls": total_calls - total_success,
-                        "total_input_tokens": total_input,
-                        "total_output_tokens": total_output,
-                        "total_cached_tokens": total_cached,
-                        "avg_response_time_ms": int(total_resp_ms / total_calls) if total_calls else 0,
-                        "models": _llm_model_stats(per_model),
-                        "models_by_source": {
-                            source: _llm_model_stats(source_models) for source, source_models in per_source.items()
+                    self.send_event(
+                        TelemetryEventType.LLM_USAGE,
+                        {
+                            "hour": datetime.fromtimestamp(
+                                hour_ts, tz=timezone.utc
+                            ).isoformat(),
+                            "total_calls": total_calls,
+                            "success_calls": total_success,
+                            "failed_calls": total_calls - total_success,
+                            "total_input_tokens": total_input,
+                            "total_output_tokens": total_output,
+                            "total_cached_tokens": total_cached,
+                            "avg_response_time_ms": int(total_resp_ms / total_calls)
+                            if total_calls
+                            else 0,
+                            "models": _llm_model_stats(per_model),
+                            "models_by_source": {
+                                source: _llm_model_stats(source_models)
+                                for source, source_models in per_source.items()
+                            },
                         },
-                    }, on_success=lambda ids=ids: self.db.mark_telemetry_llm_by_ids(ids))
+                        on_success=lambda ids=ids: self.db.mark_telemetry_llm_by_ids(
+                            ids
+                        ),
+                    )
                     event_count += 1
 
             if event_count:

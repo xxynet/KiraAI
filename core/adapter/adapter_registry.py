@@ -12,6 +12,7 @@ from pathlib import Path
 
 from deprecated import deprecated
 
+from core.adapter.capability_registry import AdapterCapabilityRegistry
 from core.config import KiraConfig
 from core.config.config_field import BaseConfigField, build_fields
 from core.logging_manager import get_logger
@@ -32,7 +33,7 @@ class AdapterManager:
     _manifest_dirs: dict[str, Path] = {}
     _schemas: dict[str, list[BaseConfigField]] = {}
 
-    def __init__(self, kira_config: KiraConfig, event_queue: asyncio.Queue):
+    def __init__(self, kira_config: KiraConfig, event_queue: asyncio.Queue) -> None:
         self.kira_config = kira_config
         self._adapters: dict[str, BaseAdapter] = {}
         self._adapter_tasks: dict[str, asyncio.Task] = {}
@@ -44,9 +45,10 @@ class AdapterManager:
         self.scan_adapters(src_dir)
 
     @cached_property
-    def capability_registry(self):
+    def capability_registry(self) -> AdapterCapabilityRegistry:
         """Own capability bindings and shared native/extension lifecycles."""
         from .capability_registry import AdapterCapabilityRegistry
+
         return AdapterCapabilityRegistry(self)
 
     @classmethod
@@ -72,17 +74,27 @@ class AdapterManager:
         if not manifest_dir:
             return None
         return resolve_manifest_icon_path(
-            manifest_dir, manifest.get("icon-dark" if dark else "icon"),
+            manifest_dir,
+            manifest.get("icon-dark" if dark else "icon"),
         )
 
     @classmethod
-    def register_adapter_type(cls, platform: str, adapter_cls: type[BaseAdapter], manifest: dict, manifest_dir: Path, schema: list[BaseConfigField] | None = None) -> None:
+    def register_adapter_type(
+        cls,
+        platform: str,
+        adapter_cls: type[BaseAdapter],
+        manifest: dict,
+        manifest_dir: Path,
+        schema: list[BaseConfigField] | None = None,
+    ) -> None:
         """Register an Adapter type supplied by a plugin."""
         if not isinstance(platform, str) or not platform.strip():
             raise ValueError("Adapter platform must be a non-empty string")
         if not inspect.isclass(adapter_cls) or not issubclass(adapter_cls, BaseAdapter):
             raise TypeError("Adapter class must inherit from BaseAdapter")
-        if not isinstance(manifest, dict) or (schema is not None and not isinstance(schema, list)):
+        if not isinstance(manifest, dict) or (
+            schema is not None and not isinstance(schema, list)
+        ):
             raise TypeError("Adapter manifest must be a dict and schema must be a list")
         platform = platform.strip()
         existing = cls._registry.get(platform)
@@ -94,7 +106,9 @@ class AdapterManager:
         cls._schemas[platform] = copy.deepcopy(schema) if schema else []
 
     @classmethod
-    def unregister_adapter_type(cls, platform: str, adapter_cls: type[BaseAdapter]) -> bool:
+    def unregister_adapter_type(
+        cls, platform: str, adapter_cls: type[BaseAdapter]
+    ) -> bool:
         """Remove a plugin Adapter type without affecting another owner."""
         if cls._registry.get(platform) is not adapter_cls:
             return False
@@ -112,6 +126,7 @@ class AdapterManager:
                 await self.stop_adapter(name)
                 stopped += 1
         return stopped
+
     def get_adapter_info(self, adapter_id: str) -> AdapterInfo | None:
         adapters_config = self.kira_config.get("adapters", {})
         config_entry = adapters_config.get(adapter_id)
@@ -119,10 +134,7 @@ class AdapterManager:
             return None
 
         enabled = bool(config_entry.get("enabled", False))
-        name = (
-            config_entry.get("name")
-            or adapter_id
-        )
+        name = config_entry.get("name") or adapter_id
         platform = config_entry.get("platform") or ""
         description = config_entry.get("desc") or ""
         config = config_entry.get("config") or {}
@@ -135,7 +147,7 @@ class AdapterManager:
             description=description,
             config=config,
         )
-    
+
     @deprecated("get_adapter_infos deprecated, use get_adapters_info instead")
     def get_adapter_infos(self) -> list[AdapterInfo]:
         return self.get_adapters_info()
@@ -170,7 +182,7 @@ class AdapterManager:
         return infos
 
     @classmethod
-    def scan_adapters(cls, src_dir: str):
+    def scan_adapters(cls, src_dir: str) -> None:
         if not os.path.exists(src_dir):
             logger.error(f"Adapter source directory not found: {src_dir}")
             return
@@ -193,7 +205,7 @@ class AdapterManager:
             manifest_path = os.path.join(adapter_dir, "manifest.json")
             if os.path.exists(manifest_path):
                 try:
-                    with open(manifest_path, "r", encoding="utf-8") as f:
+                    with open(manifest_path, encoding="utf-8") as f:
                         manifest = json.load(f)
                 except Exception as e:
                     logger.warning(f"Failed to load manifest from {manifest_path}: {e}")
@@ -204,7 +216,7 @@ class AdapterManager:
             schema_path = os.path.join(adapter_dir, "schema.json")
             if os.path.exists(schema_path):
                 try:
-                    with open(schema_path, "r", encoding="utf-8") as f:
+                    with open(schema_path, encoding="utf-8") as f:
                         raw_schema = json.load(f)
                     if isinstance(raw_schema, dict):
                         schema_fields = build_fields(raw_schema)
@@ -235,7 +247,9 @@ class AdapterManager:
             module_name = f"{package_name}.{entry}"
             spec = importlib.util.spec_from_file_location(module_name, script_path)
             if not spec or not spec.loader:
-                logger.warning(f"Failed to create spec for adapter module in {adapter_dir}")
+                logger.warning(
+                    f"Failed to create spec for adapter module in {adapter_dir}"
+                )
                 continue
 
             try:
@@ -246,8 +260,12 @@ class AdapterManager:
                 continue
 
             found = False
-            for attr_name, attr_value in inspect.getmembers(module):
-                if inspect.isclass(attr_value) and issubclass(attr_value, BaseAdapter) and attr_value is not BaseAdapter:
+            for _attr_name, attr_value in inspect.getmembers(module):
+                if (
+                    inspect.isclass(attr_value)
+                    and issubclass(attr_value, BaseAdapter)
+                    and attr_value is not BaseAdapter
+                ):
                     cls._registry[platform_name] = attr_value
                     cls._manifests[platform_name] = manifest
                     cls._manifest_dirs[platform_name] = Path(adapter_dir)
@@ -259,7 +277,7 @@ class AdapterManager:
             if not found:
                 logger.warning(f"No adapter class found in {adapter_dir}")
 
-    async def register_builtin_adapter(self, adapter: BaseAdapter):
+    async def register_builtin_adapter(self, adapter: BaseAdapter) -> None:
         """Start an application-owned instance without exposing a catalog entry."""
         name = adapter.info.name
         if name in self._adapters or not self._check_name_unique(name):
@@ -276,7 +294,7 @@ class AdapterManager:
                 self._builtin_names.discard(name)
             raise
 
-    async def initialize(self):
+    async def initialize(self) -> None:
         for adapter_id in self.adas_config:
             info = self.get_adapter_info(adapter_id)
             if not info:
@@ -303,7 +321,7 @@ class AdapterManager:
         return True
 
     @staticmethod
-    def _validate_adapter_name(name: str):
+    def _validate_adapter_name(name: str) -> None:
         """Reject adapter names that cannot be represented in session IDs."""
         if ":" in name:
             raise ValueError("Adapter name must not contain ':'")
@@ -402,7 +420,6 @@ class AdapterManager:
 
         self.adas_config = adapters_config
 
-
         info = self.get_adapter_info(adapter_id)
         if not info:
             logger.error(f"Failed to read adapter info after creating {adapter_id}")
@@ -432,7 +449,11 @@ class AdapterManager:
         new_name_for_check = name or old_name
         if name:
             self._validate_adapter_name(name)
-        if name and old_name != new_name_for_check and not self._check_name_unique(new_name_for_check, exclude_id=adapter_id):
+        if (
+            name
+            and old_name != new_name_for_check
+            and not self._check_name_unique(new_name_for_check, exclude_id=adapter_id)
+        ):
             raise ValueError(f"Adapter name '{new_name_for_check}' is already in use")
 
         if name:
@@ -469,7 +490,9 @@ class AdapterManager:
         try:
             self.kira_config.save_config()
         except Exception as e:
-            logger.error(f"Failed to save adapter config for {adapter_id} on update: {e}")
+            logger.error(
+                f"Failed to save adapter config for {adapter_id} on update: {e}"
+            )
             return None
 
         self.adas_config = adapters_config
@@ -488,7 +511,9 @@ class AdapterManager:
                         await self.register_adapter(info)
                     logger.info(f"Reloaded adapter {name_for_runtime} after update")
                 except Exception as e:
-                    logger.error(f"Failed to reload adapter {adapter_id} after config update: {e}")
+                    logger.error(
+                        f"Failed to reload adapter {adapter_id} after config update: {e}"
+                    )
 
         if old_enabled and not new_enabled:
             try:
@@ -528,7 +553,9 @@ class AdapterManager:
             self.kira_config.save_config()
         except Exception as exc:
             logger.error(f"Failed to persist disabled adapter {adapter_id}: {exc}")
-        logger.error(f"Adapter {name} stopped after a run failure ({type(error).__name__})")
+        logger.error(
+            f"Adapter {name} stopped after a run failure ({type(error).__name__})"
+        )
 
     def _handle_adapter_run_completion(
         self,
@@ -564,7 +591,7 @@ class AdapterManager:
         name = info.name or info.adapter_id
         builtin_names = getattr(self, "_builtin_names", ())
         if name in builtin_names:
-            raise ValueError('Cannot replace an application-owned adapter')
+            raise ValueError("Cannot replace an application-owned adapter")
         if not platform:
             raise ValueError(f"Adapter {name} has no platform configured")
 
@@ -576,7 +603,9 @@ class AdapterManager:
             return
 
         try:
-            instance = adapter_cls(AdapterContext(info=info, event_queue=self.event_queue))
+            instance = adapter_cls(
+                AdapterContext(info=info, event_queue=self.event_queue)
+            )
         except Exception as e:
             raise RuntimeError(f"Failed to instantiate adapter {name}") from e
 
@@ -626,7 +655,9 @@ class AdapterManager:
         try:
             await asyncio.wait_for(adapter.stop(), timeout=ADAPTER_STOP_TIMEOUT)
         except (Exception, asyncio.CancelledError) as exc:
-            logger.error(f"Adapter {name} startup cleanup failed ({type(exc).__name__})")
+            logger.error(
+                f"Adapter {name} startup cleanup failed ({type(exc).__name__})"
+            )
 
     async def _run_adapter(self, adapter: BaseAdapter):
         try:
@@ -652,7 +683,9 @@ class AdapterManager:
             except asyncio.CancelledError:
                 pass
             except Exception as exc:
-                logger.error(f"Adapter {name} failed while stopping its run task ({type(exc).__name__})")
+                logger.error(
+                    f"Adapter {name} failed while stopping its run task ({type(exc).__name__})"
+                )
 
         adapter = self._adapters.get(name)
         if adapter:
@@ -677,28 +710,31 @@ class AdapterManager:
         if not isinstance(config_entry, dict):
             return False
 
-        config_entry.get("config") or {}
         name_value = config_entry.get("name") or adapter_id
 
         if name_value in self._adapters:
             try:
                 await self.stop_adapter(name_value)
             except Exception as e:
-                logger.error(f"Failed to stop adapter {adapter_id} before deletion: {e}")
+                logger.error(
+                    f"Failed to stop adapter {adapter_id} before deletion: {e}"
+                )
 
         del adapters_config[adapter_id]
         self.kira_config["adapters"] = adapters_config
         try:
             self.kira_config.save_config()
         except Exception as e:
-            logger.error(f"Failed to save config after deleting adapter {adapter_id}: {e}")
+            logger.error(
+                f"Failed to save config after deleting adapter {adapter_id}: {e}"
+            )
             return False
 
         self.adas_config = adapters_config
         logger.info(f"Deleted adapter: {name_value}")
         return True
 
-    async def stop_adapters(self):
+    async def stop_adapters(self) -> None:
         """stop all running adapters"""
         for name in list(self._adapters):
             await self.stop_adapter(name)

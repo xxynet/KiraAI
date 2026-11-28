@@ -83,7 +83,9 @@ def _compress_image_sync(
                     image.thumbnail((max_size, max_size), PILImage.Resampling.LANCZOS)
                     output_dir = get_data_path() / "temp"
                     output_dir.mkdir(parents=True, exist_ok=True)
-                    output_path = output_dir / f"compressed_{uuid.uuid4().hex}{output_suffix}"
+                    output_path = (
+                        output_dir / f"compressed_{uuid.uuid4().hex}{output_suffix}"
+                    )
                     save_kwargs: dict[str, int | bool] = {"optimize": True}
                     if output_format == "JPEG":
                         save_kwargs["quality"] = quality
@@ -109,6 +111,7 @@ async def compress_image_file(
     unnecessary. Works on plain paths so tools that read images directly from
     disk can share the settings with the chat message flow.
     """
+
     def guess_mime() -> str:
         return mimetypes.guess_type(source_path.name)[0] or "image/jpeg"
 

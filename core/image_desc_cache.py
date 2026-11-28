@@ -10,7 +10,7 @@ logger = get_logger("message", "cyan")
 class ImageDescCache:
     """Cache image/sticker VLM descriptions using MD5 hash backed by database."""
 
-    def __init__(self, db_service: DatabaseService):
+    def __init__(self, db_service: DatabaseService) -> None:
         self.db = db_service
 
     async def get(self, md5: str) -> str | None:
@@ -24,7 +24,7 @@ class ImageDescCache:
             return entry["description"]
         return None
 
-    async def set(self, md5: str, description: str):
+    async def set(self, md5: str, description: str) -> None:
         # Never cache an empty/failed description: an empty string would otherwise be
         # stored permanently as the caption for this md5 and served to every later hit.
         if not description:
@@ -47,13 +47,15 @@ class ImageDescCache:
                 last_seen=int(time.time()),
             )
 
-    async def cleanup_task(self):
+    async def cleanup_task(self) -> None:
         """Background task: clean up expired image desc cache every 24 hours."""
         while True:
             try:
                 deleted = await self.db.cleanup_expired_image_desc_cache()
                 if deleted:
-                    logger.info(f"Cleaned up {deleted} expired image desc cache entries")
+                    logger.info(
+                        f"Cleaned up {deleted} expired image desc cache entries"
+                    )
                 await asyncio.sleep(24 * 60 * 60)
             except asyncio.CancelledError:
                 logger.info("Image desc cache cleanup task cancelled")

@@ -17,12 +17,12 @@ CONFIG_PATH = get_config_path() / "system_config.json"
 
 
 class ConfigError(Exception):
-    def __init__(self, message: str = "failed to load KiraAI config"):
+    def __init__(self, message: str = "failed to load KiraAI config") -> None:
         super().__init__(f"ConfigError: {message}")
 
 
 class KiraConfig(dict):
-    def __init__(self, default_config: dict | None = None):
+    def __init__(self, default_config: dict | None = None) -> None:
         super().__init__()
         object.__setattr__(self, "default_config", default_config or DEFAULT_CONFIG)
 
@@ -38,7 +38,7 @@ class KiraConfig(dict):
             return
 
         try:
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            with open(CONFIG_PATH, encoding="utf-8") as f:
                 data = json.load(f)
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in config file: {e}")
@@ -48,8 +48,12 @@ class KiraConfig(dict):
             raise ConfigError(f"cannot read config file: {e}") from e
 
         if not isinstance(data, dict):
-            logger.error(f"Config file root must be a JSON object, got {type(data).__name__}")
-            raise ConfigError(f"config file root must be a JSON object, got {type(data).__name__}")
+            logger.error(
+                f"Config file root must be a JSON object, got {type(data).__name__}"
+            )
+            raise ConfigError(
+                f"config file root must be a JSON object, got {type(data).__name__}"
+            )
 
         self.update(copy.deepcopy(self.default_config))
         self._deep_update(self, data)
@@ -59,15 +63,19 @@ class KiraConfig(dict):
         if dict(self) != data:
             self.save_config()
 
-    def _deep_update(self, target: dict, source: dict):
+    def _deep_update(self, target: dict, source: dict) -> None:
         """Recursively update target dict with source dict"""
         for key, value in source.items():
-            if key in target and isinstance(target[key], dict) and isinstance(value, dict):
+            if (
+                key in target
+                and isinstance(target[key], dict)
+                and isinstance(value, dict)
+            ):
                 self._deep_update(target[key], value)
             else:
                 target[key] = value
 
-    def save_config(self, *, raise_on_error: bool = False):
+    def save_config(self, *, raise_on_error: bool = False) -> None:
         """Save configuration atomically, optionally raising on write failure.
 
         Existing callers retain log-only handling unless they opt in. Writing
@@ -84,7 +92,9 @@ class KiraConfig(dict):
             except FileNotFoundError:
                 mode = None
             fd, temporary = tempfile.mkstemp(
-                prefix=".system_config.", suffix=".tmp", dir=directory,
+                prefix=".system_config.",
+                suffix=".tmp",
+                dir=directory,
             )
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 if mode is not None:
@@ -105,7 +115,9 @@ class KiraConfig(dict):
                         os.chmod(temporary, stat.S_IWRITE)
                     os.unlink(temporary)
                 except OSError as cleanup_error:
-                    logger.error(f"Failed to remove temporary config file {temporary}: {cleanup_error}")
+                    logger.error(
+                        f"Failed to remove temporary config file {temporary}: {cleanup_error}"
+                    )
 
     def get_config(self, key: str, default: Optional = None, splitter: str = "."):
         keys = key.split(splitter)
@@ -117,7 +129,7 @@ class KiraConfig(dict):
                 return default
         return v
 
-    def get_timezone(self):
+    def get_timezone(self) -> None | ZoneInfo:
         """Read locale.TZ from config and return a ZoneInfo object.
 
         Returns a ZoneInfo for the configured IANA timezone when valid.
@@ -141,12 +153,16 @@ class KiraConfig(dict):
         """get an attribute，raise AttributeError if not exists"""
         try:
             return self[key]
-        except KeyError:
-            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{key}'")
+        except KeyError as err:
+            raise AttributeError(
+                f"'{self.__class__.__name__}' object has no attribute '{key}'"
+            ) from err
 
     def __delattr__(self, key: str) -> None:
         """delete an attribute"""
         try:
             del self[key]
         except KeyError:
-            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{key}'")
+            raise AttributeError(
+                f"'{self.__class__.__name__}' object has no attribute '{key}'"
+            ) from None

@@ -12,7 +12,7 @@ class DeepSeekProvider(BaseProvider):
         ModelType.STT: DeepSeekSTTClient,
     }
 
-    def __init__(self, provider_id, provider_name, provider_config):
+    def __init__(self, provider_id, provider_name, provider_config) -> None:
         super().__init__(provider_id, provider_name, provider_config)
 
     async def get_model_list(self, model_type: str) -> list[dict]:
@@ -28,7 +28,9 @@ class DeepSeekProvider(BaseProvider):
         """
         Fetch available models from DeepSeek API (GET /v1/models).
         """
-        base_url = self.provider_config.get("base_url", "https://api.deepseek.com").rstrip("/")
+        base_url = self.provider_config.get(
+            "base_url", "https://api.deepseek.com"
+        ).rstrip("/")
         api_key = self.provider_config.get("api_key", "")
         headers = {"Authorization": f"Bearer {api_key}"}
         async with httpx.AsyncClient(timeout=10) as client:
@@ -41,9 +43,11 @@ class DeepSeekProvider(BaseProvider):
             model_id = item.get("id", "")
             if not model_id:
                 continue
-            models.append({
-                "id": model_id,
-                "name": item.get("name", model_id),
-                "description": item.get("description", ""),
-            })
+            models.append(
+                {
+                    "id": model_id,
+                    "name": item.get("name", model_id),
+                    "description": item.get("description", ""),
+                }
+            )
         return models

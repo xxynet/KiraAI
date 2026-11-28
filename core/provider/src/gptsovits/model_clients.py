@@ -33,15 +33,23 @@ class GptSovitsTTSClient(TTSModelClient):
             "text": text,
             "text_lang": mc.get("text_language", "auto"),
             "media_type": "wav",
-            "streaming_mode": True
+            "streaming_mode": True,
         }
 
         # 参数：参考音频（用于音色克隆）
-        ref_audio = mp.get("ref_audio_path", "") if not mc.get("ref_audio_path", "") else mc.get("ref_audio_path", "")
+        ref_audio = (
+            mp.get("ref_audio_path", "")
+            if not mc.get("ref_audio_path", "")
+            else mc.get("ref_audio_path", "")
+        )
         if ref_audio:
             payload["ref_audio_path"] = ref_audio
 
-        ref_text = mp.get("ref_text", "") if not mc.get("ref_text", "") else mc.get("ref_text", "")
+        ref_text = (
+            mp.get("ref_text", "")
+            if not mc.get("ref_text", "")
+            else mc.get("ref_text", "")
+        )
         if ref_text:
             payload["prompt_text"] = ref_text
 
@@ -69,21 +77,20 @@ class GptSovitsTTSClient(TTSModelClient):
         # 每次请求创建独立的 session，用完后自动关闭，避免连接泄漏
         async with aiohttp.ClientSession(
             connector=aiohttp.TCPConnector(limit_per_host=4),
-            timeout=aiohttp.ClientTimeout(total=timeout)
+            timeout=aiohttp.ClientTimeout(total=timeout),
         ) as session:
             try:
                 async with session.post(
-                    tts_url,
-                    headers={'Content-Type': 'application/json'},
-                    json=payload
+                    tts_url, headers={"Content-Type": "application/json"}, json=payload
                 ) as response:
-
                     if response.status == 200:
                         audio_bytes = b""
                         async for chunk in response.content.iter_any():
                             audio_bytes += chunk
                     else:
-                        logger.error(f"GPT-Sovits TTS Request failed: {response.status}")
+                        logger.error(
+                            f"GPT-Sovits TTS Request failed: {response.status}"
+                        )
                         try:
                             error_info = await response.json()
                             logger.error(f"GPT-Sovits Error: {error_info}")

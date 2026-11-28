@@ -40,7 +40,7 @@ class OpenAIImageClient(ImageModelClient):
     # only when the entire content is a string AND no structured part
     # was found. Bare text URLs are still ignored.
     _MD_IMAGE_RE = re.compile(
-        r'!\[.*?\]\((?P<url>https?://[^\s)]+|data:image/[^)]+)\)',
+        r"!\[.*?\]\((?P<url>https?://[^\s)]+|data:image/[^)]+)\)",
         re.DOTALL,
     )
 
@@ -58,7 +58,11 @@ class OpenAIImageClient(ImageModelClient):
         from httpx import Timeout
 
         section_advanced = self.model.provider_config.get("section_advanced")
-        default_headers = section_advanced.get("headers", {}) if isinstance(section_advanced, dict) else {}
+        default_headers = (
+            section_advanced.get("headers", {})
+            if isinstance(section_advanced, dict)
+            else {}
+        )
         if not isinstance(default_headers, dict) or not default_headers:
             default_headers = None
         timeout_val = self.model.model_config.get("timeout", 120)
@@ -74,7 +78,9 @@ class OpenAIImageClient(ImageModelClient):
     def _image_from_response(images_response, operation: str) -> Image:
         """Return the first image from either URL or Base64 API output."""
         if not isinstance(getattr(images_response, "data", None), list):
-            raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(images_response).__name__}): {images_response!r}")
+            raise ProviderAPIError(
+                f"Invalid OpenAI-compatible API response ({type(images_response).__name__}): {images_response!r}"
+            )
         if not images_response.data:
             raise ValueError(f"{operation} API returned empty data")
 
@@ -162,7 +168,9 @@ class OpenAIImageClient(ImageModelClient):
                 raise
 
         if not isinstance(getattr(response, "choices", None), list):
-            raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
+            raise ProviderAPIError(
+                f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}"
+            )
         if not response.choices:
             raise ValueError("Chat completions returned empty choices")
 
@@ -197,9 +205,7 @@ class OpenAIImageClient(ImageModelClient):
                 return img
 
         # 2) model_extra.content (SDK version / 3rd-party-compat fallback)
-        if hasattr(message, "model_extra") and isinstance(
-            message.model_extra, dict
-        ):
+        if hasattr(message, "model_extra") and isinstance(message.model_extra, dict):
             extra_content = message.model_extra.get("content")
             if isinstance(extra_content, list):
                 img = self._scan_parts(extra_content)
@@ -269,9 +275,7 @@ class OpenAIImageClient(ImageModelClient):
             b64 = part.get("base64", "") or part.get("data", "")
             if b64:
                 media_type = (
-                    part.get("media_type")
-                    or part.get("content_type")
-                    or "image/png"
+                    part.get("media_type") or part.get("content_type") or "image/png"
                 )
                 return Image(image=f"data:{media_type};base64,{b64}")
 
@@ -302,7 +306,9 @@ class OpenAIImageClient(ImageModelClient):
 
     # ──────── image-to-image Mode A: /v1/images/edits ────────
 
-    async def _image_to_image_via_edits(self, prompt: str, images: list[Image]) -> Image:
+    async def _image_to_image_via_edits(
+        self, prompt: str, images: list[Image]
+    ) -> Image:
         async with self._build_client() as client:
             image_size = self.model.model_config.get("size", None)
             try:
@@ -335,7 +341,9 @@ class OpenAIImageClient(ImageModelClient):
             content = [{"type": "text", "text": prompt}]
             for img in images:
                 image_data_url = await img.to_data_url()
-                content.append({"type": "image_url", "image_url": {"url": image_data_url}})
+                content.append(
+                    {"type": "image_url", "image_url": {"url": image_data_url}}
+                )
             messages = [{"role": "user", "content": content}]
             try:
                 response = await client.chat.completions.create(
@@ -349,7 +357,9 @@ class OpenAIImageClient(ImageModelClient):
                 logger.error(f"Image-to-image (chat) error: {e}")
                 raise
         if not isinstance(getattr(response, "choices", None), list):
-            raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
+            raise ProviderAPIError(
+                f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}"
+            )
         if not response.choices:
             raise ValueError("Chat completions returned empty choices")
         message = response.choices[0].message
@@ -370,11 +380,23 @@ class OpenAIEmbeddingClient(EmbeddingModelClient):
         if not texts:
             return []
 
-        timeout_sec = self.model.model_config.get("timeout", 60) if self.model.model_config else 60
-        slow_threshold = self.model.model_config.get("slow_request_threshold", 5.0) if self.model.model_config else 5.0
+        timeout_sec = (
+            self.model.model_config.get("timeout", 60)
+            if self.model.model_config
+            else 60
+        )
+        slow_threshold = (
+            self.model.model_config.get("slow_request_threshold", 5.0)
+            if self.model.model_config
+            else 5.0
+        )
 
         section_advanced = self.model.provider_config.get("section_advanced")
-        default_headers = section_advanced.get("headers", {}) if isinstance(section_advanced, dict) else {}
+        default_headers = (
+            section_advanced.get("headers", {})
+            if isinstance(section_advanced, dict)
+            else {}
+        )
         if not isinstance(default_headers, dict) or not default_headers:
             default_headers = None
 
@@ -382,19 +404,22 @@ class OpenAIEmbeddingClient(EmbeddingModelClient):
             api_key=self.model.provider_config.get("api_key", ""),
             base_url=self.model.provider_config.get("base_url", ""),
             timeout=timeout_sec,
-            default_headers=default_headers
+            default_headers=default_headers,
         ) as client:
             try:
                 start_time = time.perf_counter()
                 response = await client.embeddings.create(
-                    model=self.model.model_name,
-                    input=texts
+                    model=self.model.model_name, input=texts
                 )
                 elapsed = round(time.perf_counter() - start_time, 2)
                 if elapsed > slow_threshold:
-                    logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_name})")
+                    logger.warning(
+                        f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_name})"
+                    )
                 if not isinstance(getattr(response, "data", None), list):
-                    raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
+                    raise ProviderAPIError(
+                        f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}"
+                    )
                 return [item.embedding for item in response.data]
             except (APIStatusError, APITimeoutError, APIConnectionError) as e:
                 logger.error(f"Embedding API error: {e}")
@@ -402,4 +427,3 @@ class OpenAIEmbeddingClient(EmbeddingModelClient):
             except Exception as e:
                 logger.error(f"Embedding error: {e}")
                 return []
-

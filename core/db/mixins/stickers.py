@@ -1,6 +1,5 @@
 """Database operations for stickers."""
 
-
 from sqlalchemy import select
 
 from ..db_mgr import DatabaseManager
@@ -26,13 +25,23 @@ class StickerMixin:
         if row is None:
             return None
         item = row["Sticker"]
-        return {"id": item.id, "desc": item.desc, "path": item.path, "extra": item.extra}
+        return {
+            "id": item.id,
+            "desc": item.desc,
+            "path": item.path,
+            "extra": item.extra,
+        }
 
     async def list_stickers(self) -> list[dict]:
         stmt = select(Sticker).order_by(Sticker.id)
         rows = await self.db.fetch_all(stmt)
         return [
-            {"id": r["Sticker"].id, "desc": r["Sticker"].desc, "path": r["Sticker"].path, "extra": r["Sticker"].extra}
+            {
+                "id": r["Sticker"].id,
+                "desc": r["Sticker"].desc,
+                "path": r["Sticker"].path,
+                "extra": r["Sticker"].extra,
+            }
             for r in rows
         ]
 

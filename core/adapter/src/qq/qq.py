@@ -15,7 +15,7 @@ from .napcat_client import NapCatWebSocketClient
 class QQAdapter(BaseAdapter):
     """Own the configuration, OneBot client and lifecycle of one QQ account."""
 
-    def __init__(self, ctx: AdapterContext):
+    def __init__(self, ctx: AdapterContext) -> None:
         super().__init__(ctx)
         self.logger = get_logger(self.info.name, "blue")
         self.debug_mode = self.config.get("debug_mode", False)
@@ -40,11 +40,17 @@ class QQAdapter(BaseAdapter):
             deny_list = self.config.get(f"{scope}_deny_list", [])
             policy = ListAccessPolicy.from_lists(
                 mode if valid_mode else "allow_list",
-                allow_list=allow_list if valid_mode and isinstance(allow_list, list) else [],
-                deny_list=deny_list if valid_mode and isinstance(deny_list, list) else [],
+                allow_list=allow_list
+                if valid_mode and isinstance(allow_list, list)
+                else [],
+                deny_list=deny_list
+                if valid_mode and isinstance(deny_list, list)
+                else [],
             )
             self.access.set_policy(
-                capability_type=IMCapability, permission=permission, policy=policy,
+                capability_type=IMCapability,
+                permission=permission,
+                policy=policy,
             )
 
     def _create_client(self) -> NapCatWebSocketClient:
@@ -52,15 +58,15 @@ class QQAdapter(BaseAdapter):
         client.on_permanent_disconnect = lambda: self._on_permanent_disconnect(client)
 
         @client.group_event()
-        async def on_group_message(msg: dict):
+        async def on_group_message(msg: dict) -> None:
             await self._handle_im_event(client, self.im._on_group_message, msg)
 
         @client.private_event()
-        async def on_private_message(msg: dict):
+        async def on_private_message(msg: dict) -> None:
             await self._handle_im_event(client, self.im._on_private_message, msg)
 
         @client.notice_event()
-        async def on_notice_message(msg: dict):
+        async def on_notice_message(msg: dict) -> None:
             await self._handle_im_event(client, self.im._on_notice_message, msg)
 
         return client
@@ -101,7 +107,8 @@ class QQAdapter(BaseAdapter):
         self._stopping = False
         self.permanently_disconnected = False
         self._client_task = asyncio.create_task(
-            self._run_client(self.bot), name=f"qq:{self.info.name}",
+            self._run_client(self.bot),
+            name=f"qq:{self.info.name}",
         )
         self._client_task.add_done_callback(self._on_client_done)
         task = self._client_task
@@ -120,7 +127,9 @@ class QQAdapter(BaseAdapter):
         if not task.cancelled():
             exc = task.exception()
             if exc is not None:
-                self.logger.error(f"QQ client stopped with an error ({type(exc).__name__})")
+                self.logger.error(
+                    f"QQ client stopped with an error ({type(exc).__name__})"
+                )
 
     async def _run_client(self, client: NapCatWebSocketClient) -> None:
         try:
@@ -146,7 +155,11 @@ class QQAdapter(BaseAdapter):
 
     async def _cancel_event_tasks(self) -> None:
         current = asyncio.current_task()
-        tasks = [task for task in self._event_tasks if task is not current and not task.done()]
+        tasks = [
+            task
+            for task in self._event_tasks
+            if task is not current and not task.done()
+        ]
         for task in tasks:
             task.cancel()
         if tasks:
@@ -168,7 +181,9 @@ class QQAdapter(BaseAdapter):
         return self.bot
 
     async def send_group_message(
-        self, group_id: AdapterTargetId, send_message_obj: MessageChain,
+        self,
+        group_id: AdapterTargetId,
+        send_message_obj: MessageChain,
     ) -> KiraIMSentResult:
         """Deprecated compatibility wrapper; use the IM capability directly.
 
@@ -177,7 +192,9 @@ class QQAdapter(BaseAdapter):
         return await self.im.send_group_message(group_id, send_message_obj)
 
     async def send_direct_message(
-        self, user_id: AdapterTargetId, send_message_obj: MessageChain,
+        self,
+        user_id: AdapterTargetId,
+        send_message_obj: MessageChain,
     ) -> KiraIMSentResult:
         """Deprecated compatibility wrapper; use the IM capability directly.
 

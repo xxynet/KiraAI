@@ -1,11 +1,13 @@
 """Optional remote embeddings; no numeric dependency is imported while disabled."""
 
 import asyncio
+import contextlib
 import importlib
 import importlib.metadata
 import importlib.util
 import time
 from pathlib import Path
+from typing import Any
 
 from packaging.version import Version
 
@@ -13,10 +15,11 @@ from .search import MAX_CANDIDATES
 from .vector_store import VectorStore
 
 
-def dependency_available():
+def dependency_available() -> bool:
     try:
-        return (importlib.util.find_spec("numpy") is not None
-                and Version("1.24") <= Version(importlib.metadata.version("numpy")) < Version("3"))
+        return importlib.util.find_spec("numpy") is not None and Version(
+            "1.24"
+        ) <= Version(importlib.metadata.version("numpy")) < Version("3")
     except (ImportError, ValueError):
         return False
 
@@ -27,10 +30,14 @@ def load_numpy():
     return importlib.import_module("numpy")
 
 
-def normalize_vectors(np, values, count, dimensions=None):
+def normalize_vectors(np, values, count, dimensions=None) -> Any:
     matrix = np.asarray(values, dtype="float64")
-    if (matrix.ndim != 2 or matrix.shape[0] != count or not 1 <= matrix.shape[1] <= 65536
-            or not np.isfinite(matrix).all()):
+    if (
+        matrix.ndim != 2
+        or matrix.shape[0] != count
+        or not 1 <= matrix.shape[1] <= 65536
+        or not np.isfinite(matrix).all()
+    ):
         raise ValueError("Invalid embedding response")
     if dimensions is not None and matrix.shape[1] != dimensions:
         raise ValueError("Embedding dimensions changed")
@@ -41,7 +48,7 @@ def normalize_vectors(np, values, count, dimensions=None):
 
 
 class VectorMemory:
-    def __init__(self, store, ctx, config):
+    def __init__(self, store, ctx, config) -> None:
         self.store = VectorStore(store)
         self.ctx = ctx
         self.config = config
@@ -62,39 +69,49 @@ class VectorMemory:
         self._slots = asyncio.Semaphore(2)
         self._retry_at = 0.0
 
-    def number(self, key, default, minimum, maximum):
+    def number(self, key, default, minimum, maximum) -> Any:
         value = self.config.get(key, default)
-        return max(minimum, min(maximum, value)) if type(value) in (float, int) else default
+        return (
+            max(minimum, min(maximum, value))
+            if type(value) in (float, int)
+            else default
+        )
 
     @property
-    def candidate_limit(self):
+    def candidate_limit(self) -> int:
         value = self.config.get("candidates", 50)
         return max(1, min(1000, value)) if type(value) is int else 50
 
-    def start(self):
+    def start(self) -> None:
         if self.enabled and (self._task is None or self._task.done()):
             self._task = asyncio.create_task(self._run())
 
-    def changed(self):
+    def changed(self) -> None:
         if self.enabled:
-            if (self.np is not None and self.index_id is not None
-                    and self.phase != "rebuild_required" and time.monotonic() >= self._retry_at):
+            if (
+                self.np is not None
+                and self.index_id is not None
+                and self.phase != "rebuild_required"
+                and time.monotonic() >= self._retry_at
+            ):
                 self.phase = "building"
             self._wake.set()
 
-    async def updated(self, memory_id):
+    async def updated(self, memory_id) -> None:
         """Keep retrieval ready when an edit has preserved the record's current vector."""
         if not self.enabled:
             return
         try:
-            current = self.index_id is not None and await self.store.is_current(memory_id)
+            current = self.index_id is not None and await self.store.is_current(
+                memory_id
+            )
         except Exception:
             # An optional index check must not fail an already committed memory edit.
             current = False
         if not current:
             self.changed()
 
-    async def close(self):
+    async def close(self) -> None:
         tasks = [task for task in (self._task, self._install_task) if task is not None]
         for task in tasks:
             task.cancel()
@@ -102,31 +119,37 @@ class VectorMemory:
             await asyncio.gather(*tasks, return_exceptions=True)
         self.ready = False
 
-    def client(self):
+    def client(self) -> Any:
         selected = self.config.get("model")
         client = self.ctx.get_embedding_client(selected or "", default=not selected)
         if client is None:
             raise ValueError("Embedding model unavailable")
         return client
 
-    async def _embed(self, client, texts):
-        async def call():
+    async def _embed(self, client, texts) -> Any:
+        async def call() -> Any:
             async with self._slots:
                 return await client.embed(texts)
+
         return await asyncio.wait_for(
-            call(), timeout=self.number("timeout", 10, 1, 30),
+            call(),
+            timeout=self.number("timeout", 10, 1, 30),
         )
 
-    def _index_state(self, state):
+    def _index_state(self, state) -> None:
         if self.index_id != state["id"]:
             self.ready = False
         self.index_id = state["id"]
         self.dimension = state["dimensions"]
         self.received_dimension = state["received_dimensions"]
         if state["rebuild_required"]:
-            self.ready, self.phase, self.reason = False, "rebuild_required", "dimension_mismatch"
+            self.ready, self.phase, self.reason = (
+                False,
+                "rebuild_required",
+                "dimension_mismatch",
+            )
 
-    async def _sync(self):
+    async def _sync(self) -> None:
         if time.monotonic() < self._retry_at:
             return
         await self.store.initialize()
@@ -162,17 +185,27 @@ class VectorMemory:
             progress = await self.store.progress()
             self.indexed, self.total = progress["indexed"], progress["total"]
             # Existing current vectors remain searchable while missing or stale rows are indexed.
-            self.ready = self.indexed > 0 and self.dimension is not None and not self._rebuild
+            self.ready = (
+                self.indexed > 0 and self.dimension is not None and not self._rebuild
+            )
             rows = await self.store.pending()
             if not rows:
                 self.ready, self.phase = True, "ready"
                 return
-            values = await self._embed(self.client(), [row["text"][:4000] for row in rows])
-            matrix = await asyncio.to_thread(normalize_vectors, self.np, values, len(rows))
+            values = await self._embed(
+                self.client(), [row["text"][:4000] for row in rows]
+            )
+            matrix = await asyncio.to_thread(
+                normalize_vectors, self.np, values, len(rows)
+            )
             if self.dimension is not None and self.dimension != matrix.shape[1]:
-                self._index_state(await self.store.block_dimensions(index_id, matrix.shape[1]))
+                self._index_state(
+                    await self.store.block_dimensions(index_id, matrix.shape[1])
+                )
                 return
-            blobs = await asyncio.to_thread(lambda: [vector.tobytes() for vector in matrix])
+            blobs = await asyncio.to_thread(
+                lambda matrix=matrix: [vector.tobytes() for vector in matrix]
+            )
             state = await self.store.put(index_id, rows, blobs, matrix.shape[1])
             self._index_state(state)
             if state["rebuild_required"] or state["id"] != index_id:
@@ -199,12 +232,12 @@ class VectorMemory:
                 if self.phase != "rebuild_required":
                     self.phase, self.reason = "degraded", "embedding_failed"
                     self._retry_at = time.monotonic() + 30
-            try:
-                await asyncio.wait_for(self._wake.wait(), timeout=60 if self.phase == "degraded" else 30)
-            except asyncio.TimeoutError:
-                pass
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(
+                    self._wake.wait(), timeout=60 if self.phase == "degraded" else 30
+                )
 
-    async def search(self, query, predicate, params, *, limit=MAX_CANDIDATES):
+    async def search(self, query, predicate, params, *, limit=MAX_CANDIDATES) -> Any:
         if not self.enabled or not self.ready or not self.total:
             return None
         try:
@@ -214,13 +247,19 @@ class VectorMemory:
             if self.index_id != index_id or self._rebuild:
                 return None
             if self.dimension is not None and len(matrix[0]) != self.dimension:
-                self._index_state(await self.store.block_dimensions(index_id, len(matrix[0])))
+                self._index_state(
+                    await self.store.block_dimensions(index_id, len(matrix[0]))
+                )
                 return None
             if not self.ready:
                 return None
             results = await self.store.search(
-                self.np, matrix[0], predicate, params,
-                self.number("min_similarity", 0.35, 0, 1), limit=limit,
+                self.np,
+                matrix[0],
+                predicate,
+                params,
+                self.number("min_similarity", 0.35, 0, 1),
+                limit=limit,
             )
             if not self.ready or self.index_id != index_id:
                 return None
@@ -229,27 +268,39 @@ class VectorMemory:
             raise
         except Exception:
             if self.index_id == index_id and self.phase != "rebuild_required":
-                self.phase, self.reason, self.ready = "degraded", "embedding_failed", False
+                self.phase, self.reason, self.ready = (
+                    "degraded",
+                    "embedding_failed",
+                    False,
+                )
                 self._retry_at = time.monotonic() + 30
             return None
 
-    async def status(self):
+    async def status(self) -> dict[str, Any]:
         available = self.np is not None or await asyncio.to_thread(dependency_available)
         return {
-            "enabled": self.enabled, "dependency_available": available,
-            "phase": "installing" if self._install_task and not self._install_task.done() else self.phase,
-            "reason": self.reason, "indexed": self.indexed, "total": self.total,
-            "ready": self.ready, "index_dimensions": self.dimension,
+            "enabled": self.enabled,
+            "dependency_available": available,
+            "phase": "installing"
+            if self._install_task and not self._install_task.done()
+            else self.phase,
+            "reason": self.reason,
+            "indexed": self.indexed,
+            "total": self.total,
+            "ready": self.ready,
+            "index_dimensions": self.dimension,
             "received_dimensions": self.received_dimension,
         }
 
-    async def _install(self):
+    async def _install(self) -> None:
         from core.plugin.plugin_installer import install_requirements
+
         try:
             config = getattr(self.ctx, "config", {})
             mirror = config.get("network", {}).get("pypi_mirror") if config else None
             warnings = await install_requirements(
-                Path(__file__).parent / "vector_dependencies", pypi_mirror=mirror,
+                Path(__file__).parent / "vector_dependencies",
+                pypi_mirror=mirror,
             )
             importlib.invalidate_caches()
             if warnings or not await asyncio.to_thread(dependency_available):
@@ -264,14 +315,17 @@ class VectorMemory:
         except Exception:
             self.reason = "install_failed"
 
-    async def install(self):
-        if self.enabled and not await asyncio.to_thread(dependency_available):
-            if self._install_task is None or self._install_task.done():
-                self.reason = None
-                self._install_task = asyncio.create_task(self._install())
+    async def install(self) -> dict[str, Any]:
+        if (
+            self.enabled
+            and not await asyncio.to_thread(dependency_available)
+            and (self._install_task is None or self._install_task.done())
+        ):
+            self.reason = None
+            self._install_task = asyncio.create_task(self._install())
         return await self.status()
 
-    async def rebuild(self):
+    async def rebuild(self) -> dict[str, Any]:
         if self.enabled:
             self.ready, self._rebuild = False, True
             self.phase, self.reason, self._retry_at = "starting", None, 0

@@ -3,20 +3,21 @@ from __future__ import annotations
 import asyncio
 from asyncio import Lock
 from collections.abc import Callable
+from typing import Any
 
 from core.chat.message_utils import KiraMessageEvent
 
 
 class SessionBuffer:
-    def __init__(self, max_count: int | None = None):
+    def __init__(self, max_count: int | None = None) -> None:
         self.buffer: list = []
         self.lock: asyncio.Lock = asyncio.Lock()
         self.max_count = max_count
 
-    def add(self, message: KiraMessageEvent):
+    def add(self, message: KiraMessageEvent) -> None:
         self.buffer.append(message)
 
-    def pop(self, count: int = 1):
+    def pop(self, count: int = 1) -> list[Any]:
         if self.get_length() < count:
             popped = self.buffer[:]
             self.buffer.clear()
@@ -51,7 +52,7 @@ class SessionBuffer:
         ]
         return pending_messages
 
-    def get_length(self):
+    def get_length(self) -> int:
         return len(self.buffer)
 
     def get_buffer_lock(self) -> Lock:
@@ -60,11 +61,11 @@ class SessionBuffer:
 
 
 class SessionBufferManager:
-    def __init__(self, max_count: int | None = None):
+    def __init__(self, max_count: int | None = None) -> None:
         self.buffers: dict[str, SessionBuffer] = {}
         self.max_count = max_count
 
-    def get_buffer(self, session: str):
+    def get_buffer(self, session: str) -> SessionBuffer:
         if session not in self.buffers:
             self.buffers[session] = SessionBuffer(self.max_count)
         return self.buffers[session]

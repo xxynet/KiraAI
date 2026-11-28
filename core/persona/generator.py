@@ -17,6 +17,7 @@ from core.utils.tool_utils import BaseTool
 
 if TYPE_CHECKING:
     from core.provider import LLMModelClient
+    from core.provider.llm_model import LLMRequest
 
 
 SUPPORTED_PERSONA_FORMATS = frozenset({"text", "markdown", "json", "yaml"})
@@ -83,16 +84,23 @@ class ProposePersonaTool(BaseTool):
         "additionalProperties": False,
     }
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.proposal: PersonaProposal | None = None
 
-    async def execute(self, name: str, format: str, content: str, chat_rules: str, **_kwargs) -> str:
-        if not all(isinstance(value, str) and value.strip() for value in (name, format, content, chat_rules)):
+    async def execute(
+        self, name: str, format: str, content: str, chat_rules: str, **_kwargs
+    ) -> str:
+        if not all(
+            isinstance(value, str) and value.strip()
+            for value in (name, format, content, chat_rules)
+        ):
             raise PersonaGenerationError("Persona proposal is incomplete")
         if format not in SUPPORTED_PERSONA_FORMATS:
             raise PersonaGenerationError("Persona proposal uses an unsupported format")
-        self.proposal = PersonaProposal(name=name.strip(), format=format, content=content, chat_rules=chat_rules)
+        self.proposal = PersonaProposal(
+            name=name.strip(), format=format, content=content, chat_rules=chat_rules
+        )
         return "Persona proposal received."
 
 
@@ -124,7 +132,7 @@ class AskPersonaQuestionTool(BaseTool):
         "additionalProperties": False,
     }
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.question: PersonaQuestion | None = None
 
@@ -138,11 +146,15 @@ class AskPersonaQuestionTool(BaseTool):
         if not isinstance(question, str) or not question.strip():
             raise PersonaGenerationError("Persona question is incomplete")
         if not isinstance(allow_custom, bool):
-            raise PersonaGenerationError("Persona question has invalid custom-answer settings")
+            raise PersonaGenerationError(
+                "Persona question has invalid custom-answer settings"
+            )
         if (
             not isinstance(options, list)
             or not 2 <= len(options) <= 4
-            or any(not isinstance(option, str) or not option.strip() for option in options)
+            or any(
+                not isinstance(option, str) or not option.strip() for option in options
+            )
         ):
             raise PersonaGenerationError("Persona question has invalid options")
         self.question = PersonaQuestion(
@@ -156,7 +168,7 @@ class AskPersonaQuestionTool(BaseTool):
 class PersonaGenerator:
     """Generate editable persona drafts with a dedicated LLM tool call."""
 
-    def __init__(self, llm_client: LLMModelClient):
+    def __init__(self, llm_client: LLMModelClient) -> None:
         self.llm_client = llm_client
 
     @staticmethod
@@ -175,7 +187,9 @@ class PersonaGenerator:
         if not messages:
             return self.get_initial_question(lang)
         request = self._build_request(messages, lang)
-        response = await self.llm_client.chat(request, max_tokens=PERSONA_GENERATION_MAX_TOKENS)
+        response = await self.llm_client.chat(
+            request, max_tokens=PERSONA_GENERATION_MAX_TOKENS
+        )
         return await self._resolve_tool_calls(response.tool_calls)
 
     async def stream_respond(
@@ -191,7 +205,11 @@ class PersonaGenerator:
         tool_call_fragments: dict[int, dict] = {}
         complete_tool_calls: list[dict] = []
         emitted_text = False
-        async with aclosing(self.llm_client.chat_stream(request, max_tokens=PERSONA_GENERATION_MAX_TOKENS)) as stream:
+        async with aclosing(
+            self.llm_client.chat_stream(
+                request, max_tokens=PERSONA_GENERATION_MAX_TOKENS
+            )
+        ) as stream:
             async for chunk in stream:
                 if chunk.delta_text:
                     emitted_text = True
@@ -201,11 +219,14 @@ class PersonaGenerator:
                         complete_tool_calls.append(fragment)
                         continue
                     index = fragment["index"]
-                    tool_call = tool_call_fragments.setdefault(index, {
-                        "id": "",
-                        "type": "function",
-                        "function": {"name": "", "arguments": ""},
-                    })
+                    tool_call = tool_call_fragments.setdefault(
+                        index,
+                        {
+                            "id": "",
+                            "type": "function",
+                            "function": {"name": "", "arguments": ""},
+                        },
+                    )
                     if fragment.get("id"):
                         tool_call["id"] = fragment["id"]
                     function = fragment.get("function") or {}
@@ -221,7 +242,7 @@ class PersonaGenerator:
             raise PersonaGenerationError("Persona generator returned an empty response")
 
     @staticmethod
-    def _build_request(messages: list[OpenAIMessage], lang: str | None):
+    def _build_request(messages: list[OpenAIMessage], lang: str | None) -> LLMRequest:
         # These imports are lazy because their dependency paths import Prompt,
         # which imports core.persona during application startup.
         from core.agent.tool import ToolSet
@@ -231,7 +252,9 @@ class PersonaGenerator:
         question_tool = AskPersonaQuestionTool()
         return LLMRequest(
             messages=[
-                OpenAIMessage(role="system", content=get_persona_generator_prompt(lang)),
+                OpenAIMessage(
+                    role="system", content=get_persona_generator_prompt(lang)
+                ),
                 *messages,
             ],
             tool_set=ToolSet(tools=[question_tool, proposal_tool]),
@@ -239,15 +262,19 @@ class PersonaGenerator:
         )
 
     @staticmethod
-    async def _resolve_tool_calls(tool_calls: list[dict]) -> PersonaQuestion | PersonaProposal:
+    async def _resolve_tool_calls(
+        tool_calls: list[dict],
+    ) -> PersonaQuestion | PersonaProposal:
         proposal_tool = ProposePersonaTool()
         question_tool = AskPersonaQuestionTool()
         for tool_call in tool_calls:
             function = tool_call.get("function") or {}
             tool_name = function.get("name")
             tool = (
-                question_tool if tool_name == question_tool.name
-                else proposal_tool if tool_name == proposal_tool.name
+                question_tool
+                if tool_name == question_tool.name
+                else proposal_tool
+                if tool_name == proposal_tool.name
                 else None
             )
             if tool is None:
@@ -258,11 +285,15 @@ class PersonaGenerator:
             try:
                 await tool.execute(**json.loads(arguments))
             except (TypeError, json.JSONDecodeError, PersonaGenerationError) as exc:
-                raise PersonaGenerationError("Persona generator returned an invalid tool call") from exc
+                raise PersonaGenerationError(
+                    "Persona generator returned an invalid tool call"
+                ) from exc
 
         if proposal_tool.proposal:
             return proposal_tool.proposal
         if question_tool.question:
             return question_tool.question
 
-        raise PersonaGenerationError("Persona generator did not return a question or proposal")
+        raise PersonaGenerationError(
+            "Persona generator did not return a question or proposal"
+        )

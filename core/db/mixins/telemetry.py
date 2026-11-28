@@ -14,30 +14,62 @@ class TelemetryMixin:
 
     async def add_telemetry_message(self, timestamp: int, platform: str) -> None:
         async with self.db.transaction() as session:
-            session.add(TelemetryMessage(id=str(uuid.uuid4()), timestamp=timestamp, platform=platform))
+            session.add(
+                TelemetryMessage(
+                    id=str(uuid.uuid4()), timestamp=timestamp, platform=platform
+                )
+            )
 
     async def add_telemetry_llm_usage(
-        self, timestamp: int, model: str,
-        input_tokens: int, output_tokens: int,
-        cached_tokens: int | None, response_time_ms: int, success: bool,
-        *, source: Literal["main", "subagent"] = "main",
+        self,
+        timestamp: int,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        cached_tokens: int | None,
+        response_time_ms: int,
+        success: bool,
+        *,
+        source: Literal["main", "subagent"] = "main",
     ) -> None:
         async with self.db.transaction() as session:
-            session.add(TelemetryLLMUsage(
-                id=str(uuid.uuid4()), timestamp=timestamp, model=model, source=source,
-                input_tokens=input_tokens, output_tokens=output_tokens,
-                cached_tokens=cached_tokens, response_time_ms=response_time_ms, success=success,
-            ))
+            session.add(
+                TelemetryLLMUsage(
+                    id=str(uuid.uuid4()),
+                    timestamp=timestamp,
+                    model=model,
+                    source=source,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    cached_tokens=cached_tokens,
+                    response_time_ms=response_time_ms,
+                    success=success,
+                )
+            )
 
-    async def get_unreported_telemetry_messages_by_hour(self, since_ts: int) -> list[dict]:
+    async def get_unreported_telemetry_messages_by_hour(
+        self, since_ts: int
+    ) -> list[dict]:
         hour_bucket = cast(TelemetryMessage.timestamp / 3600, Integer) * 3600
         stmt = (
-            select(hour_bucket.label("hour_ts"), TelemetryMessage.platform, func.count().label("count"))
-            .where(and_(TelemetryMessage.reported.is_(False), TelemetryMessage.timestamp >= since_ts))
+            select(
+                hour_bucket.label("hour_ts"),
+                TelemetryMessage.platform,
+                func.count().label("count"),
+            )
+            .where(
+                and_(
+                    TelemetryMessage.reported.is_(False),
+                    TelemetryMessage.timestamp >= since_ts,
+                )
+            )
             .group_by(hour_bucket, TelemetryMessage.platform)
         )
         rows = await self.db.fetch_all(stmt)
-        return [{"hour_ts": r["hour_ts"], "platform": r["platform"], "count": r["count"]} for r in rows]
+        return [
+            {"hour_ts": r["hour_ts"], "platform": r["platform"], "count": r["count"]}
+            for r in rows
+        ]
 
     async def get_unreported_telemetry_message_rows(self, since_ts: int) -> list[dict]:
         """Return every unreported message row (id + hour bucket + platform) in one query.
@@ -48,14 +80,23 @@ class TelemetryMixin:
         approach allowed when a row was inserted between the two reads).
         """
         hour_bucket = cast(TelemetryMessage.timestamp / 3600, Integer) * 3600
-        stmt = (
-            select(hour_bucket.label("hour_ts"), TelemetryMessage.platform, TelemetryMessage.id)
-            .where(and_(TelemetryMessage.reported.is_(False), TelemetryMessage.timestamp >= since_ts))
+        stmt = select(
+            hour_bucket.label("hour_ts"), TelemetryMessage.platform, TelemetryMessage.id
+        ).where(
+            and_(
+                TelemetryMessage.reported.is_(False),
+                TelemetryMessage.timestamp >= since_ts,
+            )
         )
         rows = await self.db.fetch_all(stmt)
-        return [{"hour_ts": r["hour_ts"], "platform": r["platform"], "id": r["id"]} for r in rows]
+        return [
+            {"hour_ts": r["hour_ts"], "platform": r["platform"], "id": r["id"]}
+            for r in rows
+        ]
 
-    async def get_unreported_telemetry_llm_usage_by_hour(self, since_ts: int) -> list[dict]:
+    async def get_unreported_telemetry_llm_usage_by_hour(
+        self, since_ts: int
+    ) -> list[dict]:
         """Return per-(hour, model) rows for building aggregated hourly reports."""
         hour_bucket = cast(TelemetryLLMUsage.timestamp / 3600, Integer) * 3600
         stmt = (
@@ -63,27 +104,48 @@ class TelemetryMixin:
                 hour_bucket.label("hour_ts"),
                 TelemetryLLMUsage.model,
                 func.count().label("call_count"),
-                func.sum(func.cast(TelemetryLLMUsage.success, Integer)).label("success_count"),
-                func.coalesce(func.sum(TelemetryLLMUsage.input_tokens), 0).label("total_input"),
-                func.coalesce(func.sum(TelemetryLLMUsage.output_tokens), 0).label("total_output"),
-                func.coalesce(func.sum(TelemetryLLMUsage.cached_tokens), 0).label("total_cached"),
-                func.coalesce(func.sum(TelemetryLLMUsage.response_time_ms), 0).label("total_response_ms"),
+                func.sum(func.cast(TelemetryLLMUsage.success, Integer)).label(
+                    "success_count"
+                ),
+                func.coalesce(func.sum(TelemetryLLMUsage.input_tokens), 0).label(
+                    "total_input"
+                ),
+                func.coalesce(func.sum(TelemetryLLMUsage.output_tokens), 0).label(
+                    "total_output"
+                ),
+                func.coalesce(func.sum(TelemetryLLMUsage.cached_tokens), 0).label(
+                    "total_cached"
+                ),
+                func.coalesce(func.sum(TelemetryLLMUsage.response_time_ms), 0).label(
+                    "total_response_ms"
+                ),
             )
-            .where(and_(TelemetryLLMUsage.reported.is_(False), TelemetryLLMUsage.timestamp >= since_ts))
+            .where(
+                and_(
+                    TelemetryLLMUsage.reported.is_(False),
+                    TelemetryLLMUsage.timestamp >= since_ts,
+                )
+            )
             .group_by(hour_bucket, TelemetryLLMUsage.model)
         )
         rows = await self.db.fetch_all(stmt)
         return [
             {
-                "hour_ts": r["hour_ts"], "model": r["model"],
-                "call_count": r["call_count"], "success_count": r["success_count"] or 0,
-                "total_input": r["total_input"], "total_output": r["total_output"],
-                "total_cached": r["total_cached"], "total_response_ms": r["total_response_ms"],
+                "hour_ts": r["hour_ts"],
+                "model": r["model"],
+                "call_count": r["call_count"],
+                "success_count": r["success_count"] or 0,
+                "total_input": r["total_input"],
+                "total_output": r["total_output"],
+                "total_cached": r["total_cached"],
+                "total_response_ms": r["total_response_ms"],
             }
             for r in rows
         ]
 
-    async def get_unreported_telemetry_llm_usage_rows(self, since_ts: int) -> list[dict]:
+    async def get_unreported_telemetry_llm_usage_rows(
+        self, since_ts: int
+    ) -> list[dict]:
         """Return every unreported LLM-usage row (id + hour bucket + measures) in one query.
 
         Counts and the id set to mark are aggregated in Python from this single
@@ -91,24 +153,28 @@ class TelemetryMixin:
         rationale).
         """
         hour_bucket = cast(TelemetryLLMUsage.timestamp / 3600, Integer) * 3600
-        stmt = (
-            select(
-                hour_bucket.label("hour_ts"),
-                TelemetryLLMUsage.id,
-                TelemetryLLMUsage.model,
-                TelemetryLLMUsage.source,
-                TelemetryLLMUsage.success,
-                TelemetryLLMUsage.input_tokens,
-                TelemetryLLMUsage.output_tokens,
-                TelemetryLLMUsage.cached_tokens,
-                TelemetryLLMUsage.response_time_ms,
+        stmt = select(
+            hour_bucket.label("hour_ts"),
+            TelemetryLLMUsage.id,
+            TelemetryLLMUsage.model,
+            TelemetryLLMUsage.source,
+            TelemetryLLMUsage.success,
+            TelemetryLLMUsage.input_tokens,
+            TelemetryLLMUsage.output_tokens,
+            TelemetryLLMUsage.cached_tokens,
+            TelemetryLLMUsage.response_time_ms,
+        ).where(
+            and_(
+                TelemetryLLMUsage.reported.is_(False),
+                TelemetryLLMUsage.timestamp >= since_ts,
             )
-            .where(and_(TelemetryLLMUsage.reported.is_(False), TelemetryLLMUsage.timestamp >= since_ts))
         )
         rows = await self.db.fetch_all(stmt)
         return [
             {
-                "hour_ts": r["hour_ts"], "id": r["id"], "model": r["model"],
+                "hour_ts": r["hour_ts"],
+                "id": r["id"],
+                "model": r["model"],
                 "source": r["source"],
                 "success": r["success"],
                 "input_tokens": r["input_tokens"] or 0,
@@ -147,7 +213,7 @@ class TelemetryMixin:
             for i in range(0, len(ids), 500):
                 await session.execute(
                     TelemetryMessage.__table__.update()
-                    .where(TelemetryMessage.id.in_(ids[i:i + 500]))
+                    .where(TelemetryMessage.id.in_(ids[i : i + 500]))
                     .values(reported=True)
                 )
 
@@ -165,14 +231,18 @@ class TelemetryMixin:
             for i in range(0, len(ids), 500):
                 await session.execute(
                     TelemetryLLMUsage.__table__.update()
-                    .where(TelemetryLLMUsage.id.in_(ids[i:i + 500]))
+                    .where(TelemetryLLMUsage.id.in_(ids[i : i + 500]))
                     .values(reported=True)
                 )
 
     async def delete_telemetry_records_before(self, cutoff_ts: int) -> None:
         async with self.db.transaction() as session:
-            await session.execute(delete(TelemetryMessage).where(TelemetryMessage.timestamp < cutoff_ts))
-            await session.execute(delete(TelemetryLLMUsage).where(TelemetryLLMUsage.timestamp < cutoff_ts))
+            await session.execute(
+                delete(TelemetryMessage).where(TelemetryMessage.timestamp < cutoff_ts)
+            )
+            await session.execute(
+                delete(TelemetryLLMUsage).where(TelemetryLLMUsage.timestamp < cutoff_ts)
+            )
 
     # ------------------------------------------------------------------
     # Overview aggregation queries
@@ -227,11 +297,21 @@ class TelemetryMixin:
             select(
                 TelemetryLLMUsage.model,
                 func.count().label("calls"),
-                func.coalesce(func.sum(func.cast(TelemetryLLMUsage.success, Integer)), 0).label("success"),
-                func.coalesce(func.sum(TelemetryLLMUsage.input_tokens), 0).label("input_tokens"),
-                func.coalesce(func.sum(TelemetryLLMUsage.output_tokens), 0).label("output_tokens"),
-                func.coalesce(func.sum(TelemetryLLMUsage.cached_tokens), 0).label("cached_tokens"),
-                func.coalesce(func.sum(TelemetryLLMUsage.response_time_ms), 0).label("total_response_ms"),
+                func.coalesce(
+                    func.sum(func.cast(TelemetryLLMUsage.success, Integer)), 0
+                ).label("success"),
+                func.coalesce(func.sum(TelemetryLLMUsage.input_tokens), 0).label(
+                    "input_tokens"
+                ),
+                func.coalesce(func.sum(TelemetryLLMUsage.output_tokens), 0).label(
+                    "output_tokens"
+                ),
+                func.coalesce(func.sum(TelemetryLLMUsage.cached_tokens), 0).label(
+                    "cached_tokens"
+                ),
+                func.coalesce(func.sum(TelemetryLLMUsage.response_time_ms), 0).label(
+                    "total_response_ms"
+                ),
             )
             .where(TelemetryLLMUsage.timestamp >= since_ts)
             .group_by(TelemetryLLMUsage.model)
@@ -255,7 +335,9 @@ class TelemetryMixin:
                     "output_tokens": r["output_tokens"],
                     "cached_tokens": r["cached_tokens"],
                     "total_response_ms": r["total_response_ms"],
-                    "avg_response_ms": round(r["total_response_ms"] / r["calls"], 1) if r["calls"] > 0 else 0,
+                    "avg_response_ms": round(r["total_response_ms"] / r["calls"], 1)
+                    if r["calls"] > 0
+                    else 0,
                 }
                 for r in by_model
             ],

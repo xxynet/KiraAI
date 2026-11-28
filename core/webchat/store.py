@@ -1,4 +1,5 @@
 """Independent, durable storage for the administrator's built-in conversation."""
+
 from __future__ import annotations
 
 import asyncio
@@ -53,7 +54,8 @@ class WebChatStore:
                     async for message_id, body in cursor:
                         if json.loads(body).get("direction") == "incoming":
                             await db.execute(
-                                "UPDATE messages SET request_status = 'sent' WHERE id = ?", (message_id,)
+                                "UPDATE messages SET request_status = 'sent' WHERE id = ?",
+                                (message_id,),
                             )
             if legacy_requests:
                 await db.execute(
@@ -72,18 +74,25 @@ class WebChatStore:
                     # Rewrite the file so dropped request text no longer lingers in free pages.
                     await db.execute("VACUUM")
                 except sqlite3.Error:
-                    logger.warning("Skipped WebChat database compaction after dropping requests table", exc_info=True)
+                    logger.warning(
+                        "Skipped WebChat database compaction after dropping requests table",
+                        exc_info=True,
+                    )
 
     async def get_setting(self, key: str):
-        async with aiosqlite.connect(self.path) as db:
-            async with db.execute("SELECT value FROM settings WHERE key = ?", (key,)) as cursor:
-                row = await cursor.fetchone()
+        async with (
+            aiosqlite.connect(self.path) as db,
+            db.execute("SELECT value FROM settings WHERE key = ?", (key,)) as cursor,
+        ):
+            row = await cursor.fetchone()
         return json.loads(row[0]) if row else None
 
     async def set_setting(self, key: str, value):
         async with aiosqlite.connect(self.path) as db:
-            await db.execute("INSERT OR REPLACE INTO settings VALUES (?, ?)",
-                             (key, json.dumps(value, ensure_ascii=False)))
+            await db.execute(
+                "INSERT OR REPLACE INTO settings VALUES (?, ?)",
+                (key, json.dumps(value, ensure_ascii=False)),
+            )
             await db.commit()
 
     def _remember_tombstone(self, request_id: str):
@@ -93,12 +102,14 @@ class WebChatStore:
             self._deleted_requests.popitem(last=False)
 
     async def latest_request(self):
-        async with aiosqlite.connect(self.path) as db:
-            async with db.execute(
+        async with (
+            aiosqlite.connect(self.path) as db,
+            db.execute(
                 "SELECT id, request_status FROM messages WHERE request_status IS NOT NULL "
                 "ORDER BY seq DESC LIMIT 1"
-            ) as cursor:
-                row = await cursor.fetchone()
+            ) as cursor,
+        ):
+            row = await cursor.fetchone()
         return {"id": row[0], "status": row[1]} if row else None
 
     @staticmethod
@@ -109,7 +120,9 @@ class WebChatStore:
             raise ValueError("request_conflict")
         return {"id": request_id, "status": row[1]}
 
-    async def get_request(self, request_id: str, text: str, chain: list[dict] | None = None):
+    async def get_request(
+        self, request_id: str, text: str, chain: list[dict] | None = None
+    ):
         chain = chain if chain is not None else [{"type": "text", "text": text}]
         async with self.lock, aiosqlite.connect(self.path) as db:
             if request_id in self._deleted_requests:
@@ -120,7 +133,9 @@ class WebChatStore:
                 row = await cursor.fetchone()
             return self._existing_request(request_id, row, chain)
 
-    async def accept(self, request_id: str, text: str, nickname: str, chain: list[dict] | None = None):
+    async def accept(
+        self, request_id: str, text: str, nickname: str, chain: list[dict] | None = None
+    ):
         """Persist each message once without waiting for a reply to previous input."""
         chain = chain if chain is not None else [{"type": "text", "text": text}]
         async with self.lock, aiosqlite.connect(self.path) as db:
@@ -135,8 +150,10 @@ class WebChatStore:
             if existing is not None:
                 return existing, False
             record = self.message(request_id, "incoming", nickname, chain)
-            await db.execute("INSERT INTO messages (id, body, request_status) VALUES (?, ?, 'sent')",
-                             (request_id, json.dumps(record, ensure_ascii=False)))
+            await db.execute(
+                "INSERT INTO messages (id, body, request_status) VALUES (?, ?, 'sent')",
+                (request_id, json.dumps(record, ensure_ascii=False)),
+            )
             await db.commit()
         return {"id": request_id, "status": "sent"}, True
 
@@ -150,8 +167,13 @@ class WebChatStore:
 
     @staticmethod
     def message(message_id: str, direction: str, nickname: str, chain: list):
-        return {"id": message_id, "direction": direction, "sender_name": nickname,
-                "timestamp": int(time.time()), "chain": chain}
+        return {
+            "id": message_id,
+            "direction": direction,
+            "sender_name": nickname,
+            "timestamp": int(time.time()),
+            "chain": chain,
+        }
 
     async def append_reply(self, chain, nickname: str) -> str:
         async with self.lock:
@@ -160,22 +182,30 @@ class WebChatStore:
             def snapshot(quoted_chain: list[dict], depth: int = 1) -> list[dict]:
                 result = []
                 for element in quoted_chain:
-                    item = {key: value for key, value in element.items() if key != "chain"}
+                    item = {
+                        key: value for key, value in element.items() if key != "chain"
+                    }
                     if element.get("chain") and depth < 3:
                         item["chain"] = snapshot(element["chain"], depth + 1)
                     result.append(item)
                 return result
 
             for element in elements:
-                if element.get("type") == "reply" and not element.get("chain") and not element.get("message_content"):
+                if (
+                    element.get("type") == "reply"
+                    and not element.get("chain")
+                    and not element.get("message_content")
+                ):
                     original = await self.get_message(element["message_id"])
                     if original is not None:
                         element["chain"] = snapshot(original["chain"])
             message_id = uuid.uuid4().hex
             record = self.message(message_id, "outgoing", nickname, elements)
             async with aiosqlite.connect(self.path) as db:
-                await db.execute("INSERT INTO messages (id, body) VALUES (?, ?)",
-                                 (message_id, json.dumps(record, ensure_ascii=False)))
+                await db.execute(
+                    "INSERT INTO messages (id, body) VALUES (?, ?)",
+                    (message_id, json.dumps(record, ensure_ascii=False)),
+                )
                 await db.commit()
             return message_id
 
@@ -189,7 +219,9 @@ class WebChatStore:
                 try:
                     backup.rename(original)
                 except OSError as exc:
-                    logger.exception(f"Failed to restore WebChat attachment {backup} to {original}")
+                    logger.exception(
+                        f"Failed to restore WebChat attachment {backup} to {original}"
+                    )
                     failures.append(exc)
             if failures:
                 raise failures[0]
@@ -200,23 +232,33 @@ class WebChatStore:
             media = self.media_dir.resolve()
             for directory in tuple(self._pending_media_cleanup):
                 try:
-                    if (media != self.root.resolve() / "media" or self.media_dir.is_symlink()
-                            or directory.is_symlink() or directory.resolve().parent != media):
+                    if (
+                        media != self.root.resolve() / "media"
+                        or self.media_dir.is_symlink()
+                        or directory.is_symlink()
+                        or directory.resolve().parent != media
+                    ):
                         raise ValueError("Invalid WebChat media cleanup directory")
                     if directory.exists():
                         shutil.rmtree(directory)
                     self._pending_media_cleanup.discard(directory)
                 except (OSError, ValueError):
-                    logger.exception(f"Failed to clean up deleted WebChat attachments in {directory}")
+                    logger.exception(
+                        f"Failed to clean up deleted WebChat attachments in {directory}"
+                    )
 
         def stage_unused_media(body: str, remaining: list):
             nonlocal staging_dir
+
             def media_refs(chain: list[dict]) -> set[str]:
                 refs = set()
                 for element in chain:
                     file = element.get("file")
-                    if (element.get("file_type") == "archive" and isinstance(file, str)
-                            and re.fullmatch(r"[0-9a-f]{64}", file)):
+                    if (
+                        element.get("file_type") == "archive"
+                        and isinstance(file, str)
+                        and re.fullmatch(r"[0-9a-f]{64}", file)
+                    ):
                         refs.add(file)
                     if isinstance(element.get("chain"), list):
                         refs.update(media_refs(element["chain"]))
@@ -251,11 +293,15 @@ class WebChatStore:
             async with aiosqlite.connect(self.path) as db:
                 try:
                     await db.execute("BEGIN IMMEDIATE")
-                    async with db.execute("SELECT body FROM messages WHERE id = ?", (message_id,)) as cursor:
+                    async with db.execute(
+                        "SELECT body FROM messages WHERE id = ?", (message_id,)
+                    ) as cursor:
                         row = await cursor.fetchone()
                     if row is None:
                         return
-                    async with db.execute("SELECT body FROM messages WHERE id != ?", (message_id,)) as cursor:
+                    async with db.execute(
+                        "SELECT body FROM messages WHERE id != ?", (message_id,)
+                    ) as cursor:
                         remaining = await cursor.fetchall()
                     await asyncio.to_thread(stage_unused_media, row[0], remaining)
                     await db.execute("DELETE FROM messages WHERE id = ?", (message_id,))
@@ -297,14 +343,25 @@ class WebChatStore:
             await db.commit()
             self._deleted_requests.clear()
 
-    async def list_messages(self, *, before: int | None = None, after: int = 0, limit: int = 50):
+    async def list_messages(
+        self, *, before: int | None = None, after: int = 0, limit: int = 50
+    ):
         async with aiosqlite.connect(self.path) as db:
             if before is not None:
-                query, args = "SELECT seq, body FROM messages WHERE seq < ? ORDER BY seq DESC LIMIT ?", (before, limit + 1)
+                query, args = (
+                    "SELECT seq, body FROM messages WHERE seq < ? ORDER BY seq DESC LIMIT ?",
+                    (before, limit + 1),
+                )
             elif after:
-                query, args = "SELECT seq, body FROM messages WHERE seq > ? ORDER BY seq ASC LIMIT ?", (after, limit + 1)
+                query, args = (
+                    "SELECT seq, body FROM messages WHERE seq > ? ORDER BY seq ASC LIMIT ?",
+                    (after, limit + 1),
+                )
             else:
-                query, args = "SELECT seq, body FROM messages ORDER BY seq DESC LIMIT ?", (limit + 1,)
+                query, args = (
+                    "SELECT seq, body FROM messages ORDER BY seq DESC LIMIT ?",
+                    (limit + 1,),
+                )
             async with db.execute(query, args) as cursor:
                 rows = await cursor.fetchall()
         more = len(rows) > limit
@@ -315,7 +372,11 @@ class WebChatStore:
         return {"messages": messages, "has_more": more}
 
     async def get_message(self, message_id: str):
-        async with aiosqlite.connect(self.path) as db:
-            async with db.execute("SELECT body FROM messages WHERE id = ?", (message_id,)) as cursor:
-                row = await cursor.fetchone()
+        async with (
+            aiosqlite.connect(self.path) as db,
+            db.execute(
+                "SELECT body FROM messages WHERE id = ?", (message_id,)
+            ) as cursor,
+        ):
+            row = await cursor.fetchone()
         return json.loads(row[0]) if row else None

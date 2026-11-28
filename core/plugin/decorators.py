@@ -9,25 +9,32 @@ from .pages import PageMenu, PluginPage
 
 
 class RegisterDeco:
-
     @staticmethod
     def tool(name: str, description: str, params: dict):
         def decorator(func: Callable):
             plugin_id = registry.get_obj_plugin_id(func)
-            registry._ensure_components(plugin_id).register_tool(name, description, params, func)
+            registry._ensure_components(plugin_id).register_tool(
+                name, description, params, func
+            )
             return func
+
         return decorator
 
     @staticmethod
     def tag(name: str, description: str, parent: str | None = "msg"):
         def decorator(func: Callable):
             plugin_id = registry.get_obj_plugin_id(func)
-            registry._ensure_components(plugin_id).register_tag(name, description, func, parent)
+            registry._ensure_components(plugin_id).register_tag(
+                name, description, func, parent
+            )
             return func
+
         return decorator
 
     @staticmethod
-    def page(route: str, auth: bool = True, menu: Union[dict, "PageMenu"] | None = None):
+    def page(
+        route: str, auth: bool = True, menu: Union[dict, "PageMenu"] | None = None
+    ):
         """Register a plugin page endpoint.
 
         Accepts a ``PluginPage`` object or a function that returns one::
@@ -43,6 +50,7 @@ class RegisterDeco:
             menu:  Optional sidebar menu config — a ``PageMenu`` object or a dict
                    with keys ``label`` (str or locale dict), ``icon``, ``order``.
         """
+
         def decorator(obj):
             plugin_id = registry.get_obj_plugin_id(obj)
             comp = registry._ensure_components(plugin_id)
@@ -56,6 +64,7 @@ class RegisterDeco:
             comp.register_page(route, obj, auth, menu, returns_plugin_page=True)
             comp.page_funcs[obj.__name__] = obj
             return obj
+
         return decorator
 
     @staticmethod
@@ -67,10 +76,14 @@ class RegisterDeco:
         directory: Local directory path relative to plugin root
         html:      Try to serve index.html for directory requests
         """
+
         def decorator(func: Callable):
             plugin_id = registry.get_obj_plugin_id(func)
-            registry._ensure_components(plugin_id).register_static(path, directory, html)
+            registry._ensure_components(plugin_id).register_static(
+                path, directory, html
+            )
             return func
+
         return decorator
 
     @staticmethod
@@ -83,10 +96,14 @@ class RegisterDeco:
         auth:   Require JWT auth (default True)
         kwargs: Forwarded to FastAPI add_api_route (response_model, summary, …)
         """
+
         def decorator(func: Callable):
             plugin_id = registry.get_obj_plugin_id(func)
-            registry._ensure_components(plugin_id).register_api(method, path, func, auth, **kwargs)
+            registry._ensure_components(plugin_id).register_api(
+                method, path, func, auth, **kwargs
+            )
             return func
+
         return decorator
 
     @staticmethod
@@ -98,17 +115,22 @@ class RegisterDeco:
         auth: Require JWT auth during the WS handshake (default True).
               When enabled, ``ws.state.user`` is set before the endpoint runs.
         """
+
         def decorator(func: Callable):
             plugin_id = registry.get_obj_plugin_id(func)
             registry._ensure_components(plugin_id).register_ws(path, func, auth)
             return func
+
         return decorator
 
     @staticmethod
-    def widget(label: str | dict[str, str], icon: str = "Box",
-               color: Literal["blue", "green", "purple", "yellow", "red", "gray"] = "blue",
-               order: int = 100,
-               size: Literal["small", "wide"] = "small"):
+    def widget(
+        label: str | dict[str, str],
+        icon: str = "Box",
+        color: Literal["blue", "green", "purple", "yellow", "red", "gray"] = "blue",
+        order: int = 100,
+        size: Literal["small", "wide"] = "small",
+    ):
         """Register a widget on the Overview dashboard page.
 
         The decorated function is called on each ``GET /api/overview`` request
@@ -125,122 +147,148 @@ class RegisterDeco:
             order: Sort position in the widget grid (lower = higher).
             size:  ``"small"`` (default, stat card) or ``"wide"`` (full-width).
         """
+
         def decorator(func: Callable):
             plugin_id = registry.get_obj_plugin_id(func)
             widget_id = f"{plugin_id}:{func.__name__}"
             registry._ensure_components(plugin_id).register_widget(
-                widget_id, label, icon, color, order, size, func)
+                widget_id, label, icon, color, order, size, func
+            )
             return func
+
         return decorator
 
 
 class OnEventDeco:
-
     @staticmethod
-    def _register_hook(func: Callable, priority: Priority | int, event_type: EventType):
+    def _register_hook(
+        func: Callable, priority: Priority | int, event_type: EventType
+    ) -> None:
         plugin_id = registry.get_obj_plugin_id(func)
         registry._ensure_components(plugin_id).register_hook(func, priority, event_type)
 
     def comment(self, priority: Priority | int = Priority.MEDIUM):
         """Receive comments; stop the event before taking over its processing."""
+
         def decorator(func: Callable):
             self._register_hook(func, priority, EventType.ON_COMMENT)
             return func
+
         return decorator
 
     def im_message(self, priority: Priority | int = Priority.MEDIUM):
         def decorator(func: Callable):
             self._register_hook(func, priority, EventType.ON_IM_MESSAGE)
             return func
+
         return decorator
 
     def message_buffered(self, priority: Priority | int = Priority.MEDIUM):
         def decorator(func: Callable):
             self._register_hook(func, priority, EventType.ON_MESSAGE_BUFFERED)
             return func
+
         return decorator
 
     def im_batch_message(self, priority: Priority | int = Priority.MEDIUM):
         def decorator(func: Callable):
             self._register_hook(func, priority, EventType.ON_IM_BATCH_MESSAGE)
             return func
+
         return decorator
 
     def llm_request(self, priority: Priority | int = Priority.MEDIUM):
         def decorator(func: Callable):
             self._register_hook(func, priority, EventType.ON_LLM_REQUEST)
             return func
+
         return decorator
 
     def llm_response(self, priority: Priority | int = Priority.MEDIUM):
         def decorator(func: Callable):
             self._register_hook(func, priority, EventType.ON_LLM_RESPONSE)
             return func
+
         return decorator
 
     def tool_call(self, priority: Priority | int = Priority.MEDIUM):
         """Receive ToolCallContext; call ctx.set_result() to skip tool invocation."""
+
         def decorator(func: Callable):
             self._register_hook(func, priority, EventType.ON_TOOL_CALL)
             return func
+
         return decorator
 
     def tool_result(self, priority: Priority | int = Priority.MEDIUM):
         def decorator(func: Callable):
             self._register_hook(func, priority, EventType.ON_TOOL_RESULT)
             return func
+
         return decorator
 
     def after_xml_parse(self, priority: Priority | int = Priority.MEDIUM):
         def decorator(func: Callable):
             self._register_hook(func, priority, EventType.AFTER_XML_PARSE)
             return func
+
         return decorator
 
     def message_sent(self, priority: Priority | int = Priority.MEDIUM):
         def decorator(func: Callable):
             self._register_hook(func, priority, EventType.ON_MESSAGE_SENT)
             return func
+
         return decorator
 
     def step_result(self, priority: Priority | int = Priority.MEDIUM):
         def decorator(func: Callable):
             self._register_hook(func, priority, EventType.ON_STEP_RESULT)
             return func
+
         return decorator
 
     def final_result(self, priority: Priority | int = Priority.MEDIUM):
         def decorator(func: Callable):
             self._register_hook(func, priority, EventType.ON_FINAL_RESULT)
             return func
+
         return decorator
 
     def loaded(self, priority: Priority | int = Priority.MEDIUM):
         """Fired once after ALL plugins have been loaded (system-level lifecycle)."""
+
         def decorator(func: Callable):
             self._register_hook(func, priority, EventType.ON_LOADED)
             return func
+
         return decorator
 
     def shutdown(self, priority: Priority | int = Priority.MEDIUM):
         """Fired once before system shutdown begins (system-level lifecycle)."""
+
         def decorator(func: Callable):
             self._register_hook(func, priority, EventType.ON_SHUTDOWN)
             return func
+
         return decorator
 
     def exception(self, priority: Priority | int = Priority.MEDIUM):
         def decorator(func: Callable):
             self._register_hook(func, priority, EventType.ON_EXCEPTION)
             return func
+
         return decorator
 
-    def custom_event(self, priority: Priority | int = Priority.MEDIUM, event_name: str | None = None):
+    def custom_event(
+        self, priority: Priority | int = Priority.MEDIUM, event_name: str | None = None
+    ):
         def decorator(func: Callable):
             if event_name is not None:
                 func._custom_event_name = event_name
             self._register_hook(func, priority, EventType.ON_CUSTOM_EVENT)
             return func
+
         return decorator
 
 

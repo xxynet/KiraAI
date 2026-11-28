@@ -49,36 +49,36 @@ logger = get_logger("provider_manager", "cyan")
 
 class ProviderManager:
     """管理所有 Provider"""
-    
+
     _instance = None
     _providers: dict[str, BaseProvider] = {}  # Provider instances
     _provider_configs: dict[str, dict]
-    
+
     # Registry data
     _registry: dict[str, type[BaseProvider]] = {}  # Provider classes
     _manifests: dict[str, dict] = {}
     _manifest_dirs: dict[str, Path] = {}
     _schemas: dict[str, dict] = {}
-    
+
     def __new__(cls, db: DatabaseService, kira_config: KiraConfig):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
-    
+
     def __init__(self, db: DatabaseService, kira_config: KiraConfig):
-        if not hasattr(self, '_initialized'):
+        if not hasattr(self, "_initialized"):
             self._initialized = True
-            
+
             # Load providers from src directory using Registry logic
             src_dir = os.path.join(os.path.dirname(__file__), "src")
             self.scan_providers(src_dir)
 
             self.db = db
             self.kira_config = kira_config
-            
+
             self.providers_config = kira_config.get("providers", {})
             self._load_providers()
-            
+
     @classmethod
     def get_provider_class(cls, name: str) -> type | None:
         return cls._registry.get(name)
@@ -104,29 +104,45 @@ class ProviderManager:
         if not manifest_dir:
             return None
         return resolve_manifest_icon_path(
-            manifest_dir, manifest.get("icon-dark" if dark else "icon"),
+            manifest_dir,
+            manifest.get("icon-dark" if dark else "icon"),
         )
 
     @classmethod
-    def register_provider_type(cls, provider_format: str, provider_cls: type[BaseProvider], manifest: dict, manifest_dir: Path, schema: dict | None = None) -> None:
+    def register_provider_type(
+        cls,
+        provider_format: str,
+        provider_cls: type[BaseProvider],
+        manifest: dict,
+        manifest_dir: Path,
+        schema: dict | None = None,
+    ) -> None:
         """Register a Provider type supplied by a plugin."""
         if not isinstance(provider_format, str) or not provider_format.strip():
             raise ValueError("Provider format must be a non-empty string")
-        if not inspect.isclass(provider_cls) or not issubclass(provider_cls, BaseProvider):
+        if not inspect.isclass(provider_cls) or not issubclass(
+            provider_cls, BaseProvider
+        ):
             raise TypeError("Provider class must inherit from BaseProvider")
-        if not isinstance(manifest, dict) or (schema is not None and not isinstance(schema, dict)):
+        if not isinstance(manifest, dict) or (
+            schema is not None and not isinstance(schema, dict)
+        ):
             raise TypeError("Provider manifest and schema must be dictionaries")
         provider_format = provider_format.strip()
         existing = cls._registry.get(provider_format)
         if existing is not None and existing is not provider_cls:
-            raise ValueError(f"Provider format '{provider_format}' is already registered")
+            raise ValueError(
+                f"Provider format '{provider_format}' is already registered"
+            )
         cls._registry[provider_format] = provider_cls
         cls._manifests[provider_format] = manifest.copy()
         cls._manifest_dirs[provider_format] = Path(manifest_dir)
         cls._schemas[provider_format] = copy.deepcopy(schema) if schema else {}
 
     @classmethod
-    def unregister_provider_type(cls, provider_format: str, provider_cls: type[BaseProvider]) -> bool:
+    def unregister_provider_type(
+        cls, provider_format: str, provider_cls: type[BaseProvider]
+    ) -> bool:
         """Remove a plugin Provider type without affecting another owner."""
         if cls._registry.get(provider_format) is not provider_cls:
             return False
@@ -141,7 +157,10 @@ class ProviderManager:
         removed = 0
         configs = self.kira_config.get("providers", {}) or {}
         for provider_id in list(self._providers):
-            if isinstance(configs.get(provider_id), dict) and configs[provider_id].get("format") == provider_format:
+            if (
+                isinstance(configs.get(provider_id), dict)
+                and configs[provider_id].get("format") == provider_format
+            ):
                 self._providers.pop(provider_id, None)
                 removed += 1
         return removed
@@ -165,35 +184,39 @@ class ProviderManager:
         model_client = model_cls(model_info)
         # Recheck at invocation time for clients retained by plugins or agent loops.
         for name, method in inspect.getmembers(model_client, callable):
-            if not name.startswith('_') and (
-                inspect.iscoroutinefunction(method) or inspect.isasyncgenfunction(method)
+            if not name.startswith("_") and (
+                inspect.iscoroutinefunction(method)
+                or inspect.isasyncgenfunction(method)
             ):
                 setattr(model_client, name, self._guard_model_call(provider_id, method))
         return model_client
 
     def _require_provider_available(self, provider_id: str) -> BaseProvider:
-        config = self.kira_config.get('providers', {}).get(provider_id, {})
-        if config.get('status', 'active') != 'active':
-            raise ProviderAPIError(f'Provider {provider_id} is disabled')
+        config = self.kira_config.get("providers", {}).get(provider_id, {})
+        if config.get("status", "active") != "active":
+            raise ProviderAPIError(f"Provider {provider_id} is disabled")
         provider = self.get_provider(provider_id)
         if provider is None:
-            raise ValueError(f'Provider {provider_id} is not available')
+            raise ValueError(f"Provider {provider_id} is not available")
         return provider
 
     def _guard_model_call(self, provider_id: str, method):
         if inspect.isasyncgenfunction(method):
+
             @wraps(method)
             async def guarded_stream(*args, **kwargs):
                 self._require_provider_available(provider_id)
                 async with aclosing(method(*args, **kwargs)) as stream:
                     async for chunk in stream:
                         yield chunk
+
             return guarded_stream
 
         @wraps(method)
         async def guarded_call(*args, **kwargs):
             self._require_provider_available(provider_id)
             return await method(*args, **kwargs)
+
         return guarded_call
 
     def get_llm(self, reference: str) -> LLMModelClient:
@@ -265,7 +288,9 @@ class ProviderManager:
         try:
             model_info = self.get_default_model_info("default_stt")
         except ValueError:
-            logger.error("default_stt not configured, please configure it in Configuration")
+            logger.error(
+                "default_stt not configured, please configure it in Configuration"
+            )
             raise
         model_client = self.get_model_client(
             model_info.provider_id, model_info.model_id, model_info.model_type
@@ -336,7 +361,9 @@ class ProviderManager:
         if not reference or ":" not in reference:
             raise ValueError(f"{model_key} not set")
         provider_id, model_id = reference.split(":", 1)
-        info = self.get_model_info(provider_id, model_id, DEFAULT_MODEL_TYPES[model_key])
+        info = self.get_model_info(
+            provider_id, model_id, DEFAULT_MODEL_TYPES[model_key]
+        )
         if info is None:
             raise ValueError(f"{model_key} model not found")
         return info
@@ -370,7 +397,9 @@ class ProviderManager:
         if provider_name in self._registry:
             provider_id = uuid.uuid4().hex[:8]
             provider_config = self.generate_provider_config(provider_name, provider_id)
-            provider_inst = self._registry[provider_name](provider_id, name, provider_config)
+            provider_inst = self._registry[provider_name](
+                provider_id, name, provider_config
+            )
             self._providers[provider_id] = provider_inst
             return True
         else:
@@ -388,14 +417,22 @@ class ProviderManager:
         self.set_provider(provider_id, provider_config)
 
     def _model_defaults(self, provider_config: dict, model_type: str) -> dict:
-        fields = (self.get_schema(provider_config.get("format")) or {}).get("model_config", {})
+        fields = (self.get_schema(provider_config.get("format")) or {}).get(
+            "model_config", {}
+        )
         return {
             field.key: copy.deepcopy(field.default)
             for field in fields.get(model_type, [])
             if isinstance(field, BaseConfigField)
         }
 
-    def register_model(self, provider_id: str, model_type: str, model_name: str, config: dict | None = None):
+    def register_model(
+        self,
+        provider_id: str,
+        model_type: str,
+        model_name: str,
+        config: dict | None = None,
+    ):
         """Register an upstream model under a generated, immutable internal ID."""
         ModelType(model_type)
         model_name = model_name.strip()
@@ -420,11 +457,14 @@ class ProviderManager:
         models = {}
         for info in self.get_model_infos(provider_id):
             models.setdefault(info.model_type.value, {})[info.model_id] = {
-                "model_name": info.model_name, "config": info.model_config,
+                "model_name": info.model_name,
+                "config": info.model_config,
             }
         return models
 
-    def _build_model_info(self, provider_id: str, provider: dict, kind: str, model_id: str, entry: dict):
+    def _build_model_info(
+        self, provider_id: str, provider: dict, kind: str, model_id: str, entry: dict
+    ):
         modern = provider.get("model_config_version") == MODEL_CONFIG_VERSION
         return ModelInfo(
             model_type=ModelType(kind),
@@ -437,7 +477,9 @@ class ProviderManager:
         )
 
     def get_model_info(
-        self, provider_id: str, model_id: str,
+        self,
+        provider_id: str,
+        model_id: str,
         model_type: ModelType | str | None = None,
     ) -> ModelInfo | None:
         provider = self.kira_config.get("providers", {}).get(provider_id) or {}
@@ -446,7 +488,9 @@ class ProviderManager:
         resolved = resolve_model_entry(provider, model_id, model_type)
         if resolved:
             kind, internal_id, entry = resolved
-            return self._build_model_info(provider_id, provider, kind, internal_id, entry)
+            return self._build_model_info(
+                provider_id, provider, kind, internal_id, entry
+            )
         return None
 
     def get_model_infos(self, provider_id: str) -> list[ModelInfo]:
@@ -460,7 +504,11 @@ class ProviderManager:
         ]
 
     def update_model(
-        self, provider_id: str, model_type: str, model_id: str, config: dict | None = None,
+        self,
+        provider_id: str,
+        model_type: str,
+        model_id: str,
+        config: dict | None = None,
         model_name: str | None = None,
     ) -> bool:
         ModelType(model_type)
@@ -499,8 +547,12 @@ class ProviderManager:
         return True
 
     def sync_models(
-        self, provider_id: str, model_type: str, add_ids: list[str],
-        delete_ids: list[str], config: dict | None = None,
+        self,
+        provider_id: str,
+        model_type: str,
+        add_ids: list[str],
+        delete_ids: list[str],
+        config: dict | None = None,
     ) -> dict:
         """Sync upstream names while preserving IDs and configs of retained entries."""
         ModelType(model_type)
@@ -520,7 +572,10 @@ class ProviderManager:
                 continue
             model_config = self._model_defaults(provider, model_type)
             model_config.update(config or {})
-            models[generate_model_id(provider)] = {"model_name": name, "config": model_config}
+            models[generate_model_id(provider)] = {
+                "model_name": name,
+                "config": model_config,
+            }
             added += 1
         for model_id, entry in list(models.items()):
             if entry["model_name"] in names_to_delete:
@@ -530,7 +585,9 @@ class ProviderManager:
             self._save_provider_models(provider_id, provider)
         return {"added": added, "removed": removed, "errors": []}
 
-    async def health_check(self, provider_id: str, model_type: str, model_id: str) -> dict:
+    async def health_check(
+        self, provider_id: str, model_type: str, model_id: str
+    ) -> dict:
         """
         Test model availability by sending a simple prompt.
         :return: {"success": bool, "latency": int (ms), "error": str | None}
@@ -540,7 +597,11 @@ class ProviderManager:
         except Exception as e:
             return {"success": False, "latency": None, "error": str(e)}
         if not model_client:
-            return {"success": False, "latency": None, "error": "Model client not found"}
+            return {
+                "success": False,
+                "latency": None,
+                "error": "Model client not found",
+            }
 
         try:
             start = time.time()
@@ -571,9 +632,9 @@ class ProviderManager:
                 continue
 
             try:
-                with open(manifest_path, "r", encoding="utf-8") as f:
+                with open(manifest_path, encoding="utf-8") as f:
                     manifest = json.load(f)
-                
+
                 provider_name = manifest.get("name")
                 if not provider_name:
                     logger.warning(f"Manifest in {provider_dir} missing 'name'")
@@ -584,32 +645,50 @@ class ProviderManager:
                 schema: dict = {}
                 if os.path.exists(schema_path):
                     try:
-                        with open(schema_path, "r", encoding="utf-8") as f:
+                        with open(schema_path, encoding="utf-8") as f:
                             raw_schema = json.load(f)
                         if isinstance(raw_schema, dict):
                             provider_fields: list[BaseConfigField] = []
                             model_fields: dict[str, list[BaseConfigField]] = {}
-                            provider_config_schema = raw_schema.get("provider_config") or {}
+                            provider_config_schema = (
+                                raw_schema.get("provider_config") or {}
+                            )
                             if isinstance(provider_config_schema, dict):
                                 provider_fields = build_fields(provider_config_schema)
                             model_config_schema = raw_schema.get("model_config") or {}
                             if isinstance(model_config_schema, dict):
-                                for model_type, fields_schema in model_config_schema.items():
+                                for (
+                                    model_type,
+                                    fields_schema,
+                                ) in model_config_schema.items():
                                     if isinstance(fields_schema, dict):
-                                        model_fields[model_type] = build_fields(fields_schema)
+                                        model_fields[model_type] = build_fields(
+                                            fields_schema
+                                        )
                             schema = {
                                 "provider_config": provider_fields,
                                 "model_config": model_fields,
                             }
                     except Exception as e:
-                        logger.warning(f"Failed to load schema for {provider_name}: {e}")
+                        logger.warning(
+                            f"Failed to load schema for {provider_name}: {e}"
+                        )
 
                 provider_script = None
                 module_name = None
                 candidate_files = [
-                    (os.path.join(provider_dir, f"{entry}.py"), f"core.provider.src.{entry}.{entry}"),
-                    (os.path.join(provider_dir, "provider.py"), f"core.provider.src.{entry}.provider"),
-                    (os.path.join(provider_dir, "__init__.py"), f"core.provider.src.{entry}"),
+                    (
+                        os.path.join(provider_dir, f"{entry}.py"),
+                        f"core.provider.src.{entry}.{entry}",
+                    ),
+                    (
+                        os.path.join(provider_dir, "provider.py"),
+                        f"core.provider.src.{entry}.provider",
+                    ),
+                    (
+                        os.path.join(provider_dir, "__init__.py"),
+                        f"core.provider.src.{entry}",
+                    ),
                 ]
                 for script_path, candidate_module in candidate_files:
                     if os.path.exists(script_path):
@@ -617,19 +696,27 @@ class ProviderManager:
                         module_name = candidate_module
                         break
                 if not provider_script or not module_name:
-                    logger.warning(f"No {entry}.py, provider.py or __init__.py found in {provider_dir}")
+                    logger.warning(
+                        f"No {entry}.py, provider.py or __init__.py found in {provider_dir}"
+                    )
                     continue
-                
+
                 # Import the module
-                spec = importlib.util.spec_from_file_location(module_name, provider_script)
+                spec = importlib.util.spec_from_file_location(
+                    module_name, provider_script
+                )
                 if spec and spec.loader:
                     module = importlib.util.module_from_spec(spec)
                     spec.loader.exec_module(module)
-                    
+
                     # Find the provider class
                     found = False
-                    for attr_name, attr_value in inspect.getmembers(module):
-                        if inspect.isclass(attr_value) and issubclass(attr_value, BaseProvider) and attr_value is not BaseProvider:
+                    for _attr_name, attr_value in inspect.getmembers(module):
+                        if (
+                            inspect.isclass(attr_value)
+                            and issubclass(attr_value, BaseProvider)
+                            and attr_value is not BaseProvider
+                        ):
                             # Register it using the manifest name
                             key = provider_name
                             cls._registry[key] = attr_value
@@ -639,13 +726,15 @@ class ProviderManager:
                             logger.info(f"Registered provider: {provider_name}")
                             found = True
                             break
-                    
+
                     if not found:
-                        logger.warning(f"No class inheriting from BaseProvider found in {provider_dir}")
+                        logger.warning(
+                            f"No class inheriting from BaseProvider found in {provider_dir}"
+                        )
 
             except Exception as e:
                 logger.error(f"Error loading provider from {provider_dir}: {e}")
-    
+
     @staticmethod
     def _deep_fill_defaults(target: dict, defaults: dict) -> bool:
         """
@@ -666,7 +755,9 @@ class ProviderManager:
                     changed = True
         return changed
 
-    def _backfill_provider_config(self, provider_id: str, provider_config: dict) -> bool:
+    def _backfill_provider_config(
+        self, provider_id: str, provider_config: dict
+    ) -> bool:
         """
         Compare provider config and model configs against the schema,
         fill in any missing keys (including nested dict keys) with their
@@ -695,8 +786,12 @@ class ProviderManager:
                     else:
                         instance_config[field.key] = field.default
                     changed = True
-                elif isinstance(field.default, dict) and isinstance(instance_config.get(field.key), dict):
-                    if self._deep_fill_defaults(instance_config[field.key], field.default):
+                elif isinstance(field.default, dict) and isinstance(
+                    instance_config.get(field.key), dict
+                ):
+                    if self._deep_fill_defaults(
+                        instance_config[field.key], field.default
+                    ):
                         changed = True
 
         # 2. Backfill model configs
@@ -711,7 +806,12 @@ class ProviderManager:
             for model_entry in type_models.values():
                 if not isinstance(model_entry, dict):
                     continue
-                model_cfg = model_entry.get("config") if provider_config.get("model_config_version") == MODEL_CONFIG_VERSION else model_entry
+                model_cfg = (
+                    model_entry.get("config")
+                    if provider_config.get("model_config_version")
+                    == MODEL_CONFIG_VERSION
+                    else model_entry
+                )
                 if not isinstance(model_cfg, dict):
                     continue
                 for field in type_fields:
@@ -723,8 +823,12 @@ class ProviderManager:
                         else:
                             model_cfg[field.key] = field.default
                         changed = True
-                    elif isinstance(field.default, dict) and isinstance(model_cfg.get(field.key), dict):
-                        if self._deep_fill_defaults(model_cfg[field.key], field.default):
+                    elif isinstance(field.default, dict) and isinstance(
+                        model_cfg.get(field.key), dict
+                    ):
+                        if self._deep_fill_defaults(
+                            model_cfg[field.key], field.default
+                        ):
                             changed = True
 
         return changed
@@ -747,7 +851,7 @@ class ProviderManager:
         Generate provider config file from schema.json.
         Saves to data/config/provider_{provider_id}.json.
         """
-        
+
         schema = self.get_schema(provider_format)
         if not schema:
             logger.error(f"No schema found for provider format: {provider_format}")
@@ -762,7 +866,7 @@ class ProviderManager:
             "provider_config": {},
             "model_config": {
                 # model_type: { internal_id: { model_name, config } }
-            }
+            },
         }
 
         for field in provider_fields:
@@ -798,7 +902,9 @@ class ProviderManager:
                 )
                 logger.info(f"Loaded provider {provider_name} ({provider_id})")
             except Exception as e:
-                logger.error(f"Failed to instantiate provider {provider_name} ({provider_id}): {e}")
+                logger.error(
+                    f"Failed to instantiate provider {provider_name} ({provider_id}): {e}"
+                )
 
         if provider_inst:
             self._providers[provider_id] = provider_inst
@@ -809,12 +915,14 @@ class ProviderManager:
         if config.get("status", "active") != "active":
             return None
         return self._providers.get(provider_id)
-    
+
     def get_all_providers(self) -> dict[str, BaseProvider]:
         """获取所有 providers"""
         return self._providers.copy()
 
-    async def fetch_remote_models(self, provider_id: str, model_type: str = "llm") -> list[dict]:
+    async def fetch_remote_models(
+        self, provider_id: str, model_type: str = "llm"
+    ) -> list[dict]:
         """
         Fetch available models from a provider's remote API.
         Returns a list of model info dicts.
@@ -824,5 +932,7 @@ class ProviderManager:
             models = await provider.get_model_list(model_type)
             return models
         except Exception as e:
-            logger.error(f"Failed to fetch remote models for provider {provider_id}: {e}")
+            logger.error(
+                f"Failed to fetch remote models for provider {provider_id}: {e}"
+            )
             raise

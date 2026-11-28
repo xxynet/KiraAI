@@ -6,7 +6,10 @@
       "default": "https://api.anthropic.com",
       "hint": "Base URL of an Anthropic-compatible API; keep provider-specific path prefixes (for example, DeepSeek uses https://api.deepseek.com/anthropic)",
       "locales": {
-        "zh": { "name": "Base URL", "hint": "兼容 Anthropic 格式 API 的 Base URL；请保留平台要求的路径前缀（例如 DeepSeek 使用 https://api.deepseek.com/anthropic）" }
+        "zh": {
+          "name": "Base URL",
+          "hint": "兼容 Anthropic 格式 API 的 Base URL；请保留平台要求的路径前缀（例如 DeepSeek 使用 https://api.deepseek.com/anthropic）"
+        }
       }
     },
     "api_key": {
@@ -15,7 +18,10 @@
       "default": null,
       "hint": "API key sent in the x-api-key header",
       "locales": {
-        "zh": { "name": "API 密钥", "hint": "通过 x-api-key 请求头发送的 API 密钥" }
+        "zh": {
+          "name": "API 密钥",
+          "hint": "通过 x-api-key 请求头发送的 API 密钥"
+        }
       }
     },
     "anthropic_version": {
@@ -24,7 +30,10 @@
       "default": "2023-06-01",
       "hint": "Value of the anthropic-version request header",
       "locales": {
-        "zh": { "name": "Anthropic API 版本", "hint": "anthropic-version 请求头的值" }
+        "zh": {
+          "name": "Anthropic API 版本",
+          "hint": "anthropic-version 请求头的值"
+        }
       }
     },
     "section_advanced": {
@@ -42,7 +51,10 @@
           "default": {},
           "hint": "Additional request headers; matching keys override defaults",
           "locales": {
-            "zh": { "name": "自定义请求头", "hint": "附加请求头；同名字段会覆盖默认值" }
+            "zh": {
+              "name": "自定义请求头",
+              "hint": "附加请求头；同名字段会覆盖默认值"
+            }
           }
         }
       }
@@ -57,7 +69,10 @@
         "min": 1,
         "hint": "Maximum number of tokens to generate",
         "locales": {
-          "zh": { "name": "最大输出 Token 数", "hint": "单次响应最多生成的 Token 数" }
+          "zh": {
+            "name": "最大输出 Token 数",
+            "hint": "单次响应最多生成的 Token 数"
+          }
         }
       },
       "timeout": {
@@ -96,7 +111,10 @@
             "default": {},
             "hint": "Additional fields merged into the request body",
             "locales": {
-              "zh": { "name": "自定义请求体", "hint": "合并到请求体中的额外字段" }
+              "zh": {
+                "name": "自定义请求体",
+                "hint": "合并到请求体中的额外字段"
+              }
             }
           }
         }

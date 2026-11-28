@@ -31,7 +31,7 @@ class MessageDeliveryService:
         adapter_mgr: AdapterManager,
         persona_mgr: PersonaManager | None,
         message_history: MessageHistoryService | None = None,
-    ):
+    ) -> None:
         self.kira_config = kira_config
         self.adapter_mgr = adapter_mgr
         self.message_history = message_history
@@ -60,7 +60,14 @@ class MessageDeliveryService:
             self.session_locks[sid] = asyncio.Lock()
         return self.session_locks[sid]
 
-    async def send_message_chain(self, session: str, chain: MessageChain, *, memory_message: OpenAIMessage | None = None, bot: User | None = None) -> KiraIMSentResult:
+    async def send_message_chain(
+        self,
+        session: str,
+        chain: MessageChain,
+        *,
+        memory_message: OpenAIMessage | None = None,
+        bot: User | None = None,
+    ) -> KiraIMSentResult:
         """
         Send a MessageChain to target.
 
@@ -95,25 +102,41 @@ class MessageDeliveryService:
                             if isinstance(name, str) and name.strip():
                                 sender_name = name
                         except Exception as exc:
-                            logger.warning("Unable to resolve persona name (%s)", type(exc).__name__)
+                            logger.warning(
+                                "Unable to resolve persona name (%s)",
+                                type(exc).__name__,
+                            )
                 llm_message_id = None
                 if memory_message is not None:
-                    llm_message_id = memory_message.to_memory_dict()["_extra"]["llm_message_id"]
+                    llm_message_id = memory_message.to_memory_dict()["_extra"][
+                        "llm_message_id"
+                    ]
                 record_id = await history.record_outgoing(
-                    session, chain, platform=adapter.info.platform,
+                    session,
+                    chain,
+                    platform=adapter.info.platform,
                     self_id=str(bot_id) if bot_id is not None else None,
-                    llm_message_id=llm_message_id, sender_name=sender_name,
+                    llm_message_id=llm_message_id,
+                    sender_name=sender_name,
                 )
             except Exception as exc:
-                logger.error("Unable to store outgoing message (%s)", type(exc).__name__)
+                logger.error(
+                    "Unable to store outgoing message (%s)", type(exc).__name__
+                )
 
         async def finish(status, platform_id=None, error_type=None):
             if record_id:
                 try:
                     await history.finish_outgoing(
-                        record_id, status=status, platform_message_id=platform_id, error_type=error_type)
+                        record_id,
+                        status=status,
+                        platform_message_id=platform_id,
+                        error_type=error_type,
+                    )
                 except Exception as exc:
-                    logger.error("Unable to update delivery status (%s)", type(exc).__name__)
+                    logger.error(
+                        "Unable to update delivery status (%s)", type(exc).__name__
+                    )
 
         try:
             if chat_type == "dm":
@@ -130,7 +153,9 @@ class MessageDeliveryService:
         return result
 
     @staticmethod
-    async def parse_xml(xml_data, tag_set: TagSet) -> list[MessageChain | RootTagAction]:
+    async def parse_xml(
+        xml_data, tag_set: TagSet
+    ) -> list[MessageChain | RootTagAction]:
         """Parse xml into an ordered list of MessageChain and RootTagAction."""
         from core.tag import RootTagAction
 
@@ -160,7 +185,9 @@ class MessageDeliveryService:
                 root_tag = tag_set.get(name=element.tag)
                 if root_tag and root_tag.parent is None:
                     value = element.text.strip() if element.text else ""
-                    actions.append(RootTagAction(tag=root_tag, value=value, attrs=element.attrib))
+                    actions.append(
+                        RootTagAction(tag=root_tag, value=value, attrs=element.attrib)
+                    )
 
         return actions
 
@@ -177,7 +204,7 @@ class MessageDeliveryService:
                         message_id = ""
                     msg.set("message_id", message_id)
 
-            return ET.tostring(root, encoding='unicode', method='xml')[6:-7]
+            return ET.tostring(root, encoding="unicode", method="xml")[6:-7]
 
         except Exception as e:
             logger.error(f"Error adding message IDs: {e!s}")

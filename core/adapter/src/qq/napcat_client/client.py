@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import inspect
 import json
 import traceback
@@ -25,7 +26,10 @@ def _detect_headers_kwarg() -> str:
     """
     try:
         params = inspect.signature(websockets.connect).parameters
-    except (TypeError, ValueError):  # non-introspectable signature; assume the legacy name
+    except (
+        TypeError,
+        ValueError,
+    ):  # non-introspectable signature; assume the legacy name
         return "extra_headers"
     return "additional_headers" if "additional_headers" in params else "extra_headers"
 
@@ -53,7 +57,9 @@ class NapCatWebSocketClient:
     # MAX_RECONNECT_ATTEMPTS 因为每轮都在第 1 次就成功而永不生效。
     MIN_RECONNECT_INTERVAL = 1.0
 
-    def __init__(self, ws_url: str = "ws://localhost:3001", access_token: str | None = None) -> None:
+    def __init__(
+        self, ws_url: str = "ws://localhost:3001", access_token: str | None = None
+    ) -> None:
         self.ws_url = ws_url
         self.access_token = access_token
         self.self_id = None
@@ -73,10 +79,16 @@ class NapCatWebSocketClient:
             "private": [],
             "notice": [],
             "napcat": [],
-            "meta": []
+            "meta": [],
         }
 
-    async def run(self, bt_uin: str, ws_uri: str, ws_token: str | None = None, ws_listen_ip: str = "0.0.0.0") -> None:
+    async def run(
+        self,
+        bt_uin: str,
+        ws_uri: str,
+        ws_token: str | None = None,
+        ws_listen_ip: str = "0.0.0.0",
+    ) -> None:
         self.self_id = bt_uin
         self.ws_url = ws_uri
         self.access_token = ws_token
@@ -88,10 +100,9 @@ class NapCatWebSocketClient:
 
         @self.napcat_event()
         async def on_napcat_message(msg: dict) -> None:
-            if msg.get("status", "") == "failed":
-                if msg.get("retcode") == 1403:
-                    logger.error("WebSocket 服务器 Token 无效")
-                    await self.close()
+            if msg.get("status", "") == "failed" and msg.get("retcode") == 1403:
+                logger.error("WebSocket 服务器 Token 无效")
+                await self.close()
 
         con_resp = await self.connect()
         if con_resp.get("status") != "ok":
@@ -103,7 +114,7 @@ class NapCatWebSocketClient:
                 f"（最多 {self.MAX_RECONNECT_ATTEMPTS} 次退避重试，"
                 f"期间 run() 不会返回）"
             )
-            if not await self._reconnect():      # 耗尽时内部已上报
+            if not await self._reconnect():  # 耗尽时内部已上报
                 return
 
         self._listening_task = asyncio.create_task(self.listen_messages())
@@ -154,7 +165,13 @@ class NapCatWebSocketClient:
 
         logger.info(f"连接到 {self.ws_url}")
         try:
-            self.websocket = await ws_compatible_connect(self.ws_url, extra_headers=headers, max_size=2**24, open_timeout=5.0, ping_timeout=10.0)
+            self.websocket = await ws_compatible_connect(
+                self.ws_url,
+                extra_headers=headers,
+                max_size=2**24,
+                open_timeout=5.0,
+                ping_timeout=10.0,
+            )
             return {"status": "ok"}
         except Exception as e:
             return {"status": "failed", "message": str(e)}
@@ -165,17 +182,17 @@ class NapCatWebSocketClient:
         # 关闭时直接跳过，避免拖慢收尾。
         if not self.shutdown_event.is_set():
             await asyncio.sleep(self.MIN_RECONNECT_INTERVAL)
-        while not self.shutdown_event.is_set() and attempt < self.MAX_RECONNECT_ATTEMPTS:
+        while (
+            not self.shutdown_event.is_set() and attempt < self.MAX_RECONNECT_ATTEMPTS
+        ):
             attempt += 1
             logger.warning(
                 f"🔄 WebSocket 连接断开，正在尝试第 {attempt}/{self.MAX_RECONNECT_ATTEMPTS} 次重连"
             )
             ws, self.websocket = self.websocket, None
             if ws is not None:
-                try:
+                with contextlib.suppress(Exception):
                     await ws.close()
-                except Exception:
-                    pass
             resp = await self.connect()
             if resp.get("status") == "ok":
                 if self.shutdown_event.is_set():
@@ -184,10 +201,8 @@ class NapCatWebSocketClient:
                     # reads from, and do not fake a successful login.
                     ws, self.websocket = self.websocket, None
                     if ws is not None:
-                        try:
+                        with contextlib.suppress(Exception):
                             await ws.close()
-                        except Exception:
-                            pass
                     return False
                 logger.info("✅ WebSocket 重连成功")
                 self.login_success_event.set()
@@ -197,7 +212,7 @@ class NapCatWebSocketClient:
             # No backoff after the final attempt, otherwise reporting a permanent
             # failure would still wait out one more full backoff period.
             if attempt < self.MAX_RECONNECT_ATTEMPTS:
-                await asyncio.sleep(min(2 ** attempt, self.MAX_RECONNECT_BACKOFF))
+                await asyncio.sleep(min(2**attempt, self.MAX_RECONNECT_BACKOFF))
         if attempt >= self.MAX_RECONNECT_ATTEMPTS and not self.shutdown_event.is_set():
             self._notify_permanent_disconnect()
         return False
@@ -215,30 +230,35 @@ class NapCatWebSocketClient:
         def wrapper(func):
             self.event_callbacks["group"].append(func)
             return func
+
         return wrapper
 
     def private_event(self) -> Callable[..., Any]:
         def wrapper(func):
             self.event_callbacks["private"].append(func)
             return func
+
         return wrapper
 
     def notice_event(self) -> Callable[..., Any]:
         def wrapper(func):
             self.event_callbacks["notice"].append(func)
             return func
+
         return wrapper
 
     def napcat_event(self) -> Callable[..., Any]:
         def wrapper(func):
             self.event_callbacks["napcat"].append(func)
             return func
+
         return wrapper
 
     def meta_event(self) -> Callable[..., Any]:
         def wrapper(func):
             self.event_callbacks["meta"].append(func)
             return func
+
         return wrapper
 
     async def listen_messages(self) -> None:
@@ -311,7 +331,9 @@ class NapCatWebSocketClient:
             try:
                 await callback(data)
             except Exception:
-                logger.error(f"事件回调处理失败，已跳过该事件:\n{traceback.format_exc()}")
+                logger.error(
+                    f"事件回调处理失败，已跳过该事件:\n{traceback.format_exc()}"
+                )
 
         asyncio.create_task(runner())
 
@@ -335,17 +357,16 @@ class NapCatWebSocketClient:
         if "post_type" in data:
             post_type = data.get("post_type")
             if post_type == "message":
-                message_type = data.get('message_type')
+                message_type = data.get("message_type")
                 if message_type == "group":
                     if self.event_callbacks["group"]:
                         # Create task to run event callback non-blockingly
                         # This ensures listen_messages can continue receiving messages
                         for func in self.event_callbacks["group"]:
                             self._dispatch_event(func, data)
-                elif message_type == "private":
-                    if self.event_callbacks["private"]:
-                        for func in self.event_callbacks["private"]:
-                            self._dispatch_event(func, data)
+                elif message_type == "private" and self.event_callbacks["private"]:
+                    for func in self.event_callbacks["private"]:
+                        self._dispatch_event(func, data)
             elif post_type == "notice":
                 if self.event_callbacks["notice"]:
                     for func in self.event_callbacks["notice"]:
@@ -385,10 +406,7 @@ class NapCatWebSocketClient:
 
     async def send_group_segments(self, group_id: str | int, message: list[dict]):
         """Send a pre-built OneBot message segment list to a group."""
-        message_dict = {
-            "group_id": group_id,
-            "message": message
-        }
+        message_dict = {"group_id": group_id, "message": message}
         return await self.send_action("send_group_msg", message_dict)
 
     async def send_direct_message(self, user_id: str, msg: QQMessageChain):
@@ -396,105 +414,99 @@ class NapCatWebSocketClient:
 
     async def send_direct_segments(self, user_id: str | int, message: list[dict]):
         """Send a pre-built OneBot message segment list to a private chat."""
-        message_dict = {
-            "user_id": user_id,
-            "message": message
-        }
+        message_dict = {"user_id": user_id, "message": message}
         return await self.send_action("send_private_msg", message_dict)
 
     async def send_poke(self, user_id: str | int, group_id: str | int | None = None):
         if group_id:
-            message_dict = {
-                "user_id": user_id,
-                "group_id": group_id
-            }
+            message_dict = {"user_id": user_id, "group_id": group_id}
         else:
-            message_dict = {
-                "user_id": user_id
-            }
+            message_dict = {"user_id": user_id}
         resp = await self.send_action("send_poke", message_dict)
         return resp
 
-    async def get_record(self, file_id, output_format: Literal['mp3', 'amr', 'wma', 'm4a', 'spx', 'ogg', 'wav', 'flac'] = "mp3"):
-        message_dict = {
-            "file_id": file_id,
-            "out_format": output_format
-        }
+    async def get_record(
+        self,
+        file_id,
+        output_format: Literal[
+            "mp3", "amr", "wma", "m4a", "spx", "ogg", "wav", "flac"
+        ] = "mp3",
+    ):
+        message_dict = {"file_id": file_id, "out_format": output_format}
         resp = await self.send_action("get_record", message_dict)
         return resp
 
     async def get_user_info(self, user_id: str | int):
-        message_dict = {
-            "user_id": user_id
-        }
+        message_dict = {"user_id": user_id}
         resp = await self.send_action("get_stranger_info", message_dict)
         return resp
 
     async def get_group_info(self, group_id: str | int):
-        message_dict = {
-            "group_id": group_id
-        }
+        message_dict = {"group_id": group_id}
         resp = await self.send_action("get_group_info", message_dict)
         return resp
 
     async def get_msg(self, message_id: str | int):
-        message_dict = {
-            "message_id": message_id
-        }
+        message_dict = {"message_id": message_id}
         resp = await self.send_action("get_msg", message_dict)
         return resp
 
     async def get_forward_msg(self, message_id: str | int):
-        message_dict = {
-            "message_id": message_id
-        }
+        message_dict = {"message_id": message_id}
         resp = await self.send_action("get_forward_msg", message_dict)
         return resp
 
-    async def forward_group_single_message(self, group_id: str | int, message_id: str | int):
+    async def forward_group_single_message(
+        self, group_id: str | int, message_id: str | int
+    ):
         """Forward one existing message to a group."""
-        return await self.send_action("forward_group_single_msg", {
-            "message_id": message_id,
-            "group_id": group_id,
-        })
+        return await self.send_action(
+            "forward_group_single_msg",
+            {
+                "message_id": message_id,
+                "group_id": group_id,
+            },
+        )
 
-    async def forward_direct_single_message(self, user_id: str | int, message_id: str | int):
+    async def forward_direct_single_message(
+        self, user_id: str | int, message_id: str | int
+    ):
         """Forward one existing message to a private chat."""
-        return await self.send_action("forward_friend_single_msg", {
-            "message_id": message_id,
-            "user_id": user_id,
-        })
+        return await self.send_action(
+            "forward_friend_single_msg",
+            {
+                "message_id": message_id,
+                "user_id": user_id,
+            },
+        )
 
     async def get_group_file_url(self, group_id: str | int, file_id: str):
         """Get the downloadable URL for a group file."""
-        return await self.send_action("get_group_file_url", {
-            "group_id": group_id,
-            "file_id": file_id,
-        })
+        return await self.send_action(
+            "get_group_file_url",
+            {
+                "group_id": group_id,
+                "file_id": file_id,
+            },
+        )
 
     async def get_private_file_url(self, file_id: str):
         """Get the downloadable URL for a private file."""
         return await self.send_action("get_private_file_url", {"file_id": file_id})
 
     async def upload_private_file(self, user_id: str, file: str, name: str):
-        message_dict = {
-            "user_id": user_id,
-            "file": file,
-            "name": name
-        }
+        message_dict = {"user_id": user_id, "file": file, "name": name}
         resp = await self.send_action("upload_private_file", message_dict)
         return resp
 
     async def upload_group_file(self, group_id: str, file: str, name: str):
-        message_dict = {
-            "group_id": group_id,
-            "file": file,
-            "name": name
-        }
+        message_dict = {"group_id": group_id, "file": file, "name": name}
         resp = await self.send_action("upload_group_file", message_dict)
         return resp
 
-    async def send_action(self, action: str, params: dict, timeout: float = 10.0) -> dict:
+    async def send_action(
+        self, action: str, params: dict, timeout: float = 10.0
+    ) -> dict:
         """发送API请求并等待响应"""
         # Fail before the wait, not after it: an exhausted reconnect leaves
         # self.websocket as None with neither event set, and the socket check further
@@ -530,11 +542,7 @@ class NapCatWebSocketClient:
         future = asyncio.Future()
         self.response_futures[echo] = future
 
-        message = {
-            "action": action.replace("/", ""),
-            "params": params,
-            "echo": echo
-        }
+        message = {"action": action.replace("/", ""), "params": params, "echo": echo}
 
         try:
             if self.websocket is None:
@@ -545,11 +553,11 @@ class NapCatWebSocketClient:
             # 等待响应（不调用recv，由监听任务处理）
             response = await asyncio.wait_for(future, timeout=timeout)
             return response
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError as err:
             # Discard the pending Future entry; do not await it (awaiting a Future
             # here would raise CancelledError and mask the intended TimeoutError).
             self.response_futures.pop(echo, None)
-            raise TimeoutError(f"请求 {action} 超时")
+            raise TimeoutError(f"请求 {action} 超时") from err
         except BaseException:
             # Same as above: just drop the entry without awaiting it.
             # 用 BaseException 而非 Exception：调用方被取消时抛的是

@@ -18,9 +18,13 @@ class ReceiveStage(BaseStage[IMEventContext]):
         services, event, sid = ctx.services, ctx.event, ctx.sid
         # decorating event info
         if services.message_history is not None and event.message.chain:
-            await services.message_history.record_incoming_safely(event.message, sid, event.adapter.platform)
+            await services.message_history.record_incoming_safely(
+                event.message, sid, event.adapter.platform
+            )
 
-        metadata = await services.session_manager.get_session(sid, ensure_session=True, include_content=False)
+        metadata = await services.session_manager.get_session(
+            sid, ensure_session=True, include_content=False
+        )
         event.session.internal_id = metadata.internal_id
         event.session.session_description = metadata.session_description
 
@@ -56,7 +60,7 @@ class RouteStage(BaseStage[IMEventContext]):
                 timestamp=int(time.time()),
                 adapter=event.adapter,
                 session=event.session,
-                messages=[event.message]
+                messages=[event.message],
             )
             await services.event_bus.publish(batch_msg)
             return False
@@ -67,15 +71,21 @@ class RouteStage(BaseStage[IMEventContext]):
                 buffer.add(event)
 
             # EventType.ON_MESSAGE_BUFFERED
-            im_handlers = event_handler_reg.get_handlers(event_type=EventType.ON_MESSAGE_BUFFERED)
+            im_handlers = event_handler_reg.get_handlers(
+                event_type=EventType.ON_MESSAGE_BUFFERED
+            )
             for handler in im_handlers:
                 await handler.exec_handler(event.session.sid)
             return False
 
         if event.process_strategy == "flush":
             flushed = await publish_buffered_messages(
-                services.message_buffer, services.event_bus, sid, extra_event=event,
-                filter_fn=event.flush_filter_fn)
+                services.message_buffer,
+                services.event_bus,
+                sid,
+                extra_event=event,
+                filter_fn=event.flush_filter_fn,
+            )
             if not flushed:
                 logger.warning(f"No pending messages to flush for session {sid}")
             return False

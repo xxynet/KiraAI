@@ -51,7 +51,9 @@ async def download_file(
         return resp
 
 
-async def get_file_content(url: str, proxy: str | None = None, timeout: float = 60.0) -> bytes:
+async def get_file_content(
+    url: str, proxy: str | None = None, timeout: float = 60.0
+) -> bytes:
     client_kwargs: dict = {"follow_redirects": True, "timeout": timeout}
     if proxy:
         client_kwargs["proxy"] = proxy
@@ -107,6 +109,7 @@ async def test_url_speed(
 
     return result
 
+
 if __name__ == "__main__":
     import asyncio
 
@@ -115,7 +118,7 @@ if __name__ == "__main__":
         "https://gh-proxy.org/",
         "https://hk.gh-proxy.org/",
         "https://cdn.gh-proxy.org/",
-        "https://edgeone.gh-proxy.org/"
+        "https://edgeone.gh-proxy.org/",
     ]
 
     test_url = "https://github.com/KiraAI-Dev/KiraAI/archive/refs/tags/v2.9.1.zip"

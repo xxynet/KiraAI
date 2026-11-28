@@ -16,12 +16,14 @@ ContextT = TypeVar("ContextT")
 
 
 class BaseWorkflow(ABC, Generic[ContextT]):
-    def __init__(self, ctx: ContextT):
+    def __init__(self, ctx: ContextT) -> None:
         self.ctx = ctx
 
 
 class IMWorkflow(BaseWorkflow["IMWorkflowContext"]):
-    def __init__(self, ctx: IMWorkflowContext, max_concurrent_messages: int = 3):
+    def __init__(
+        self, ctx: IMWorkflowContext, max_concurrent_messages: int = 3
+    ) -> None:
         super().__init__(ctx)
         self.message_processing_semaphore = Semaphore(max_concurrent_messages)
 

@@ -14,7 +14,10 @@ from .statistics import Statistics
 
 class KiraLauncher:
     """KiraAI Launcher"""
-    def __init__(self, ignore_webui_version_check: bool = False, disable_webui_auth: bool = False):
+
+    def __init__(
+        self, ignore_webui_version_check: bool = False, disable_webui_auth: bool = False
+    ) -> None:
         self.lifecycle: KiraLifecycle | None = None
         self.stats: Statistics | None = None
         self.webui = None
@@ -22,7 +25,7 @@ class KiraLauncher:
         self.disable_webui_auth = disable_webui_auth
         self.logger = get_logger("launcher", "blue")
 
-    async def start(self):
+    async def start(self) -> None:
         # Silence harmless "ConnectionResetError [WinError 10054]" noise from the
         # Windows ProactorEventLoop when clients drop the TCP connection before
         # the server finishes draining the socket. The transport is already
@@ -38,7 +41,7 @@ class KiraLauncher:
             and isinstance(loop, proactor_cls)
         )
 
-        def _suppress_proactor_reset(lp, context):
+        def _suppress_proactor_reset(lp, context) -> None:
             exc = context.get("exception")
             if is_proactor and isinstance(exc, ConnectionResetError):
                 self.logger.debug("Suppressed Proactor ConnectionResetError: %s", exc)
@@ -56,11 +59,16 @@ class KiraLauncher:
 
         # ====== ensure frontend dist ======
         from core.utils.dist_checker import ensure_dist
+
         await ensure_dist(ignore_webui_version_check=self.ignore_webui_version_check)
 
-        self.webui = KiraWebUI(lifecycle=self.lifecycle, disable_auth=self.disable_webui_auth)
+        self.webui = KiraWebUI(
+            lifecycle=self.lifecycle, disable_auth=self.disable_webui_auth
+        )
         if self.webui.access_token is None:
-            self.logger.warning("WebUI access token unavailable. Reset it in data/webui.json and restart KiraAI.")
+            self.logger.warning(
+                "WebUI access token unavailable. Reset it in data/webui.json and restart KiraAI."
+            )
 
         try:
             webui_config = _load_webui_config()
@@ -72,14 +80,16 @@ class KiraLauncher:
             port = webui_config.get("port", 5267)
 
             if self.disable_webui_auth and host not in ("localhost", "127.0.0.1"):
-                self.logger.warning("Auth disabled — forcing host to 127.0.0.1 for security")
+                self.logger.warning(
+                    "Auth disabled — forcing host to 127.0.0.1 for security"
+                )
                 host = "127.0.0.1"
 
             tasks = asyncio.gather(
                 self.lifecycle.init_and_run_system(
                     on_initialized=lambda: self._log_webui_info(host, port),
                 ),
-                self.webui.run(host, port)
+                self.webui.run(host, port),
             )
             await tasks
         except (asyncio.CancelledError, KeyboardInterrupt):
@@ -91,7 +101,9 @@ class KiraLauncher:
         self.logger.info(f"WebUI server started at http://{host}:{port}")
         if host not in ("localhost", "127.0.0.1"):
             try:
-                addresses = sorted(self._get_ip_addresses(), key=lambda item: item[0] != "Local")
+                addresses = sorted(
+                    self._get_ip_addresses(), key=lambda item: item[0] != "Local"
+                )
                 self.logger.info("KiraAI WebUI started at:")
                 for interface, address in addresses:
                     self.logger.info(f"{interface}: http://{address}:{port}")

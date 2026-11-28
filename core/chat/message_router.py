@@ -18,8 +18,12 @@ class MessageRoute(Protocol):
     async def receive_message(self, session: Session, message: object) -> None: ...
 
     async def send_message_chain(
-        self, session: Session, chain: MessageChain, *,
-        memory_message: OpenAIMessage | None = None, bot: User | None = None,
+        self,
+        session: Session,
+        chain: MessageChain,
+        *,
+        memory_message: OpenAIMessage | None = None,
+        bot: User | None = None,
     ) -> KiraIMSentResult: ...
 
 
@@ -55,7 +59,9 @@ class MessageRouter:
         for _, route in self._routes:
             if route.matches(session):
                 return route
-        raise ValueError(f"No message route matches session {session.internal_id or session.sid!r}")
+        raise ValueError(
+            f"No message route matches session {session.internal_id or session.sid!r}"
+        )
 
     async def handle_event(self, event: Any) -> None:
         """Load an incoming event's session context before selecting its receiver."""
@@ -81,8 +87,12 @@ class MessageRouter:
         )
 
     async def send_message_chain(
-        self, session: Session, chain: MessageChain, *,
-        memory_message: OpenAIMessage | None = None, bot: User | None = None,
+        self,
+        session: Session,
+        chain: MessageChain,
+        *,
+        memory_message: OpenAIMessage | None = None,
+        bot: User | None = None,
     ) -> KiraIMSentResult:
         """Return the target handler's delivery receipt without joining its work."""
         return await self._resolve(session).send_message_chain(

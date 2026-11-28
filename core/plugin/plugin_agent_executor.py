@@ -29,10 +29,12 @@ class PluginAgentExecutor(BaseAgentExecutor[BaseAgentExecutionContext]):
         tool_executor: ToolExecutor | None = None,
         config: AgentExecutionConfig | None = None,
         on_result: Callable[[AgentStepResult], Awaitable[None]] | None = None,
-    ):
+    ) -> None:
         if tools is not None:
             if request is not None:
-                raise ValueError("Pass either tools or request; use request.tool_set with a custom request")
+                raise ValueError(
+                    "Pass either tools or request; use request.tool_set with a custom request"
+                )
             tool_instances = tools.tools if isinstance(tools, ToolSet) else tools
             request = LLMRequest(tool_set=ToolSet(list(tool_instances)))
         super().__init__(

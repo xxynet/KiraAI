@@ -21,12 +21,18 @@ class MessageMediaService:
                 for chain in element.chains:
                     yield from MessageMediaService.iter_images(chain)
 
-    async def build_native_content(self, message: KiraIMMessage, session_id: str) -> list[dict]:
+    async def build_native_content(
+        self, message: KiraIMMessage, session_id: str
+    ) -> list[dict]:
         """Persist incoming images and create the provider-independent content parts."""
         content: list[dict] = [{"type": "text", "text": message.message_str or ""}]
         for image in self.iter_images(message.chain):
             try:
-                content.append(await store_session_media(image, session_id, message.message_id))
+                content.append(
+                    await store_session_media(image, session_id, message.message_id)
+                )
             except Exception as exc:
-                logger.warning(f"Failed to persist image for native multimodal input: {exc}")
+                logger.warning(
+                    f"Failed to persist image for native multimodal input: {exc}"
+                )
         return content

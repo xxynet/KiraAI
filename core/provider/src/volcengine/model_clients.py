@@ -23,7 +23,7 @@ class VolcengineLLMClient(OpenAICompatibleLLMClient):
 
 
 class VolcengineImageClient(ImageModelClient):
-    def __init__(self, model: ModelInfo):
+    def __init__(self, model: ModelInfo) -> None:
         super().__init__(model)
 
     async def text_to_image(self, prompt) -> Image:
@@ -43,7 +43,9 @@ class VolcengineImageClient(ImageModelClient):
             )
 
         if not isinstance(getattr(images_response, "data", None), list):
-            raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(images_response).__name__}): {images_response!r}")
+            raise ProviderAPIError(
+                f"Invalid OpenAI-compatible API response ({type(images_response).__name__}): {images_response!r}"
+            )
         return Image(image=images_response.data[0].url)
 
     async def image_to_image(self, prompt: str, image: Image | list[Image]) -> Image:
@@ -52,7 +54,9 @@ class VolcengineImageClient(ImageModelClient):
         ref_imgs = [await img.to_data_url() for img in image]
 
         async with AsyncOpenAI(
-            base_url=self.model.provider_config.get("base_url", "https://ark.cn-beijing.volces.com/api/v3"),
+            base_url=self.model.provider_config.get(
+                "base_url", "https://ark.cn-beijing.volces.com/api/v3"
+            ),
             api_key=self.model.provider_config.get("api_key", ""),
         ) as client:
             image_size = self.model.model_config.get("size", None)
@@ -61,13 +65,12 @@ class VolcengineImageClient(ImageModelClient):
                 prompt=prompt,
                 size=image_size if image_size else None,
                 response_format="url",
-                extra_body={
-                    "image": ref_imgs,
-                    "watermark": False
-                }
+                extra_body={"image": ref_imgs, "watermark": False},
             )
         if not isinstance(getattr(images_response, "data", None), list):
-            raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(images_response).__name__}): {images_response!r}")
+            raise ProviderAPIError(
+                f"Invalid OpenAI-compatible API response ({type(images_response).__name__}): {images_response!r}"
+            )
         return Image(image=images_response.data[0].url)
 
 
@@ -75,10 +78,14 @@ class VolcengineVideoClient(VideoModelClient):
     def __init__(self, model: ModelInfo):
         super().__init__(model)
 
-    async def generate_video(self, prompt: str, ref: list[Image] | None = None, duration: int = 5, **kwargs) -> Video:
+    async def generate_video(
+        self, prompt: str, ref: list[Image] | None = None, duration: int = 5, **kwargs
+    ) -> Video:
         # Use a context-managed client so the connection is always closed.
         async with httpx.AsyncClient(timeout=30) as client:
-            task_id = await self._create_task(client=client, text=prompt, ref=ref, duration=duration)
+            task_id = await self._create_task(
+                client=client, text=prompt, ref=ref, duration=duration
+            )
 
             start_ts = time.time()
 
@@ -92,15 +99,23 @@ class VolcengineVideoClient(VideoModelClient):
                 if status == "succeeded":
                     url = data.get("content", {}).get("video_url")
                     if not url:
-                        logger.error(f"Video generation succeeded but returned no video_url: {data}")
-                        raise RuntimeError("Volcengine video generation succeeded but returned no video_url")
+                        logger.error(
+                            f"Video generation succeeded but returned no video_url: {data}"
+                        )
+                        raise RuntimeError(
+                            "Volcengine video generation succeeded but returned no video_url"
+                        )
                     logger.info(f"火山方舟视频生成耗时：{time.time() - start_ts}")
                     return Video(file=url)
 
                 # Break out early on terminal failure statuses instead of busy-spinning.
                 if status in ("failed", "canceled", "expired"):
-                    logger.error(f"Video generation failed with status '{status}': {data}")
-                    raise RuntimeError(f"Volcengine video generation failed with status: {status}")
+                    logger.error(
+                        f"Video generation failed with status '{status}': {data}"
+                    )
+                    raise RuntimeError(
+                        f"Volcengine video generation failed with status: {status}"
+                    )
 
                 # Avoid busy-spinning: wait before polling the task status again.
                 await asyncio.sleep(2)
@@ -108,7 +123,13 @@ class VolcengineVideoClient(VideoModelClient):
             logger.error(f"Timeout while generating video: {data}")
             raise TimeoutError("Volcengine video generation timed out")
 
-    async def _create_task(self, client: httpx.AsyncClient, text: str, ref: list[Image] | None = None, duration: int = 5) -> str:
+    async def _create_task(
+        self,
+        client: httpx.AsyncClient,
+        text: str,
+        ref: list[Image] | None = None,
+        duration: int = 5,
+    ) -> str:
         url = "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks"
         headers = {
             "Content-Type": "application/json",
@@ -116,15 +137,10 @@ class VolcengineVideoClient(VideoModelClient):
         }
         json_data = {
             "model": self.model.model_name,
-            "content": [
-                {
-                    "type": "text",
-                    "text": text
-                }
-            ],
+            "content": [{"type": "text", "text": text}],
             "ratio": "16:9",
             "duration": duration,
-            "watermark": False
+            "watermark": False,
         }
 
         resp = await client.post(url, headers=headers, json=json_data)
@@ -159,13 +175,20 @@ class VolcengineEmbeddingClient(EmbeddingModelClient):
             return []
 
         model_cfg = self.model.model_config or {}
-        embedding_cfg = model_cfg.get("embedding", {}) if isinstance(model_cfg, dict) else {}
+        embedding_cfg = (
+            model_cfg.get("embedding", {}) if isinstance(model_cfg, dict) else {}
+        )
 
-        timeout_raw = embedding_cfg.get("timeout", model_cfg.get("timeout", 60) if isinstance(model_cfg, dict) else 60)
+        timeout_raw = embedding_cfg.get(
+            "timeout",
+            model_cfg.get("timeout", 60) if isinstance(model_cfg, dict) else 60,
+        )
         try:
             validated_timeout = float(timeout_raw)
             if validated_timeout < 0:
-                logger.warning(f"Invalid negative embedding timeout '{timeout_raw}', fallback to 60")
+                logger.warning(
+                    f"Invalid negative embedding timeout '{timeout_raw}', fallback to 60"
+                )
                 validated_timeout = 60.0
         except (TypeError, ValueError):
             logger.warning(f"Invalid embedding timeout '{timeout_raw}', fallback to 60")
@@ -173,29 +196,36 @@ class VolcengineEmbeddingClient(EmbeddingModelClient):
 
         slow_threshold_raw = embedding_cfg.get(
             "slow_request_threshold",
-            model_cfg.get("slow_request_threshold", 5.0) if isinstance(model_cfg, dict) else 5.0
+            model_cfg.get("slow_request_threshold", 5.0)
+            if isinstance(model_cfg, dict)
+            else 5.0,
         )
         try:
-            slow_threshold = None if slow_threshold_raw is None else float(slow_threshold_raw)
+            slow_threshold = (
+                None if slow_threshold_raw is None else float(slow_threshold_raw)
+            )
         except (TypeError, ValueError):
             slow_threshold = None
 
         async with AsyncOpenAI(
             api_key=self.model.provider_config.get("api_key", ""),
             base_url=self.model.provider_config.get("base_url", ""),
-            timeout=validated_timeout
+            timeout=validated_timeout,
         ) as client:
             try:
                 start_time = time.perf_counter()
                 response = await client.embeddings.create(
-                    model=self.model.model_name,
-                    input=texts
+                    model=self.model.model_name, input=texts
                 )
                 elapsed = round(time.perf_counter() - start_time, 2)
                 if slow_threshold is not None and elapsed > slow_threshold:
-                    logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_name})")
+                    logger.warning(
+                        f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_name})"
+                    )
                 if not isinstance(getattr(response, "data", None), list):
-                    raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
+                    raise ProviderAPIError(
+                        f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}"
+                    )
                 return [item.embedding for item in response.data]
             except (APIStatusError, APITimeoutError, APIConnectionError) as e:
                 logger.error(f"Embedding API error: {e}")

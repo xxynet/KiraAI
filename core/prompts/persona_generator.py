@@ -63,4 +63,8 @@ def get_persona_generator_prompt(lang: str | None) -> str:
 def get_initial_persona_question(lang: str | None) -> str:
     """Return the localized first question for the persona interview."""
     base_lang = (lang or "en").split("_")[0].split("-")[0].lower()
-    return zh_initial_persona_question if base_lang == "zh" else en_initial_persona_question
+    return (
+        zh_initial_persona_question
+        if base_lang == "zh"
+        else en_initial_persona_question
+    )

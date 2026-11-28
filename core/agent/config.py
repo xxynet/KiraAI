@@ -11,7 +11,7 @@ class ToolExecutionConfig:
     tool_call_timeout: float | None = 60
     max_tool_output_tokens: int = 10000
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         for name in ("max_tool_calls_per_step", "max_tool_output_tokens"):
             value = getattr(self, name)
             if not isinstance(value, int) or isinstance(value, bool) or value < 0:
@@ -23,7 +23,9 @@ class ToolExecutionConfig:
             or not isfinite(timeout)
             or timeout <= 0
         ):
-            raise ValueError("tool_call_timeout must be a finite positive number or None")
+            raise ValueError(
+                "tool_call_timeout must be a finite positive number or None"
+            )
 
 
 @dataclass(frozen=True)
@@ -37,12 +39,20 @@ class AgentExecutionConfig:
     final_step_hint: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
-    def __post_init__(self):
-        if not isinstance(self.max_steps, int) or isinstance(self.max_steps, bool) or self.max_steps < -1:
-            raise ValueError("max_steps must be a non-negative integer or -1 for unlimited steps")
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.max_steps, int)
+            or isinstance(self.max_steps, bool)
+            or self.max_steps < -1
+        ):
+            raise ValueError(
+                "max_steps must be a non-negative integer or -1 for unlimited steps"
+            )
         if not isinstance(self.tool_config, ToolExecutionConfig):
             raise TypeError("tool_config must be a ToolExecutionConfig")
-        if self.final_step_hint is not None and not isinstance(self.final_step_hint, str):
+        if self.final_step_hint is not None and not isinstance(
+            self.final_step_hint, str
+        ):
             raise TypeError("final_step_hint must be a string or None")
 
 
@@ -50,7 +60,9 @@ class AgentExecutionConfig:
 class SubAgentConfig:
     """Independent execution settings and capability selection for a child session."""
 
-    execution: AgentExecutionConfig = field(default_factory=lambda: AgentExecutionConfig(max_steps=-1))
+    execution: AgentExecutionConfig = field(
+        default_factory=lambda: AgentExecutionConfig(max_steps=-1)
+    )
     tool_mode: Literal["inherit", "exclude", "custom"] = "inherit"
     tool_names: tuple[str, ...] = ()
     excluded_tools: tuple[str, ...] = ()
@@ -59,7 +71,7 @@ class SubAgentConfig:
     persona_id: str | None = None
     skill_names: tuple[str, ...] = ()
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.tool_mode not in {"inherit", "exclude", "custom"}:
             raise ValueError("Unknown subagent tool mode")
         if not isinstance(self.execution, AgentExecutionConfig):
@@ -68,10 +80,14 @@ class SubAgentConfig:
             raise TypeError("instruction must be a string")
         if self.instruction_source not in {"custom", "persona", "mixed"}:
             raise ValueError("Unknown subagent instruction source")
-        if self.persona_id is not None and (not isinstance(self.persona_id, str) or not self.persona_id.strip()):
+        if self.persona_id is not None and (
+            not isinstance(self.persona_id, str) or not self.persona_id.strip()
+        ):
             raise ValueError("Persona ID must be a non-empty string or None")
         for names in (self.tool_names, self.excluded_tools):
-            if not isinstance(names, (tuple, list)) or any(not isinstance(name, str) or not name for name in names):
+            if not isinstance(names, (tuple, list)) or any(
+                not isinstance(name, str) or not name for name in names
+            ):
                 raise ValueError("Tool names must be non-empty strings")
         object.__setattr__(self, "tool_names", tuple(self.tool_names))
         object.__setattr__(self, "excluded_tools", tuple(self.excluded_tools))

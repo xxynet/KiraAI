@@ -7,6 +7,7 @@ gracefully within STOP_GRACE_SECONDS before it is killed.
 """
 
 import argparse
+import contextlib
 import json
 import math
 import os
@@ -41,7 +42,7 @@ except ValueError:
 _CHILD_NEW_GROUP = os.environ.get("KIRA_CHILD_NEW_GROUP") == "1"
 
 
-def _recover_bak_files(root_path: Path):
+def _recover_bak_files(root_path: Path) -> None:
     """Recover from any incomplete update left by a previous crash."""
     from core.utils.update_transaction import recover_interrupted_update
 
@@ -63,7 +64,7 @@ def _get_port(data_path: Path) -> int:
     config_path = data_path / "webui.json"
     if config_path.exists():
         try:
-            with open(config_path, "r", encoding="utf-8") as f:
+            with open(config_path, encoding="utf-8") as f:
                 config = json.load(f)
                 if isinstance(config, dict):
                     return config.get("port", DEFAULT_PORT)
@@ -122,10 +123,8 @@ def _install_stop_handlers(state: _StopState) -> None:
         sig = getattr(signal, name, None)
         if sig is None:
             continue
-        try:
+        with contextlib.suppress(ValueError, OSError):
             signal.signal(sig, state.on_signal)
-        except (ValueError, OSError):
-            pass
 
 
 def _wait_for_child_exit(child, seconds, should_stop) -> bool:
@@ -146,7 +145,11 @@ def _wait_for_child_exit(child, seconds, should_stop) -> bool:
         remaining = None if deadline is None else deadline - time.monotonic()
         if remaining is not None and remaining <= 0:
             return False
-        timeout = WAIT_SLICE_SECONDS if remaining is None else min(WAIT_SLICE_SECONDS, remaining)
+        timeout = (
+            WAIT_SLICE_SECONDS
+            if remaining is None
+            else min(WAIT_SLICE_SECONDS, remaining)
+        )
         try:
             child.wait(timeout=timeout)
             return True
@@ -178,7 +181,9 @@ def _forward_stop(child) -> str:
 
 def _stop_child(child, state: _StopState) -> None:
     """Stop the child: forward the request, allow the grace period, then kill."""
-    print(f"[supervisor] Stop requested (signal {state.signal}): {_forward_stop(child)}")
+    print(
+        f"[supervisor] Stop requested (signal {state.signal}): {_forward_stop(child)}"
+    )
 
     if _wait_for_child_exit(child, STOP_GRACE_SECONDS, lambda: state.force):
         print(f"[supervisor] Child exited gracefully (code={child.poll()}).")
@@ -187,7 +192,9 @@ def _stop_child(child, state: _StopState) -> None:
     if state.force:
         print("[supervisor] Second stop signal received, killing the child.")
     else:
-        print(f"[supervisor] Child still running after {STOP_GRACE_SECONDS:.0f}s, killing it.")
+        print(
+            f"[supervisor] Child still running after {STOP_GRACE_SECONDS:.0f}s, killing it."
+        )
     try:
         child.kill()  # SIGKILL on POSIX, TerminateProcess on Windows
     except OSError as exc:

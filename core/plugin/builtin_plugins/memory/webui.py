@@ -15,9 +15,22 @@ from .scope import MemoryInputError, MemoryScope
 # Display columns kept from the raw row. The normalized text is an internal
 # search artefact and never leaves the server.
 PUBLIC_FIELDS = (
-    "id", "revision", "text", "kind", "owner_type", "owner_id", "persona_id",
-    "session_id", "source_message_id", "importance", "core", "status",
-    "expires_at", "created_at", "updated_at", "origin",
+    "id",
+    "revision",
+    "text",
+    "kind",
+    "owner_type",
+    "owner_id",
+    "persona_id",
+    "session_id",
+    "source_message_id",
+    "importance",
+    "core",
+    "status",
+    "expires_at",
+    "created_at",
+    "updated_at",
+    "origin",
 )
 
 FILTERS = ("kind", "status", "owner_type", "origin")
@@ -42,7 +55,7 @@ def _owner_labels(owner_type: str, owner_id: str) -> dict:
     return {"owner_id": owner_id, "subject": subject}
 
 
-def _loads(value: str):
+def _loads(value: str) -> Any:
     import json
 
     return json.loads(value)
@@ -119,7 +132,8 @@ def overview_payload(overview: dict, max_core: int, max_recall: int) -> dict:
 
 def parse_recall(payload: dict) -> tuple[MemoryScope, list[str]]:
     """Validate an operator-supplied conversation context without enabling writes."""
-    def identifier(value):
+
+    def identifier(value) -> str:
         if not isinstance(value, str) or not value.strip() or len(value) > 512:
             raise MemoryInputError("invalid_recall")
         return value.strip()
@@ -128,7 +142,12 @@ def parse_recall(payload: dict) -> tuple[MemoryScope, list[str]]:
     adapter = identifier(payload.get("adapter"))
     session_id = identifier(payload.get("session_id"))
     parts = session_id.split(":", 2)
-    if len(parts) != 3 or parts[0] != adapter or parts[1] not in {"dm", "gm"} or not parts[2]:
+    if (
+        len(parts) != 3
+        or parts[0] != adapter
+        or parts[1] not in {"dm", "gm"}
+        or not parts[2]
+    ):
         raise MemoryInputError("invalid_recall")
     users = payload.get("user_ids", [])
     messages = payload.get("messages", [])
@@ -139,13 +158,19 @@ def parse_recall(payload: dict) -> tuple[MemoryScope, list[str]]:
         if users and users != (parts[2],):
             raise MemoryInputError("invalid_recall")
         users = (parts[2],)
-    if not isinstance(messages, list) or len(messages) > 3 or any(
-        not isinstance(message, str) for message in messages
+    if (
+        not isinstance(messages, list)
+        or len(messages) > 3
+        or any(not isinstance(message, str) for message in messages)
     ):
         raise MemoryInputError("invalid_recall")
     return MemoryScope(
-        persona_id, session_id, adapter, users,
-        parts[2] if parts[1] == "gm" else None, (),
+        persona_id,
+        session_id,
+        adapter,
+        users,
+        parts[2] if parts[1] == "gm" else None,
+        (),
     ), messages
 
 
@@ -163,13 +188,20 @@ def parse_recall_preview(payload: dict) -> tuple[dict, list[str]]:
     session_id = filters["session_id"]
     if session_id:
         parts = session_id.split(":", 2)
-        if len(parts) != 3 or not parts[0] or parts[1] not in {"dm", "gm"} or not parts[2]:
+        if (
+            len(parts) != 3
+            or not parts[0]
+            or parts[1] not in {"dm", "gm"}
+            or not parts[2]
+        ):
             raise MemoryInputError("invalid_recall")
     if "user_ids" in payload:
         raise MemoryInputError("invalid_recall")
     messages = payload.get("messages", [])
-    if not isinstance(messages, list) or len(messages) > 3 or any(
-        not isinstance(message, str) for message in messages
+    if (
+        not isinstance(messages, list)
+        or len(messages) > 3
+        or any(not isinstance(message, str) for message in messages)
     ):
         raise MemoryInputError("invalid_recall")
     return filters, messages
@@ -187,9 +219,13 @@ def parse_update(payload: dict) -> dict:
         raise MemoryInputError("invalid_text")
     changes = dict(payload)
     for key in ("kind", "status"):
-        if key in payload and (not isinstance(payload[key], str) or payload[key] not in _allowed(key)):
+        if key in payload and (
+            not isinstance(payload[key], str) or payload[key] not in _allowed(key)
+        ):
             raise MemoryInputError("invalid_category")
-    if "importance" in payload and (type(payload["importance"]) is not int or not 1 <= payload["importance"] <= 5):
+    if "importance" in payload and (
+        type(payload["importance"]) is not int or not 1 <= payload["importance"] <= 5
+    ):
         raise MemoryInputError("invalid_priority")
     if "core" in payload and type(payload["core"]) is not bool:
         raise MemoryInputError("invalid_priority")

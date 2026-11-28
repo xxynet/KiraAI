@@ -31,11 +31,11 @@ QQ_OFFICIAL_BIND_HOST = "q.qq.com"
 class _QQOfficialWebSocket(BotWebSocket if botpy else object):
     """Keep SDK heartbeat tasks within the owning client's lifecycle."""
 
-    def __init__(self, session, connection, client):
+    def __init__(self, session, connection, client) -> None:
         super().__init__(session, connection)
         self._client = client
 
-    async def _send_heart(self, interval):
+    async def _send_heart(self, interval) -> None:
         self._client._track_task(asyncio.current_task())
         if self._client._closing:
             return
@@ -45,7 +45,7 @@ class _QQOfficialWebSocket(BotWebSocket if botpy else object):
 class _QQOfficialClient(botpy.Client if botpy else object):
     """Bridge QQ OpenAPI events to the adapter instance."""
 
-    def __init__(self, adapter: "QQOfficialAdapter"):
+    def __init__(self, adapter: "QQOfficialAdapter") -> None:
         self.adapter = adapter
         self._closing = False
         self._tasks: set[asyncio.Task] = set()
@@ -57,14 +57,19 @@ class _QQOfficialClient(botpy.Client if botpy else object):
             timeout=15,
         )
 
-    async def _bot_login(self, token):
+    async def _bot_login(self, token) -> None:
         await super()._bot_login(token)
         self._install_message_parsers()
 
-    def _install_message_parsers(self):
+    def _install_message_parsers(self) -> None:
         """Preserve OpenAPI fields without modifying the SDK's global parser class."""
-        for event in ("group_message_create", "group_at_message_create", "c2c_message_create"):
-            def parse(payload, event_name=event):
+        for event in (
+            "group_message_create",
+            "group_at_message_create",
+            "c2c_message_create",
+        ):
+
+            def parse(payload, event_name=event) -> None:
                 body = payload.get("d") if isinstance(payload, dict) else None
                 if isinstance(body, dict):
                     self.ws_dispatch(event_name, body)
@@ -76,7 +81,7 @@ class _QQOfficialClient(botpy.Client if botpy else object):
         task.add_done_callback(self._tasks.discard)
         return task
 
-    async def bot_connect(self, session):
+    async def bot_connect(self, session) -> None:
         """Own the SDK's independent gateway runner until the entire task exits."""
         self._track_task(asyncio.current_task())
         if self._closing:
@@ -88,39 +93,43 @@ class _QQOfficialClient(botpy.Client if botpy else object):
             if not self._closing:
                 await gateway.on_error(exc)
 
-    def _schedule_event(self, coro, event_name, *args, **kwargs):
-        return self._track_task(super()._schedule_event(coro, event_name, *args, **kwargs))
+    def _schedule_event(self, coro, event_name, *args, **kwargs) -> asyncio.Task[Any]:
+        return self._track_task(
+            super()._schedule_event(coro, event_name, *args, **kwargs)
+        )
 
-    def ws_dispatch(self, event, *args, **kwargs):
+    def ws_dispatch(self, event, *args, **kwargs) -> None:
         if not self._closing:
             super().ws_dispatch(event, *args, **kwargs)
 
-    async def close(self):
+    async def close(self) -> None:
         """Stop gateway, heartbeat and callback tasks as well as the SDK HTTP client."""
         self._closing = True
         try:
             await super().close()
         finally:
             current = asyncio.current_task()
-            pending = [task for task in self._tasks if task is not current and not task.done()]
+            pending = [
+                task for task in self._tasks if task is not current and not task.done()
+            ]
             for task in pending:
                 task.cancel()
             if pending:
                 await asyncio.gather(*pending, return_exceptions=True)
 
-    async def on_group_at_message_create(self, message):
+    async def on_group_at_message_create(self, message) -> None:
         if not self._closing and self.adapter.client is self:
             await self.adapter.im._handle_group_message(message)
 
-    async def on_group_message_create(self, message):
+    async def on_group_message_create(self, message) -> None:
         if not self._closing and self.adapter.client is self:
             await self.adapter.im._handle_group_message(message, force_mention=False)
 
-    async def on_c2c_message_create(self, message):
+    async def on_c2c_message_create(self, message) -> None:
         if not self._closing and self.adapter.client is self:
             await self.adapter.im._handle_direct_message(message)
 
-    async def on_ready(self):
+    async def on_ready(self) -> None:
         if self._closing or self.adapter.client is not self:
             return
         robot_name = getattr(getattr(self, "robot", None), "name", "QQ official bot")
@@ -143,7 +152,7 @@ class QQOfficialAdapter(BaseAdapter):
             decrypt_secret=cls._decrypt_bound_secret,
         )
 
-    def __init__(self, ctx: AdapterContext):
+    def __init__(self, ctx: AdapterContext) -> None:
         super().__init__(ctx)
         self.app_id = str(self.config.get("app_id", "")).strip()
         self.app_secret = str(self.config.get("app_secret", "")).strip()
@@ -162,17 +171,25 @@ class QQOfficialAdapter(BaseAdapter):
             deny_list = self.config.get(f"{scope}_deny_list", [])
             policy = ListAccessPolicy.from_lists(
                 mode if valid_mode else "allow_list",
-                allow_list=allow_list if valid_mode and isinstance(allow_list, list) else [],
-                deny_list=deny_list if valid_mode and isinstance(deny_list, list) else [],
+                allow_list=allow_list
+                if valid_mode and isinstance(allow_list, list)
+                else [],
+                deny_list=deny_list
+                if valid_mode and isinstance(deny_list, list)
+                else [],
             )
             permission = "im.group.receive" if scope == "group" else "im.direct.receive"
             self.access.set_policy(
-                capability_type=IMCapability, permission=permission, policy=policy,
+                capability_type=IMCapability,
+                permission=permission,
+                policy=policy,
             )
 
     async def start(self) -> None:
         if botpy is None:
-            logger.error("QQ official bot requires qq-botpy. Install project dependencies first.")
+            logger.error(
+                "QQ official bot requires qq-botpy. Install project dependencies first."
+            )
             raise RuntimeError("QQ official bot requires qq-botpy")
         if not self.app_id or not self.app_secret:
             logger.error(
@@ -195,7 +212,7 @@ class QQOfficialAdapter(BaseAdapter):
             if self._client_task is task:
                 await self._close_client()
 
-    async def _run_client(self):
+    async def _run_client(self) -> None:
         try:
             await self.client.start(appid=self.app_id, secret=self.app_secret)
         except asyncio.CancelledError:
@@ -214,7 +231,9 @@ class QQOfficialAdapter(BaseAdapter):
         try:
             await asyncio.shield(self._client_close_task)
         except Exception as exc:
-            logger.warning("Failed to close QQ official bot client (%s)", type(exc).__name__)
+            logger.warning(
+                "Failed to close QQ official bot client (%s)", type(exc).__name__
+            )
 
     @staticmethod
     def _generate_bind_key() -> str:
@@ -227,15 +246,21 @@ class QQOfficialAdapter(BaseAdapter):
             key = base64.b64decode(bind_key, validate=True)
             payload = base64.b64decode(encrypted_secret, validate=True)
         except Exception as exc:
-            raise ValueError("QQ official bot binding response is not valid base64") from exc
+            raise ValueError(
+                "QQ official bot binding response is not valid base64"
+            ) from exc
         if len(key) != 32 or len(payload) <= 28:
-            raise ValueError("QQ official bot binding response has an invalid encrypted secret")
+            raise ValueError(
+                "QQ official bot binding response has an invalid encrypted secret"
+            )
         nonce, ciphertext, tag = payload[:12], payload[12:-16], payload[-16:]
         try:
             cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
             return cipher.decrypt_and_verify(ciphertext, tag).decode("utf-8")
         except Exception as exc:
-            raise ValueError("QQ official bot binding secret could not be decrypted") from exc
+            raise ValueError(
+                "QQ official bot binding secret could not be decrypted"
+            ) from exc
 
     @staticmethod
     async def _post_binding_json(path: str, payload: dict[str, str]) -> dict[str, Any]:
@@ -248,14 +273,18 @@ class QQOfficialAdapter(BaseAdapter):
             response.raise_for_status()
             data = response.json()
         if not isinstance(data, dict) or int(data.get("retcode", -1)) != 0:
-            message = data.get("msg", "Unknown QQ official bot binding error") if isinstance(data, dict) else "Invalid binding response"
+            message = (
+                data.get("msg", "Unknown QQ official bot binding error")
+                if isinstance(data, dict)
+                else "Invalid binding response"
+            )
             raise RuntimeError(f"QQ official bot binding request failed: {message}")
         result = data.get("data")
         if not isinstance(result, dict):
             raise RuntimeError("QQ official bot binding response is missing data")
         return result
 
-    async def stop(self):
+    async def stop(self) -> None:
         await self._close_client()
         if self._client_task and not self._client_task.done():
             self._client_task.cancel()
@@ -263,11 +292,13 @@ class QQOfficialAdapter(BaseAdapter):
         self._client_task = None
         self.client = None
 
-    def get_client(self):
+    def get_client(self) -> None | _QQOfficialClient:
         return self.client
 
     async def send_group_message(
-        self, group_id: int | str, send_message_obj: MessageChain,
+        self,
+        group_id: int | str,
+        send_message_obj: MessageChain,
     ) -> KiraIMSentResult | None:
         """Deprecated compatibility wrapper; use the IM capability directly.
 
@@ -276,7 +307,9 @@ class QQOfficialAdapter(BaseAdapter):
         return await self.im.send_group_message(group_id, send_message_obj)
 
     async def send_direct_message(
-        self, user_id: int | str, send_message_obj: MessageChain,
+        self,
+        user_id: int | str,
+        send_message_obj: MessageChain,
     ) -> KiraIMSentResult | None:
         """Deprecated compatibility wrapper; use the IM capability directly.
 

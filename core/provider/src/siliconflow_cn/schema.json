@@ -15,7 +15,10 @@
       "default": null,
       "hint": "硅基流动 API 密钥，在 https://cloud.siliconflow.cn/me/account/ak 获取",
       "locales": {
-        "en": { "name": "API Key", "hint": "SiliconFlow API Key, get it from https://cloud.siliconflow.cn/me/account/ak" }
+        "en": {
+          "name": "API Key",
+          "hint": "SiliconFlow API Key, get it from https://cloud.siliconflow.cn/me/account/ak"
+        }
       }
     }
   },
@@ -37,7 +40,10 @@
         "hint": "高级模型配置选项",
         "collapsed": true,
         "locales": {
-          "en": { "name": "Advanced Settings", "hint": "Advanced model configuration options" }
+          "en": {
+            "name": "Advanced Settings",
+            "hint": "Advanced model configuration options"
+          }
         },
         "fields": {
           "temperature": {
@@ -57,7 +63,10 @@
             "default": {},
             "hint": "合并到请求体中的额外字段（JSON 对象）",
             "locales": {
-              "en": { "name": "Extra Body", "hint": "Additional fields merged into the request body (JSON object)" }
+              "en": {
+                "name": "Extra Body",
+                "hint": "Additional fields merged into the request body (JSON object)"
+              }
             }
           }
         }
@@ -79,7 +88,10 @@
         "default": 20,
         "hint": "推理步数",
         "locales": {
-          "en": { "name": "Inference Steps", "hint": "Number of inference steps" }
+          "en": {
+            "name": "Inference Steps",
+            "hint": "Number of inference steps"
+          }
         }
       }
     },
@@ -90,7 +102,10 @@
         "default": "speech:xxxx:xxxx:xxxxxx",
         "hint": "声音ID，可以在 https://docs.siliconflow.cn/cn/api-reference/audio/upload-voice 上传参考音频获取声音名称",
         "locales": {
-          "en": { "name": "Voice ID", "hint": "Voice ID, upload reference audio at https://docs.siliconflow.cn/cn/api-reference/audio/upload-voice to get a voice name" }
+          "en": {
+            "name": "Voice ID",
+            "hint": "Voice ID, upload reference audio at https://docs.siliconflow.cn/cn/api-reference/audio/upload-voice to get a voice name"
+          }
         }
       }
     },
@@ -113,7 +128,10 @@
         "min": 0,
         "hint": "超过此阈值（秒）的请求将被记录为慢请求",
         "locales": {
-          "en": { "name": "Slow Request Threshold", "hint": "Requests slower than this threshold (seconds) will be logged as slow requests" }
+          "en": {
+            "name": "Slow Request Threshold",
+            "hint": "Requests slower than this threshold (seconds) will be logged as slow requests"
+          }
         }
       }
     }

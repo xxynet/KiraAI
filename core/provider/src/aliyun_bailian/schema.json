@@ -16,10 +16,7 @@
       "name": "地域",
       "type": "string",
       "default": "beijing",
-      "options": [
-        "beijing",
-        "singapore"
-      ],
+      "options": ["beijing", "singapore"],
       "hint": "API 地域：beijing（华北2）或 singapore（新加坡）。API Key 需与地域匹配",
       "locales": {
         "en": {
@@ -194,11 +191,7 @@
         "name": "音频格式",
         "type": "string",
         "default": "mp3",
-        "options": [
-          "mp3",
-          "wav",
-          "pcm"
-        ],
+        "options": ["mp3", "wav", "pcm"],
         "hint": "输出音频格式。mp3 兼容性最好，推荐默认",
         "locales": {
           "en": {
@@ -301,14 +294,7 @@
         "name": "音频格式",
         "type": "string",
         "default": "wav",
-        "options": [
-          "wav",
-          "mp3",
-          "pcm",
-          "opus",
-          "aac",
-          "amr"
-        ],
+        "options": ["wav", "mp3", "pcm", "opus", "aac", "amr"],
         "hint": "输入音频格式，需与实际文件匹配",
         "locales": {
           "en": {

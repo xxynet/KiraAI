@@ -31,7 +31,7 @@ class SiliconflowLLMClient(OpenAICompatibleLLMClient):
 
 
 class SiliconflowImageClient(ImageModelClient):
-    def __init__(self, model: ModelInfo):
+    def __init__(self, model: ModelInfo) -> None:
         super().__init__(model)
 
     async def text_to_image(self, prompt) -> Image:
@@ -41,12 +41,14 @@ class SiliconflowImageClient(ImageModelClient):
             "prompt": prompt,
             "image_size": self.model.model_config.get("image_size", "1024x1024"),
             "batch_size": 1,
-            "num_inference_steps": self.model.model_config.get("num_inference_steps", 20),
-            "guidance_scale": 7.5
+            "num_inference_steps": self.model.model_config.get(
+                "num_inference_steps", 20
+            ),
+            "guidance_scale": 7.5,
         }
         headers = {
             "Authorization": f"Bearer {self.model.provider_config.get('api_key', '')}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
 
         async with httpx.AsyncClient(timeout=30) as client:
@@ -83,14 +85,13 @@ class SiliconflowSTTClient(STTModelClient):
 
         files = {"file": (filename, audio_file, mime)}
         payload = {"model": self.model.model_name}
-        headers = {"Authorization": f"Bearer {self.model.provider_config.get('api_key', '')}"}
+        headers = {
+            "Authorization": f"Bearer {self.model.provider_config.get('api_key', '')}"
+        }
 
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(
-                url,
-                data=payload,
-                files=files,
-                headers=headers
+                url, data=payload, files=files, headers=headers
             )
             response.raise_for_status()
         resp_json = response.json()
@@ -105,25 +106,36 @@ class SiliconflowEmbeddingClient(EmbeddingModelClient):
         if not texts:
             return []
 
-        timeout_sec = self.model.model_config.get("timeout", 60) if self.model.model_config else 60
-        slow_threshold = self.model.model_config.get("slow_request_threshold", 5.0) if self.model.model_config else 5.0
+        timeout_sec = (
+            self.model.model_config.get("timeout", 60)
+            if self.model.model_config
+            else 60
+        )
+        slow_threshold = (
+            self.model.model_config.get("slow_request_threshold", 5.0)
+            if self.model.model_config
+            else 5.0
+        )
 
         async with AsyncOpenAI(
             api_key=self.model.provider_config.get("api_key", ""),
             base_url="https://api.siliconflow.cn/v1",
-            timeout=timeout_sec
+            timeout=timeout_sec,
         ) as client:
             try:
                 start_time = time.perf_counter()
                 response = await client.embeddings.create(
-                    model=self.model.model_name,
-                    input=texts
+                    model=self.model.model_name, input=texts
                 )
                 elapsed = round(time.perf_counter() - start_time, 2)
                 if elapsed > slow_threshold:
-                    logger.warning(f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_name})")
+                    logger.warning(
+                        f"Slow embedding request: {elapsed}s (threshold: {slow_threshold}s, model: {self.model.model_name})"
+                    )
                 if not isinstance(getattr(response, "data", None), list):
-                    raise ProviderAPIError(f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}")
+                    raise ProviderAPIError(
+                        f"Invalid OpenAI-compatible API response ({type(response).__name__}): {response!r}"
+                    )
                 return [item.embedding for item in response.data]
             except (APIStatusError, APITimeoutError, APIConnectionError) as e:
                 logger.error(f"Embedding API error: {e}")
@@ -138,11 +150,7 @@ class SiliconflowRerankClient(RerankModelClient):
         super().__init__(model)
 
     async def rerank(
-        self,
-        query: str,
-        documents: list[str],
-        top_n: int | None = None,
-        **kwargs
+        self, query: str, documents: list[str], top_n: int | None = None, **kwargs
     ) -> list[RerankResult]:
 
         url = "https://api.siliconflow.cn/v1/rerank"
@@ -169,7 +177,7 @@ class SiliconflowRerankClient(RerankModelClient):
                 headers={
                     "Authorization": f"Bearer {self.model.provider_config.get('api_key', '')}",
                     "Content-Type": "application/json",
-                }
+                },
             )
 
         resp.raise_for_status()
@@ -179,7 +187,7 @@ class SiliconflowRerankClient(RerankModelClient):
             RerankResult(
                 index=item["index"],
                 score=item["relevance_score"],
-                text=documents[item["index"]]
+                text=documents[item["index"]],
             )
             for item in data.get("results", [])
         ]

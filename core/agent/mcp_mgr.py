@@ -19,9 +19,7 @@ logger = get_logger("mcp_mgr", "orange")
 
 MCP_CONFIG_PATH = get_config_path() / "mcp.json"
 
-default_config = {
-  "mcpServers": {}
-}
+default_config = {"mcpServers": {}}
 
 # Timeouts guarding connection management, so a hung stdio subprocess or
 # remote handshake can never block a server's connection lock forever
@@ -70,7 +68,7 @@ class MCPServer:
     # LLM tool set so their schemas do not consume tokens.
     disabled_tools: list = field(default_factory=list)
 
-    def to_dict(self):
+    def to_dict(self) -> dict[str, dict[str, dict[Any, Any]]]:
         server_cfg: dict = {}
         if self.type == "stdio":
             if self.command:
@@ -91,7 +89,7 @@ class MCPServer:
 
 
 class MCPManager:
-    def __init__(self, tool_manager: FuncToolManager):
+    def __init__(self, tool_manager: FuncToolManager) -> None:
         self.tool_manager = tool_manager
         self.mcp_config: dict = self.load_config()
         self.servers: list[MCPServer] = []
@@ -101,16 +99,16 @@ class MCPManager:
         self._shutting_down = False
 
     @staticmethod
-    def load_config():
+    def load_config() -> Any | dict[str, dict[Any, Any]]:
         config_dir = MCP_CONFIG_PATH.parent
         if not config_dir.exists():
             config_dir.mkdir(parents=True, exist_ok=True)
 
         if not MCP_CONFIG_PATH.exists():
-            with open(MCP_CONFIG_PATH, 'w', encoding="utf-8") as f:
+            with open(MCP_CONFIG_PATH, "w", encoding="utf-8") as f:
                 f.write(json.dumps(default_config, indent=4, ensure_ascii=False))
 
-        with open(MCP_CONFIG_PATH, 'r', encoding="utf-8") as f:
+        with open(MCP_CONFIG_PATH, encoding="utf-8") as f:
             mcp_conf_str = f.read()
         try:
             mcp_conf = json.loads(mcp_conf_str)
@@ -135,7 +133,7 @@ class MCPManager:
         if command:
             return "stdio"
 
-    def load_servers(self):
+    def load_servers(self) -> list[Any] | None:
         self.servers.clear()
         server_configs = self.mcp_config.get("mcpServers")
         if not server_configs:
@@ -188,7 +186,7 @@ class MCPManager:
 
             self.servers.append(server)
 
-    def add_server(self, server: MCPServer):
+    def add_server(self, server: MCPServer) -> None:
         self.servers.append(server)
 
     # ====== Persistent connection management ======
@@ -247,7 +245,9 @@ class MCPManager:
                 try:
                     await asyncio.wait_for(client.close(), timeout=MCP_CLOSE_TIMEOUT)
                 except Exception as e:
-                    logger.debug(f"Error closing stale MCP client for {server.name}: {e}")
+                    logger.debug(
+                        f"Error closing stale MCP client for {server.name}: {e}"
+                    )
             client = Client(server.to_dict())
             try:
                 await asyncio.wait_for(client.__aenter__(), timeout=MCP_CONNECT_TIMEOUT)
@@ -257,13 +257,15 @@ class MCPManager:
                 try:
                     await asyncio.wait_for(client.close(), timeout=MCP_CLOSE_TIMEOUT)
                 except Exception as close_err:
-                    logger.debug(f"Error cleaning up failed MCP client for {server.name}: {close_err}")
+                    logger.debug(
+                        f"Error cleaning up failed MCP client for {server.name}: {close_err}"
+                    )
                 raise
             self._clients[server.id] = client
             logger.debug(f"Opened persistent MCP connection to {server.name}")
             return client
 
-    async def close_connection(self, server_id: str):
+    async def close_connection(self, server_id: str) -> None:
         """Close and drop the persistent client for a server, if any."""
         async with self._get_client_lock(server_id):
             client = self._clients.pop(server_id, None)
@@ -274,7 +276,7 @@ class MCPManager:
             except Exception as e:
                 logger.warning(f"Error closing MCP client for server {server_id}: {e}")
 
-    async def shutdown(self):
+    async def shutdown(self) -> None:
         """Close all persistent MCP connections (application shutdown)."""
         self._shutting_down = True
         for server_id in list(self._clients.keys()):
@@ -282,12 +284,14 @@ class MCPManager:
 
     # ====== End persistent connection management ======
 
-    def save_server_config(self):
-        with open(MCP_CONFIG_PATH, 'w', encoding="utf-8") as f:
+    def save_server_config(self) -> None:
+        with open(MCP_CONFIG_PATH, "w", encoding="utf-8") as f:
             f.write(json.dumps(self.mcp_config, indent=4, ensure_ascii=False))
 
     @staticmethod
-    def _build_single_server_config(name: str, description: str, raw_config: dict) -> dict:
+    def _build_single_server_config(
+        name: str, description: str, raw_config: dict
+    ) -> dict:
         if not isinstance(raw_config, dict):
             raise ValueError("MCP server config must be a JSON object")
 
@@ -309,11 +313,15 @@ class MCPManager:
         server_cfg.setdefault("name", name)
         return server_cfg
 
-    def add_or_update_server_from_config(self, name: str, description: str, config_json: dict) -> MCPServer:
+    def add_or_update_server_from_config(
+        self, name: str, description: str, config_json: dict
+    ) -> MCPServer:
         if not isinstance(config_json, dict):
             raise ValueError("MCP config must be a JSON object")
 
-        server_cfg = self._build_single_server_config(name=name, description=description, raw_config=config_json)
+        server_cfg = self._build_single_server_config(
+            name=name, description=description, raw_config=config_json
+        )
         if not self._check_server_type(server_cfg):
             raise ValueError(
                 "Cannot determine server type from config. "
@@ -363,7 +371,9 @@ class MCPManager:
         }
         return editor_cfg
 
-    async def update_server_from_editor(self, server_id: str, name: str | None, description: str, editor_config: dict) -> None:
+    async def update_server_from_editor(
+        self, server_id: str, name: str | None, description: str, editor_config: dict
+    ) -> None:
         """
         Merge editor JSON back into the stored config for a single server.
         Meta fields are managed outside the editor:
@@ -393,7 +403,10 @@ class MCPManager:
 
         merged = dict(base_without_meta)
         merged.update(editor_config)
-        for key, normalize in (("timeout", _normalize_timeout), ("env", _normalize_env)):
+        for key, normalize in (
+            ("timeout", _normalize_timeout),
+            ("env", _normalize_env),
+        ):
             if key not in merged:
                 continue
             value = normalize(merged[key])
@@ -468,7 +481,10 @@ class MCPManager:
         servers.pop(server_id)
         self.mcp_config["mcpServers"] = servers
         disabled_section = self.mcp_config.get("_disabledTools")
-        if isinstance(disabled_section, dict) and disabled_section.pop(server_id, None) is not None:
+        if (
+            isinstance(disabled_section, dict)
+            and disabled_section.pop(server_id, None) is not None
+        ):
             if disabled_section:
                 self.mcp_config["_disabledTools"] = disabled_section
             else:
@@ -504,7 +520,9 @@ class MCPManager:
             return session_id not in scope["deny"]
         return True
 
-    def set_server_scope(self, server_id: str, mode: str | None, sessions: list[str]):
+    def set_server_scope(
+        self, server_id: str, mode: str | None, sessions: list[str]
+    ) -> None:
         """Set scope for a server. mode='allow'|'deny', or None to clear."""
         scope = self.mcp_config.get("_scope", {})
         if mode and sessions:
@@ -517,7 +535,7 @@ class MCPManager:
             self.mcp_config.pop("_scope", None)
         self.save_server_config()
 
-    def remove_session_from_scopes(self, session_id: str):
+    def remove_session_from_scopes(self, session_id: str) -> None:
         """Remove a session from all MCP scope entries (cleanup on session delete)."""
         scope = self.mcp_config.get("_scope", {})
         changed = False
@@ -539,7 +557,7 @@ class MCPManager:
 
     # ====== End scope methods ======
 
-    async def enable_server(self, server_id: str):
+    async def enable_server(self, server_id: str) -> None:
         target_server = None
         for server in self.servers:
             if server.id == server_id:
@@ -576,14 +594,16 @@ class MCPManager:
                 parameters=tool.get("parameters"),
                 func=func,
             )
-        logger.info(f"Registered {len(tool_names)} MCP tools from {target_server.name}: {tool_names}")
+        logger.info(
+            f"Registered {len(tool_names)} MCP tools from {target_server.name}: {tool_names}"
+        )
 
         target_server.enabled = True
         if server_id in self.mcp_config["mcpServers"]:
             self.mcp_config["mcpServers"][server_id]["enabled"] = True
         self.save_server_config()
 
-    async def disable_server(self, server_id: str):
+    async def disable_server(self, server_id: str) -> None:
         target_server = None
         for server in self.servers:
             if server.id == server_id:
@@ -608,7 +628,7 @@ class MCPManager:
 
         logger.info(f"Disabled MCP Server {target_server.name}")
 
-    def set_tool_enabled(self, server_id: str, tool_name: str, enabled: bool):
+    def set_tool_enabled(self, server_id: str, tool_name: str, enabled: bool) -> None:
         """Enable/disable a single tool of a server.
 
         Disabled tool names are persisted in mcp.json's top-level
@@ -632,9 +652,13 @@ class MCPManager:
         if not isinstance(disabled_section, dict):
             disabled_section = {}
 
-        tool = next((t for t in target_server.tools if t.get("name") == tool_name), None)
+        tool = next(
+            (t for t in target_server.tools if t.get("name") == tool_name), None
+        )
         if tool is None:
-            raise ValueError(f"MCP tool {tool_name} not found on server {target_server.name}")
+            raise ValueError(
+                f"MCP tool {tool_name} not found on server {target_server.name}"
+            )
 
         if enabled:
             if tool_name in target_server.disabled_tools:
@@ -643,7 +667,11 @@ class MCPManager:
                 disabled_section[server_id] = list(target_server.disabled_tools)
             else:
                 disabled_section.pop(server_id, None)
-            if target_server.enabled and tool and tool_name not in self.tool_manager.tool_set:
+            if (
+                target_server.enabled
+                and tool
+                and tool_name not in self.tool_manager.tool_set
+            ):
                 self.tool_manager.register_tool(
                     name=tool_name,
                     description=tool.get("description"),
@@ -664,11 +692,11 @@ class MCPManager:
         self.mcp_config = config
         self.save_server_config()
 
-    async def init_mcp(self):
+    async def init_mcp(self) -> None:
         self.mcp_config = self.load_config()
         self.load_servers()
 
-        async def init_server(server):
+        async def init_server(server) -> None:
             # keeps the connection open for enabled servers, closes it otherwise
             await self.list_tools(server)
 
@@ -684,23 +712,29 @@ class MCPManager:
                         name=tool_name,
                         description=tool.get("description"),
                         parameters=tool.get("parameters"),
-                        func=func
+                        func=func,
                     )
-                logger.info(f"Registered {len(tool_names)} MCP tools from {server.name}: {tool_names}")
+                logger.info(
+                    f"Registered {len(tool_names)} MCP tools from {server.name}: {tool_names}"
+                )
 
         for server in self.servers:
             asyncio.create_task(init_server(server))
 
     def _make_mcp_func(self, server: MCPServer, tool_name: str):
-        async def _wrapped(*args, **kwargs):
+        async def _wrapped(*args, **kwargs) -> ToolResult:
             if not self._is_server_active(server.id):
                 raise RuntimeError(f"MCP server {server.name} is disabled or removed")
             sid = getattr(args[0], "sid", None) if args else None
             if sid is not None and not self.is_server_allowed(server.id, sid):
-                raise PermissionError(f"MCP server is not allowed for the calling session: {server.name}")
+                raise PermissionError(
+                    f"MCP server is not allowed for the calling session: {server.name}"
+                )
             client = await self._get_connected_client(server, require_active=True)
             try:
-                result = await client.call_tool(tool_name, kwargs, timeout=server.timeout)
+                result = await client.call_tool(
+                    tool_name, kwargs, timeout=server.timeout
+                )
             except Exception:
                 if await self._is_client_alive(client):
                     # connection is fine, this is a genuine tool error
@@ -739,8 +773,16 @@ class MCPManager:
         if not isinstance(data, str) or not data:
             return None
 
-        mime = mime_type if isinstance(mime_type, str) and mime_type else "application/octet-stream"
-        media = data if data.startswith(("data:", "http://", "https://", "file:///")) else f"data:{mime};base64,{data}"
+        mime = (
+            mime_type
+            if isinstance(mime_type, str) and mime_type
+            else "application/octet-stream"
+        )
+        media = (
+            data
+            if data.startswith(("data:", "http://", "https://", "file:///"))
+            else f"data:{mime};base64,{data}"
+        )
         if mime.startswith("image/"):
             return Image(image=media, mime=mime, name=name)
         if mime.startswith("audio/"):
@@ -797,7 +839,9 @@ class MCPManager:
                 uri_string = str(uri) if uri is not None else ""
                 mime_type = cls._get_result_field(block, "mimeType")
                 if uri_string.startswith(("http://", "https://", "file:///")):
-                    attachment = cls._media_attachment(uri_string, mime_type, cls._resource_name(uri_string))
+                    attachment = cls._media_attachment(
+                        uri_string, mime_type, cls._resource_name(uri_string)
+                    )
                     if attachment:
                         attachments.append(attachment)
                         continue
@@ -807,7 +851,9 @@ class MCPManager:
                     text_parts.append("[MCP returned a resource link without a URI]")
                 continue
 
-            text_parts.append(f"[MCP returned unsupported content block: {block_type or 'unknown'}]")
+            text_parts.append(
+                f"[MCP returned unsupported content block: {block_type or 'unknown'}]"
+            )
 
         structured_content = cls._get_result_field(
             result,
@@ -816,14 +862,18 @@ class MCPManager:
         )
         if structured_content is not None:
             try:
-                structured_text = json.dumps(structured_content, ensure_ascii=False, indent=2, default=str)
+                structured_text = json.dumps(
+                    structured_content, ensure_ascii=False, indent=2, default=str
+                )
             except (TypeError, ValueError):
                 structured_text = str(structured_content)
             text_parts.append(f"Structured result:\n{structured_text}")
 
         return ToolResult(text="\n".join(text_parts), attachments=attachments)
 
-    async def list_tools(self, server: MCPServer, keep_connection: bool | None = None):
+    async def list_tools(
+        self, server: MCPServer, keep_connection: bool | None = None
+    ) -> list[Any]:
         """Refresh server.tools.
 
         keep_connection=None keeps the connection open only for enabled
@@ -849,10 +899,7 @@ class MCPManager:
                 tools = []
 
             for tool in tools:
-                if hasattr(tool, "model_dump"):
-                    tool_dict = tool.model_dump()
-                else:
-                    tool_dict = tool
+                tool_dict = tool.model_dump() if hasattr(tool, "model_dump") else tool
 
                 name = tool_dict.get("name", "")
                 description = tool_dict.get("description", "")
@@ -861,11 +908,9 @@ class MCPManager:
                 if not name:
                     continue
 
-                server.tools.append({
-                    "name": name,
-                    "description": description,
-                    "parameters": parameters
-                })
+                server.tools.append(
+                    {"name": name, "description": description, "parameters": parameters}
+                )
 
             return server.tools
         except Exception as e:

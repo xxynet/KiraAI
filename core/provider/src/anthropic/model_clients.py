@@ -149,16 +149,20 @@ class AnthropicCompatibleLLMClient(LLMModelClient):
             else:
                 messages.append({"role": role, "content": blocks})
 
-        for raw_message in (raw_messages if raw_messages is not None else request.messages):
+        for raw_message in (
+            raw_messages if raw_messages is not None else request.messages
+        ):
             message = (
                 raw_message if isinstance(raw_message, dict) else raw_message.to_dict()
             )
             role = message.get("role")
 
             if role == "system":
-                for block in cls._convert_content(message.get("content")):
-                    if block.get("type") == "text" and block.get("text"):
-                        system_parts.append(block["text"])
+                system_parts.extend(
+                    block["text"]
+                    for block in cls._convert_content(message.get("content"))
+                    if block.get("type") == "text" and block.get("text")
+                )
                 continue
 
             if role == "tool":
@@ -300,9 +304,7 @@ class AnthropicCompatibleLLMClient(LLMModelClient):
 
     async def chat(self, request: LLMRequest, **kwargs) -> LLMResponse:
         messages = await resolve_media_references(request.messages)
-        body = self._build_request_body(
-            request, resolved_messages=messages, **kwargs
-        )
+        body = self._build_request_body(request, resolved_messages=messages, **kwargs)
         start_time = time.perf_counter()
         try:
             async with self._build_client() as client:

@@ -26,7 +26,7 @@ class AsyncTempMonitor:
     def __init__(
         self,
         folder_path: str,
-        kira_config: 'KiraConfig',
+        kira_config: "KiraConfig",
         check_interval: int = 60,
         batch_size: int = 20,
         file_protection_seconds: int = 60,
@@ -366,9 +366,12 @@ class AsyncTempMonitor:
                 attempted_paths.add(path_str)
 
                 expected_version = self._file_versions.get(path_str)
-                status, deleted_size, error, remaining_version = (
-                    await self._delete_file(path_str, expected_version)
-                )
+                (
+                    status,
+                    deleted_size,
+                    error,
+                    remaining_version,
+                ) = await self._delete_file(path_str, expected_version)
                 if status == "failed":
                     failed_deletions[path_str] = error or "unknown error"
                     if remaining_version is not None:
@@ -501,9 +504,7 @@ class AsyncTempMonitor:
         logger.info(f"Max size: {self.max_size_bytes / 1024 / 1024:.2f}MB")
         logger.info(f"Max files: {self.max_files}")
         logger.info(f"Max age: {self.max_age_seconds / 3600:.1f} hours")
-        logger.info(
-            f"File protection period: {self.file_protection_seconds} seconds"
-        )
+        logger.info(f"File protection period: {self.file_protection_seconds} seconds")
         logger.info(f"Check interval: {self.check_interval} seconds")
         logger.info("=" * 60)
 

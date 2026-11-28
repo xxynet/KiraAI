@@ -2,6 +2,7 @@ from typing import ClassVar
 
 from core.agent.subagent_manager import SUBAGENT_TOOL_NAMES
 from core.agent.tool import ToolSet
+from core.chat.session import Session
 from core.config.tool_execution import build_tool_execution_config
 from core.utils.tool_utils import BaseTool
 
@@ -30,17 +31,23 @@ def format_agent(agent: dict) -> str:
 class SubAgentTool(BaseTool):
     """Bind agent controls to the caller and share tool selection helpers."""
 
-    def __init__(self, *, ctx, source, parent_tools: ToolSet):
+    def __init__(self, *, ctx, source, parent_tools: ToolSet) -> None:
         super().__init__(ctx=ctx)
         self.source = source
         self.parent_tools = parent_tools
 
-    async def _get_source(self):
-        return await self.ctx.session_mgr.get_session(self.source.sid, ensure_session=True)
+    async def _get_source(self) -> Session:
+        return await self.ctx.session_mgr.get_session(
+            self.source.sid, ensure_session=True
+        )
 
     def _disabled_agent_tools(self) -> set[str]:
         agent_plugin = self.ctx.get_plugin_inst("agent")
-        return agent_plugin.get_disabled_tool_names() if agent_plugin is not None else set()
+        return (
+            agent_plugin.get_disabled_tool_names()
+            if agent_plugin is not None
+            else set()
+        )
 
     def _custom_tools(self, names: list[str], preset_id: str | None = None) -> ToolSet:
         disabled_tools = self._disabled_agent_tools()
@@ -48,7 +55,10 @@ class SubAgentTool(BaseTool):
         if disabled_tools:
             pool.remove(*disabled_tools)
         selected = []
-        private_names = {tool.name for tool in self.ctx.subagent_mgr.presets.get_plugin_tools(preset_id)}
+        private_names = {
+            tool.name
+            for tool in self.ctx.subagent_mgr.presets.get_plugin_tools(preset_id)
+        }
         server_map = self.ctx.mcp_mgr.get_tool_server_map() if self.ctx.mcp_mgr else {}
         for name in names:
             if name in private_names or name in disabled_tools:
@@ -61,18 +71,28 @@ class SubAgentTool(BaseTool):
             if tool is None:
                 continue
             server = server_map.get(name)
-            if server and not self.ctx.mcp_mgr.is_server_allowed(server, self.source.sid):
-                raise PermissionError(f"MCP server is not allowed for the calling session: {server}")
+            if server and not self.ctx.mcp_mgr.is_server_allowed(
+                server, self.source.sid
+            ):
+                raise PermissionError(
+                    f"MCP server is not allowed for the calling session: {server}"
+                )
             selected.append(tool)
         return ToolSet(selected)
 
-    async def _followup(self, event, agent_id: str, message: str, *, steer: bool) -> dict:
+    async def _followup(
+        self, event, agent_id: str, message: str, *, steer: bool
+    ) -> dict:
         source = await self._get_source()
         target = await self.ctx.session_mgr.resolve_session(agent_id)
         state = target.data.get("subagent", {})
         settings = state.get("settings", {})
         names = settings.get("tool_names", [])
-        tools = self._custom_tools(names, state.get("preset_id")) if settings.get("tool_mode") == "custom" else None
+        tools = (
+            self._custom_tools(names, state.get("preset_id"))
+            if settings.get("tool_mode") == "custom"
+            else None
+        )
         return await self.ctx.subagent_mgr.followup(
             target,
             message,
@@ -90,7 +110,10 @@ class SpawnAgentTool(SubAgentTool):
     parameters: ClassVar[dict] = {
         "type": "object",
         "properties": {
-            "task": {"type": "string", "description": "Complete, self-contained task instructions"},
+            "task": {
+                "type": "string",
+                "description": "Complete, self-contained task instructions",
+            },
             "name": {"type": "string", "description": "Short session title"},
             "preset_name": {
                 "type": "string",
@@ -115,7 +138,7 @@ class SpawnAgentTool(SubAgentTool):
         preset_name: str,
         name: str | None = None,
         session_retention_hours: int | None = None,
-    ):
+    ) -> str:
         if not isinstance(preset_name, str) or not preset_name.strip():
             raise ValueError("preset_name must be a non-empty string")
         preset_id, preset = self.ctx.subagent_mgr.presets.get_enabled_by_name(
@@ -124,7 +147,11 @@ class SpawnAgentTool(SubAgentTool):
         )
         source = await self._get_source()
         config = preset.execution_config(build_tool_execution_config(self.ctx.config))
-        tools = self._custom_tools(list(config.tool_names), preset_id) if config.tool_mode == "custom" else None
+        tools = (
+            self._custom_tools(list(config.tool_names), preset_id)
+            if config.tool_mode == "custom"
+            else None
+        )
         result = await self.ctx.subagent_mgr.spawn(
             task,
             parent_id=source.internal_id,
@@ -149,10 +176,12 @@ class ListAgentsTool(SubAgentTool):
         "required": [],
     }
 
-    async def execute(self, event, **args):
+    async def execute(self, event, **args) -> str:
         source = await self._get_source()
         agents = await self.ctx.subagent_mgr.list_agents(caller_id=source.internal_id)
-        return "\n\n".join(format_agent(agent) for agent in agents) or "No child agents."
+        return (
+            "\n\n".join(format_agent(agent) for agent in agents) or "No child agents."
+        )
 
 
 class SendMessageTool(SubAgentTool):
@@ -161,13 +190,19 @@ class SendMessageTool(SubAgentTool):
     parameters: ClassVar[dict] = {
         "type": "object",
         "properties": {
-            "agent_id": {"type": "string", "description": "Subagent internal ID or full session SID"},
-            "message": {"type": "string", "description": "Instruction or follow-up task"},
+            "agent_id": {
+                "type": "string",
+                "description": "Subagent internal ID or full session SID",
+            },
+            "message": {
+                "type": "string",
+                "description": "Instruction or follow-up task",
+            },
         },
         "required": ["agent_id", "message"],
     }
 
-    async def execute(self, event, **args):
+    async def execute(self, event, **args) -> str:
         result = await self._followup(
             event,
             args["agent_id"],
@@ -183,13 +218,19 @@ class FollowupTaskTool(SubAgentTool):
     parameters: ClassVar[dict] = {
         "type": "object",
         "properties": {
-            "agent_id": {"type": "string", "description": "Subagent internal ID or full session SID"},
-            "message": {"type": "string", "description": "Instruction or follow-up task"},
+            "agent_id": {
+                "type": "string",
+                "description": "Subagent internal ID or full session SID",
+            },
+            "message": {
+                "type": "string",
+                "description": "Instruction or follow-up task",
+            },
         },
         "required": ["agent_id", "message"],
     }
 
-    async def execute(self, event, **args):
+    async def execute(self, event, **args) -> str:
         result = await self._followup(
             event,
             args["agent_id"],
@@ -205,12 +246,15 @@ class InterruptAgentTool(SubAgentTool):
     parameters: ClassVar[dict] = {
         "type": "object",
         "properties": {
-            "agent_id": {"type": "string", "description": "Subagent internal ID or full session SID"},
+            "agent_id": {
+                "type": "string",
+                "description": "Subagent internal ID or full session SID",
+            },
         },
         "required": ["agent_id"],
     }
 
-    async def execute(self, event, **args):
+    async def execute(self, event, **args) -> str:
         source = await self._get_source()
         result = await self.ctx.subagent_mgr.interrupt(
             args["agent_id"],

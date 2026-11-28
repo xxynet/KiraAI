@@ -5,7 +5,10 @@
     "default": [],
     "hint": "Treat message as mentioned if any wake word appears",
     "locales": {
-      "zh": { "name": "唤醒词", "hint": "如果消息中包含任一唤醒词，则视为被提及" }
+      "zh": {
+        "name": "唤醒词",
+        "hint": "如果消息中包含任一唤醒词，则视为被提及"
+      }
     }
   },
   "receive_unmentioned": {
@@ -22,7 +25,10 @@
     "name": "Unmentioned Message Sessions",
     "hint": "Limit which sessions may supply unmentioned context when Receive Unmentioned Messages is enabled",
     "locales": {
-      "zh": { "name": "接收未提及消息的会话权限", "hint": "启用接收未提及消息后，限制哪些会话可以提供未提及的上下文消息" }
+      "zh": {
+        "name": "接收未提及消息的会话权限",
+        "hint": "启用接收未提及消息后，限制哪些会话可以提供未提及的上下文消息"
+      }
     },
     "fields": {
       "permission_mode": {
@@ -32,7 +38,10 @@
         "default": "deny_list",
         "hint": "allow_list: only listed sessions. deny_list: all sessions except those listed. An empty deny list allows all sessions; an empty allow list allows none.",
         "locales": {
-          "zh": { "name": "会话权限模式", "hint": "allow_list：仅允许名单内会话；deny_list：排除名单内会话。空黑名单允许所有会话，空白名单不允许任何会话" }
+          "zh": {
+            "name": "会话权限模式",
+            "hint": "allow_list：仅允许名单内会话；deny_list：排除名单内会话。空黑名单允许所有会话，空白名单不允许任何会话"
+          }
         }
       },
       "session_list": {
@@ -43,7 +52,10 @@
         "default": [],
         "hint": "Pick sessions or enter <adapter_name>:<gm/dm>:<session_id>. The permission mode determines whether this is an allow list or a deny list.",
         "locales": {
-          "zh": { "name": "会话名单", "hint": "选择会话或手动输入 <adapter_name>:<gm/dm>:<session_id>；该名单是白名单还是黑名单由会话权限模式决定" }
+          "zh": {
+            "name": "会话名单",
+            "hint": "选择会话或手动输入 <adapter_name>:<gm/dm>:<session_id>；该名单是白名单还是黑名单由会话权限模式决定"
+          }
         }
       }
     }
@@ -54,7 +66,10 @@
     "default": 5,
     "hint": "Max unmentioned messages to include in context buffer",
     "locales": {
-      "zh": { "name": "最大未提及消息数", "hint": "上下文缓冲区中包含的最大未提及消息数" }
+      "zh": {
+        "name": "最大未提及消息数",
+        "hint": "上下文缓冲区中包含的最大未提及消息数"
+      }
     }
   },
   "group_chat_prompt": {
@@ -72,7 +87,10 @@
     "default": false,
     "hint": "Allow AI to send messages proactively in group chats, be sure to have receive_unmentioned enabled",
     "locales": {
-      "zh": { "name": "群聊主动发言", "hint": "允许 AI 在群聊中主动发送消息，请确保已启用接收未提及消息" }
+      "zh": {
+        "name": "群聊主动发言",
+        "hint": "允许 AI 在群聊中主动发送消息，请确保已启用接收未提及消息"
+      }
     }
   },
   "group_proactive_chat_access": {
@@ -80,7 +98,10 @@
     "name": "Group Proactive Chat Sessions",
     "hint": "Limit which groups may trigger proactive chat when Group Proactive Chat is enabled. The session must also be allowed to receive unmentioned messages.",
     "locales": {
-      "zh": { "name": "群聊主动发言的会话权限", "hint": "启用群聊主动发言后，限制哪些群聊可以触发主动发言；该会话还必须被允许接收未提及消息" }
+      "zh": {
+        "name": "群聊主动发言的会话权限",
+        "hint": "启用群聊主动发言后，限制哪些群聊可以触发主动发言；该会话还必须被允许接收未提及消息"
+      }
     },
     "fields": {
       "permission_mode": {
@@ -90,7 +111,10 @@
         "default": "deny_list",
         "hint": "allow_list: only listed sessions. deny_list: all sessions except those listed. An empty deny list allows all sessions; an empty allow list allows none.",
         "locales": {
-          "zh": { "name": "会话权限模式", "hint": "allow_list：仅允许名单内会话；deny_list：排除名单内会话。空黑名单允许所有会话，空白名单不允许任何会话" }
+          "zh": {
+            "name": "会话权限模式",
+            "hint": "allow_list：仅允许名单内会话；deny_list：排除名单内会话。空黑名单允许所有会话，空白名单不允许任何会话"
+          }
         }
       },
       "session_list": {
@@ -101,7 +125,10 @@
         "default": [],
         "hint": "Pick sessions or enter <adapter_name>:<gm/dm>:<session_id>. The permission mode determines whether this is an allow list or a deny list.",
         "locales": {
-          "zh": { "name": "会话名单", "hint": "选择会话或手动输入 <adapter_name>:<gm/dm>:<session_id>；该名单是白名单还是黑名单由会话权限模式决定" }
+          "zh": {
+            "name": "会话名单",
+            "hint": "选择会话或手动输入 <adapter_name>:<gm/dm>:<session_id>；该名单是白名单还是黑名单由会话权限模式决定"
+          }
         }
       }
     }

@@ -21,7 +21,8 @@ async def publish_buffered_messages(
 ) -> bool:
     """Publish buffered events matching a synchronous predicate, or all events by default."""
     pending_messages = await buffers.flush_messages(
-        sid, extra_event=extra_event, filter_fn=filter_fn)
+        sid, extra_event=extra_event, filter_fn=filter_fn
+    )
     if not pending_messages:
         return False
     last_event = pending_messages[-1]
@@ -31,7 +32,7 @@ async def publish_buffered_messages(
         timestamp=int(time.time()),
         adapter=last_event.adapter,
         session=last_event.session,
-        messages=[m.message for m in pending_messages]
+        messages=[m.message for m in pending_messages],
     )
     await event_bus.publish(batch_msg)
     return True

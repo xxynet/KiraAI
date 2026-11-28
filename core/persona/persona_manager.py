@@ -14,7 +14,7 @@ from .reference_image import (
 
 
 class PersonaManager:
-    def __init__(self, db: DatabaseService):
+    def __init__(self, db: DatabaseService) -> None:
         self.db = db
         self._reference_image_lock = asyncio.Lock()
 
@@ -49,7 +49,7 @@ class PersonaManager:
             group_chat_rules=persona_dict.get("group_chat_rules", ""),
         )
 
-    async def update_persona(self, persona: PersonaInfo):
+    async def update_persona(self, persona: PersonaInfo) -> bool:
         # Activation changes are routed through set_active_persona to maintain
         # the single-active-persona invariant in the database.
         if persona.is_active is True:
@@ -66,17 +66,18 @@ class PersonaManager:
         )
         return success
 
-    async def init_persona(self):
+    async def init_persona(self) -> None:
         personas = await self.db.list_personas()
         if not personas:
             import time
+
             await self.db.add_persona(
                 persona_id="default",
                 name="Default",
                 content=default_persona_template,
                 format="yaml",
                 created_at=int(time.time()),
-                is_active=True
+                is_active=True,
             )
 
     async def list_personas(self) -> list[PersonaInfo]:
@@ -101,14 +102,18 @@ class PersonaManager:
         # Check if this is the active persona
         active = await self.get_active_persona()
         if active and active.id == persona_id:
-            raise ValueError("Cannot delete the active persona. Switch to another persona first.")
+            raise ValueError(
+                "Cannot delete the active persona. Switch to another persona first."
+            )
         async with self._reference_image_lock:
             persona = await self.get_persona(persona_id)
             if not persona:
                 return False
             deleted = await self.db.delete_persona(persona_id)
             if deleted:
-                await asyncio.to_thread(delete_reference_image, persona.id, persona.reference_image_path)
+                await asyncio.to_thread(
+                    delete_reference_image, persona.id, persona.reference_image_path
+                )
             return deleted
 
     async def get_reference_image(self, persona_id: str | None = None) -> Path | None:
@@ -117,30 +122,55 @@ class PersonaManager:
             persona = await self.get_persona(persona_id)
             if not persona:
                 return None
-            return await asyncio.to_thread(get_reference_image_path, persona.id, persona.reference_image_path)
+            return await asyncio.to_thread(
+                get_reference_image_path, persona.id, persona.reference_image_path
+            )
 
-    async def set_reference_image(self, persona_id: str, file_bytes: bytes, filename: str) -> Path:
+    async def set_reference_image(
+        self, persona_id: str, file_bytes: bytes, filename: str
+    ) -> Path:
         """Replace a selfie reference and persist its path before removing the old file."""
         async with self._reference_image_lock:
             persona = await self.get_persona(persona_id)
             if not persona:
                 raise LookupError("Persona not found")
-            previous_path = await asyncio.to_thread(get_reference_image_path, persona.id, persona.reference_image_path)
-            previous_bytes = await asyncio.to_thread(previous_path.read_bytes) if previous_path else None
-            path = await asyncio.to_thread(save_reference_image, persona_id, file_bytes, filename)
+            previous_path = await asyncio.to_thread(
+                get_reference_image_path, persona.id, persona.reference_image_path
+            )
+            previous_bytes = (
+                await asyncio.to_thread(previous_path.read_bytes)
+                if previous_path
+                else None
+            )
+            path = await asyncio.to_thread(
+                save_reference_image, persona_id, file_bytes, filename
+            )
             stored_path = f"{REFERENCE_IMAGE_DIRECTORY}/{path.name}"
-            same_file = previous_path is not None and await asyncio.to_thread(previous_path.samefile, path)
+            same_file = previous_path is not None and await asyncio.to_thread(
+                previous_path.samefile, path
+            )
             try:
-                if not await self.db.update_persona(persona_id, reference_image_path=stored_path):
+                if not await self.db.update_persona(
+                    persona_id, reference_image_path=stored_path
+                ):
                     raise LookupError("Persona not found")
             except Exception:
                 if same_file and previous_bytes is not None:
-                    await asyncio.to_thread(save_reference_image, persona_id, previous_bytes, previous_path.name)
+                    await asyncio.to_thread(
+                        save_reference_image,
+                        persona_id,
+                        previous_bytes,
+                        previous_path.name,
+                    )
                 else:
-                    await asyncio.to_thread(delete_reference_image, persona_id, stored_path)
+                    await asyncio.to_thread(
+                        delete_reference_image, persona_id, stored_path
+                    )
                 raise
             if previous_path and not same_file:
-                await asyncio.to_thread(delete_reference_image, persona_id, persona.reference_image_path)
+                await asyncio.to_thread(
+                    delete_reference_image, persona_id, persona.reference_image_path
+                )
             return path
 
     async def remove_reference_image(self, persona_id: str) -> None:
@@ -150,15 +180,22 @@ class PersonaManager:
             if not persona:
                 raise LookupError("Persona not found")
             path = await asyncio.to_thread(
-                get_reference_image_path, persona.id, persona.reference_image_path, require_exists=False
+                get_reference_image_path,
+                persona.id,
+                persona.reference_image_path,
+                require_exists=False,
             )
             if not await self.db.clear_persona_reference_image(persona.id):
                 raise LookupError("Persona not found")
             if path is not None:
                 try:
-                    await asyncio.to_thread(delete_reference_image, persona.id, persona.reference_image_path)
+                    await asyncio.to_thread(
+                        delete_reference_image, persona.id, persona.reference_image_path
+                    )
                 except OSError:
-                    await self.db.update_persona(persona.id, reference_image_path=persona.reference_image_path)
+                    await self.db.update_persona(
+                        persona.id, reference_image_path=persona.reference_image_path
+                    )
                     raise
 
     async def set_active_persona(self, persona_id: str) -> bool:

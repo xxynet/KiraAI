@@ -3,7 +3,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from tests.test_session_tools import OTHER, SID, archive_text, history, incoming, session_plugin
+from tests.test_session_tools import (
+    OTHER,
+    SID,
+    archive_text,
+    history,
+    incoming,
+    session_plugin,
+)
 
 
 @pytest.mark.anyio
@@ -13,6 +20,7 @@ async def test_search_anchor_neighbors_and_continuation(session_plugin, history,
     ids = [await archive_text(history, "context", str(i)) for i in range(7)]
     ordered = sorted(ids)
     from sqlalchemy import update
+
     from core.db.models import MessageRecord
 
     async with history.db.db.transaction() as session:
@@ -142,6 +150,7 @@ async def test_message_tools_format_timestamp_in_configured_timezone(session_plu
 ])
 async def test_search_tool_accepts_readable_time_ranges(session_plugin, history, sent_after, sent_before):
     from datetime import datetime, timezone
+
     from core.plugin.builtin_plugins.session_tools.tools import SearchMessagesTool
 
     anchor = int(datetime(2026, 11, 24, 8, 30, tzinfo=timezone.utc).timestamp())

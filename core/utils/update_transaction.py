@@ -55,19 +55,29 @@ class UpdateTransaction:
         self.root = root.resolve()
         self.stage_dir = stage_dir.resolve()
         if not _is_direct_child(self.root, self.stage_dir, STAGE_PREFIX):
-            raise ValueError("Update staging directory must be a direct child of the application root")
+            raise ValueError(
+                "Update staging directory must be a direct child of the application root"
+            )
         if any(not name or Path(name).name != name for name in names):
-            raise ValueError("Update items must be direct children of the application root")
+            raise ValueError(
+                "Update items must be direct children of the application root"
+            )
         if not journal_name or Path(journal_name).name != journal_name:
             raise ValueError("Update journal name must be a direct child filename")
         self.journal_name = journal_name
 
-        self.backup_dir = Path(tempfile.mkdtemp(prefix=BACKUP_PREFIX, dir=self.root)).resolve()
+        self.backup_dir = Path(
+            tempfile.mkdtemp(prefix=BACKUP_PREFIX, dir=self.root)
+        ).resolve()
         self.data: dict[str, Any] = {
             "phase": "applying",
             "backup_dir": self.backup_dir.name,
             "actions": [
-                {"name": name, "had_original": (self.root / name).exists(), "state": "pending"}
+                {
+                    "name": name,
+                    "had_original": (self.root / name).exists(),
+                    "state": "pending",
+                }
                 for name in names
             ],
         }
@@ -116,7 +126,9 @@ class UpdateTransaction:
         return _rollback_from_data(self.root, self.data, self.journal_name)
 
 
-def _rollback_from_data(root: Path, data: dict[str, Any], journal_name: str) -> list[str]:
+def _rollback_from_data(
+    root: Path, data: dict[str, Any], journal_name: str
+) -> list[str]:
     backup_dir = root / str(data.get("backup_dir") or "")
     if not _is_direct_child(root, backup_dir, BACKUP_PREFIX):
         return ["Update recovery skipped because its backup path is unsafe."]
@@ -150,7 +162,9 @@ def _rollback_from_data(root: Path, data: dict[str, Any], journal_name: str) -> 
     return []
 
 
-def recover_interrupted_update(root: Path, journal_name: str = JOURNAL_NAME) -> list[str]:
+def recover_interrupted_update(
+    root: Path, journal_name: str = JOURNAL_NAME
+) -> list[str]:
     """Recover or finalize the one update transaction recorded under ``root``."""
     root = root.resolve()
     if not journal_name or Path(journal_name).name != journal_name:

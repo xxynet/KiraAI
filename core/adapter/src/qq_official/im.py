@@ -61,15 +61,26 @@ class _ReceivedMessage:
 class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
     """Receive and send QQ OpenAPI messages using the adapter's account."""
 
-    _SUPPORTED_ELEMENTS = ["text", "img", "at", "reply", "record", "file", "video", "emoji"]
+    _SUPPORTED_ELEMENTS = [
+        "text",
+        "img",
+        "at",
+        "reply",
+        "record",
+        "file",
+        "video",
+        "emoji",
+    ]
 
     async def get_message_metadata(self) -> MessageFormatMetadata:
         return MessageFormatMetadata(self._supported_elements, emojis={})
 
-    def __init__(self, adapter: QQOfficialAdapter):
+    def __init__(self, adapter: QQOfficialAdapter) -> None:
         super().__init__(adapter)
         self._parser = QQOfficialMessageParser()
-        self._received_messages: OrderedDict[tuple[bool, str, str, str], _ReceivedMessage] = OrderedDict()
+        self._received_messages: OrderedDict[
+            tuple[bool, str, str, str], _ReceivedMessage
+        ] = OrderedDict()
         self._reply_received_at: dict[tuple[bool, str, str], float] = {}
         self._message_references: dict[tuple[bool, str, str], str] = {}
         self._sent_message_ids: set[tuple[bool, str, str]] = set()
@@ -79,16 +90,18 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
         self._reply_msg_seqs: dict[tuple[bool, str, str], int] = {}
         self._send_locks: dict[tuple[bool, str, str], asyncio.Lock] = {}
         self._reply_id_aliases: dict[tuple[bool, str, str], str] = {}
-        self._reply_alias_lrus: dict[
-            tuple[bool, str], OrderedDict[str, str]
-        ] = {}
+        self._reply_alias_lrus: dict[tuple[bool, str], OrderedDict[str, str]] = {}
 
-    def _remember_reference(self, message, is_group: bool, target_id: str, message_id: str):
+    def _remember_reference(
+        self, message, is_group: bool, target_id: str, message_id: str
+    ) -> None:
         reference = scene_value(message, "msg_idx")
         if message_id and reference:
             self._message_references[(is_group, target_id, message_id)] = reference
 
-    def _quoted_message(self, message, is_group: bool, target_id: str) -> tuple[str, Any]:
+    def _quoted_message(
+        self, message, is_group: bool, target_id: str
+    ) -> tuple[str, Any]:
         reference = field(message, "message_reference")
         quoted_id = str(field(reference, "message_id", "") or "")
         quoted = None
@@ -96,32 +109,62 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
             quoted_elements = field(message, "msg_elements", [])
             if isinstance(quoted_elements, list) and quoted_elements:
                 quoted = quoted_elements[0]
-                quoted_id = quoted_id or str(field(quoted, "id") or field(quoted, "message_id", "") or "")
+                quoted_id = quoted_id or str(
+                    field(quoted, "id") or field(quoted, "message_id", "") or ""
+                )
         quoted_reference = scene_value(message, "ref_msg_idx")
         if not quoted_id and quoted_reference:
             aliases = self._reply_alias_lrus.get((is_group, target_id), {})
-            quoted_id = next((raw_id for raw_id in aliases.values()
-                              if self._message_references.get((is_group, target_id, raw_id)) == quoted_reference), "")
+            quoted_id = next(
+                (
+                    raw_id
+                    for raw_id in aliases.values()
+                    if self._message_references.get((is_group, target_id, raw_id))
+                    == quoted_reference
+                ),
+                "",
+            )
         return quoted_id, quoted
 
     def _is_self_quote(self, message, is_group: bool, target_id: str) -> bool:
-        if str(field(message, "message_type", "")) != "103" and not field(message, "message_reference"):
+        if str(field(message, "message_type", "")) != "103" and not field(
+            message, "message_reference"
+        ):
             return False
         quoted_id, _ = self._quoted_message(message, is_group, target_id)
-        return bool(quoted_id and (is_group, target_id, quoted_id) in self._sent_message_ids)
+        return bool(
+            quoted_id and (is_group, target_id, quoted_id) in self._sent_message_ids
+        )
 
     def _message_chain(self, message, is_group: bool, target_id: str) -> MessageChain:
         elements: list[Any] = []
         quoted_id, quoted = self._quoted_message(message, is_group, target_id)
         if quoted_id or quoted is not None:
-            display_id = self._remember_reply_id(is_group, target_id, quoted_id) if quoted_id else ""
-            quoted_chain = self._parser.content_elements(quoted, is_group, target_id) if quoted is not None else []
-            elements.append(Reply(display_id, chain=MessageChain(quoted_chain) if quoted_chain else None))
+            display_id = (
+                self._remember_reply_id(is_group, target_id, quoted_id)
+                if quoted_id
+                else ""
+            )
+            quoted_chain = (
+                self._parser.content_elements(quoted, is_group, target_id)
+                if quoted is not None
+                else []
+            )
+            elements.append(
+                Reply(
+                    display_id,
+                    chain=MessageChain(quoted_chain) if quoted_chain else None,
+                )
+            )
         elements.extend(self._parser.content_elements(message, is_group, target_id))
         return MessageChain(elements or [Text("[Unsupported message]")])
 
     def _accept_message(
-        self, message, is_group: bool, target_id: str, force_mention: bool = False,
+        self,
+        message,
+        is_group: bool,
+        target_id: str,
+        force_mention: bool = False,
     ) -> _ReceivedMessage | None:
         """Merge forced mentions into an existing message while publishing it only once."""
         message_id = str(field(message, "id", "") or "")
@@ -138,7 +181,9 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
         if received is not None:
             if force_mention:
                 received.force_mention = True
-                shared_message = received.message() if received.message is not None else None
+                shared_message = (
+                    received.message() if received.message is not None else None
+                )
                 if shared_message is not None:
                     shared_message.is_mentioned = True
             return None
@@ -148,18 +193,30 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
             self._received_messages.popitem(last=False)
         return received
 
-    async def _handle_group_message(self, message, force_mention: bool = True):
+    async def _handle_group_message(self, message, force_mention: bool = True) -> None:
         await self._handle_message(message, is_group=True, force_mention=force_mention)
 
-    async def _handle_direct_message(self, message):
+    async def _handle_direct_message(self, message) -> None:
         await self._handle_message(message, is_group=False, force_mention=True)
 
-    async def _handle_message(self, message, is_group: bool, force_mention: bool):
+    async def _handle_message(
+        self, message, is_group: bool, force_mention: bool
+    ) -> None:
         author = field(message, "author")
-        user_id = str(field(author, "member_openid" if is_group else "user_openid") or field(author, "id", "") or "")
-        target_id = str(field(message, "group_openid", "") or "") if is_group else user_id
+        user_id = str(
+            field(author, "member_openid" if is_group else "user_openid")
+            or field(author, "id", "")
+            or ""
+        )
+        target_id = (
+            str(field(message, "group_openid", "") or "") if is_group else user_id
+        )
         permission = "im.group.receive" if is_group else "im.direct.receive"
-        if not target_id or not user_id or not self.is_allowed(target_id, permission=permission):
+        if (
+            not target_id
+            or not user_id
+            or not self.is_allowed(target_id, permission=permission)
+        ):
             return
         received = self._accept_message(message, is_group, target_id, force_mention)
         if received is None:
@@ -176,16 +233,29 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
             reply_ids[target_id] = message_id
             display_id = self._remember_reply_id(is_group, target_id, message_id)
             age = max(0, time.time() - timestamp)
-            self._reply_received_at[(is_group, target_id, message_id)] = time.monotonic() - age
+            self._reply_received_at[(is_group, target_id, message_id)] = (
+                time.monotonic() - age
+            )
             self._remember_reference(message, is_group, target_id, message_id)
         event = KiraMessageEvent(
             adapter=self.adapter.info,
-            supported_elements=list((await self.get_message_metadata()).supported_elements),
+            supported_elements=list(
+                (await self.get_message_metadata()).supported_elements
+            ),
             message=KiraIMMessage(
                 timestamp=timestamp,
-                group=Group(group_id=target_id, group_name=target_id) if is_group else None,
-                sender=User(user_id=user_id, nickname=self._parser.nickname(is_group, target_id, author, user_id)),
-                is_mentioned=received.force_mention or is_self_quote or self._parser.is_mentioned(message, self_ids),
+                group=Group(group_id=target_id, group_name=target_id)
+                if is_group
+                else None,
+                sender=User(
+                    user_id=user_id,
+                    nickname=self._parser.nickname(
+                        is_group, target_id, author, user_id
+                    ),
+                ),
+                is_mentioned=received.force_mention
+                or is_self_quote
+                or self._parser.is_mentioned(message, self_ids),
                 message_id=display_id or message_id,
                 self_id=robot_id or self.adapter.app_id,
                 bot=User(robot_id or self.adapter.app_id, getattr(robot, "name", None)),
@@ -207,7 +277,9 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
                 if element.pid == "all":
                     parts.append("@all")
                 else:
-                    parts.append(f'<qqbot-at-user id="{escape(element.pid, quote=True)}" />')
+                    parts.append(
+                        f'<qqbot-at-user id="{escape(element.pid, quote=True)}" />'
+                    )
                 parts.append(" ")
                 mention_end = len(parts)
             elif isinstance(element, Emoji):
@@ -290,7 +362,9 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
         digest = hashlib.sha256(message_id.encode("utf-8")).hexdigest()[:10]
         return f"qqo-{digest}"
 
-    def _remember_reply_id(self, is_group: bool, target_id: str, message_id: str) -> str:
+    def _remember_reply_id(
+        self, is_group: bool, target_id: str, message_id: str
+    ) -> str:
         display_message_id = self._display_message_id(message_id)
         reply_key = (is_group, target_id, message_id)
         conversation_key = (is_group, target_id)
@@ -303,9 +377,7 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
         self._reply_msg_seqs.setdefault(reply_key, 0)
         while len(aliases) > QQ_OFFICIAL_MAX_REPLY_IDS_PER_CONVERSATION:
             expired_display_id, expired_message_id = aliases.popitem(last=False)
-            self._reply_id_aliases.pop(
-                (is_group, target_id, expired_display_id), None
-            )
+            self._reply_id_aliases.pop((is_group, target_id, expired_display_id), None)
             self._forget_reply_id(is_group, target_id, expired_message_id)
         return display_message_id
 
@@ -324,8 +396,9 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
         key = (is_group, target_id, message_id)
         received_at = self._reply_received_at.get(key)
         max_age, max_replies = (300, 5) if is_group else (3600, 4)
-        return ((received_at is None or time.monotonic() - received_at < max_age)
-                and self._reply_msg_seqs.get(key, 0) < max_replies)
+        return (
+            received_at is None or time.monotonic() - received_at < max_age
+        ) and self._reply_msg_seqs.get(key, 0) < max_replies
 
     def _resolve_reply_id(
         self, is_group: bool, target_id: str, send_message_obj: MessageChain
@@ -334,23 +407,36 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
         latest_id = reply_ids.get(target_id)
         for element in send_message_obj:
             if isinstance(element, Reply):
-                raw_id = self._reply_id_aliases.get((is_group, target_id, element.message_id))
-                if ((is_group, target_id, raw_id) in self._reply_received_at
-                        and self._reply_is_valid(is_group, target_id, raw_id)):
+                raw_id = self._reply_id_aliases.get(
+                    (is_group, target_id, element.message_id)
+                )
+                if (
+                    is_group,
+                    target_id,
+                    raw_id,
+                ) in self._reply_received_at and self._reply_is_valid(
+                    is_group, target_id, raw_id
+                ):
                     return raw_id
         if latest_id and not self._reply_is_valid(is_group, target_id, latest_id):
             self._invalidate_reply_id(is_group, target_id, latest_id)
             return None
         return latest_id
 
-    def _resolve_reference(self, is_group: bool, target_id: str, chain: MessageChain) -> str | None:
+    def _resolve_reference(
+        self, is_group: bool, target_id: str, chain: MessageChain
+    ) -> str | None:
         for element in chain:
             if isinstance(element, Reply):
-                raw_id = self._reply_id_aliases.get((is_group, target_id, element.message_id))
+                raw_id = self._reply_id_aliases.get(
+                    (is_group, target_id, element.message_id)
+                )
                 return self._message_references.get((is_group, target_id, raw_id))
         return None
 
-    def _invalidate_reply_id(self, is_group: bool, target_id: str, reply_id: str):
+    def _invalidate_reply_id(
+        self, is_group: bool, target_id: str, reply_id: str
+    ) -> None:
         key = (is_group, target_id, reply_id)
         if key in self._reply_received_at:
             self._reply_received_at[key] = float("-inf")
@@ -360,7 +446,10 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
 
     @staticmethod
     def _send_error_code(exc: Exception) -> str | None:
-        match = re.search(r"\b(?:304103|40034005|40034128|40034100|40034105|40034006|40034024)\b", str(exc))
+        match = re.search(
+            r"\b(?:304103|40034005|40034128|40034100|40034105|40034006|40034024)\b",
+            str(exc),
+        )
         return match[0] if match else None
 
     async def send_group_message(
@@ -377,41 +466,85 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
         self, target_id: str, send_message_obj: MessageChain, is_group: bool
     ) -> KiraIMSentResult:
         client = self.adapter.client
-        if not client or not self.adapter._client_task or self.adapter._client_task.done():
+        if (
+            not client
+            or not self.adapter._client_task
+            or self.adapter._client_task.done()
+        ):
             return KiraIMSentResult(ok=False, err="QQ official bot is not connected")
         content = self._text_content(send_message_obj)
-        media_elements = [element for element in send_message_obj if isinstance(element, (File, Image))]
+        media_elements = [
+            element
+            for element in send_message_obj
+            if isinstance(element, (File, Image))
+        ]
         if len(media_elements) > 1:
-            return KiraIMSentResult(ok=False, err="QQ official bot can send only one media item per message")
+            return KiraIMSentResult(
+                ok=False, err="QQ official bot can send only one media item per message"
+            )
         if not content and not media_elements:
-            return KiraIMSentResult(ok=False, err="QQ official bot cannot send an empty message")
+            return KiraIMSentResult(
+                ok=False, err="QQ official bot cannot send an empty message"
+            )
         lock = self._send_locks.setdefault((is_group, target_id, ""), asyncio.Lock())
         async with lock:
-            if (self.adapter.client is not client or not self.adapter._client_task
-                    or self.adapter._client_task.done()):
-                return KiraIMSentResult(ok=False, err="QQ official bot disconnected before sending")
+            if (
+                self.adapter.client is not client
+                or not self.adapter._client_task
+                or self.adapter._client_task.done()
+            ):
+                return KiraIMSentResult(
+                    ok=False, err="QQ official bot disconnected before sending"
+                )
             reply_id = self._resolve_reply_id(is_group, target_id, send_message_obj)
             if not reply_id and not self._proactive_enabled:
-                return KiraIMSentResult(ok=False, err="QQ official bot needs a valid received message before replying; proactive messages are disabled")
+                return KiraIMSentResult(
+                    ok=False,
+                    err="QQ official bot needs a valid received message before replying; proactive messages are disabled",
+                )
             media = None
             if media_elements:
                 try:
-                    media = self._media_payload(await self._upload_file(target_id, media_elements[0], is_group))
+                    media = self._media_payload(
+                        await self._upload_file(target_id, media_elements[0], is_group)
+                    )
                 except Exception as exc:
-                    logger.error("Failed to upload QQ official media (%s)", type(exc).__name__)
-                    return KiraIMSentResult(ok=False, err=f"Failed to upload QQ official media ({type(exc).__name__})")
+                    logger.error(
+                        "Failed to upload QQ official media (%s)", type(exc).__name__
+                    )
+                    return KiraIMSentResult(
+                        ok=False,
+                        err=f"Failed to upload QQ official media ({type(exc).__name__})",
+                    )
                 if not media:
-                    return KiraIMSentResult(ok=False, err="QQ official media upload returned no file_info")
-            if (self.adapter.client is not client or not self.adapter._client_task
-                    or self.adapter._client_task.done()):
-                return KiraIMSentResult(ok=False, err="QQ official bot disconnected before sending")
+                    return KiraIMSentResult(
+                        ok=False, err="QQ official media upload returned no file_info"
+                    )
+            if (
+                self.adapter.client is not client
+                or not self.adapter._client_task
+                or self.adapter._client_task.done()
+            ):
+                return KiraIMSentResult(
+                    ok=False, err="QQ official bot disconnected before sending"
+                )
             reply_id = self._resolve_reply_id(is_group, target_id, send_message_obj)
             if not reply_id and not self._proactive_enabled:
-                return KiraIMSentResult(ok=False, err="QQ official passive reply expired before sending; proactive messages are disabled")
-            payload: dict[str, Any] = {"msg_type": 7 if media else 0, "content": content or None}
+                return KiraIMSentResult(
+                    ok=False,
+                    err="QQ official passive reply expired before sending; proactive messages are disabled",
+                )
+            payload: dict[str, Any] = {
+                "msg_type": 7 if media else 0,
+                "content": content or None,
+            }
             if is_group and not media and AT_MARKUP.search(content):
                 markdown_content = AT_MARKUP.sub(
-                    lambda match: f'<qqbot-at-user id="{escape(match[1], quote=True)}" />' if match[1] else match[0],
+                    lambda match: (
+                        f'<qqbot-at-user id="{escape(match[1], quote=True)}" />'
+                        if match[1]
+                        else match[0]
+                    ),
                     content,
                 )
                 payload = {"msg_type": 2, "markdown": {"content": markdown_content}}
@@ -420,7 +553,11 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
             reference = self._resolve_reference(is_group, target_id, send_message_obj)
             if reference:
                 payload["message_reference"] = {"message_id": reference}
-            send = client.api.post_group_message if is_group else client.api.post_c2c_message
+            send = (
+                client.api.post_group_message
+                if is_group
+                else client.api.post_c2c_message
+            )
             target = {"group_openid": target_id} if is_group else {"openid": target_id}
             if reply_id:
                 send_key = (is_group, target_id, reply_id)
@@ -430,11 +567,19 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
                 try:
                     result = await send(**target, **payload)
                 except Exception as exc:
-                    if not reply_id or self._send_error_code(exc) not in {"304103", "40034005", "40034128"}:
+                    if not reply_id or self._send_error_code(exc) not in {
+                        "304103",
+                        "40034005",
+                        "40034128",
+                    }:
                         raise
                     self._invalidate_reply_id(is_group, target_id, reply_id)
-                    if (not self._proactive_enabled or self.adapter.client is not client
-                            or not self.adapter._client_task or self.adapter._client_task.done()):
+                    if (
+                        not self._proactive_enabled
+                        or self.adapter.client is not client
+                        or not self.adapter._client_task
+                        or self.adapter._client_task.done()
+                    ):
                         raise
                     payload.pop("msg_id", None)
                     payload.pop("msg_seq", None)
@@ -443,14 +588,22 @@ class QQOfficialIMCapability(IMCapability["QQOfficialAdapter"]):
                 if reply_id and send_key in self._reply_msg_seqs:
                     self._reply_msg_seqs[send_key] = payload["msg_seq"]
                 message_id = self._result_message_id(result)
-                display_id = self._remember_reply_id(is_group, target_id, message_id) if message_id else None
+                display_id = (
+                    self._remember_reply_id(is_group, target_id, message_id)
+                    if message_id
+                    else None
+                )
                 if message_id:
                     self._sent_message_ids.add((is_group, target_id, message_id))
                 sent_reference = field(field(result, "ext_info"), "ref_idx")
                 if message_id and isinstance(sent_reference, str) and sent_reference:
-                    self._message_references[(is_group, target_id, message_id)] = sent_reference
+                    self._message_references[(is_group, target_id, message_id)] = (
+                        sent_reference
+                    )
                 return KiraIMSentResult(message_id=display_id)
             except Exception as exc:
                 error = self._send_error_code(exc) or type(exc).__name__
                 logger.error("Failed to send QQ official message (%s)", error)
-                return KiraIMSentResult(ok=False, err=f"Failed to send QQ official message ({error})")
+                return KiraIMSentResult(
+                    ok=False, err=f"Failed to send QQ official message ({error})"
+                )

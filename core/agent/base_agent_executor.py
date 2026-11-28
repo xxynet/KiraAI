@@ -48,7 +48,7 @@ class BaseAgentExecutionContext:
     messages: list[OpenAIMessage] = field(default_factory=list)
     new_messages: list[OpenAIMessage] = field(default_factory=list)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.messages[:] = [
             message if isinstance(message, OpenAIMessage) else OpenAIMessage(**message)
             for message in self.messages
@@ -102,14 +102,16 @@ class BaseAgentExecutor(Generic[ContextT]):
         tool_executor: ToolExecutor | None = None,
         config: AgentExecutionConfig | None = None,
         on_result: Callable[[AgentStepResult], Awaitable[None]] | None = None,
-    ):
+    ) -> None:
         self.model_group = model_group.copy()
         self.context = context
         self.request = request
         self.hooks = hooks if hooks is not None else AgentExecutionHooks()
         self.config = config if config is not None else AgentExecutionConfig()
         self.on_result = on_result
-        self.tool_executor = tool_executor if tool_executor is not None else ToolExecutor()
+        self.tool_executor = (
+            tool_executor if tool_executor is not None else ToolExecutor()
+        )
         self._run_state: _AgentRunState | None = None
         self._background_task: Task[AgentStepResult | None] | None = None
         self._queued_messages: deque[OpenAIMessage] = deque()
@@ -138,7 +140,8 @@ class BaseAgentExecutor(Generic[ContextT]):
         return self._start()
 
     def _start(
-        self, message: OpenAIMessage | None = None,
+        self,
+        message: OpenAIMessage | None = None,
     ) -> Task[AgentStepResult | None]:
         loop = get_running_loop()
         ctx = self.context
@@ -162,7 +165,8 @@ class BaseAgentExecutor(Generic[ContextT]):
         return task
 
     def _build_request(
-        self, tool_set: ToolSet | None,
+        self,
+        tool_set: ToolSet | None,
     ) -> LLMRequest:
         ctx, request = self.context, self.request
         if request is None:
@@ -182,7 +186,8 @@ class BaseAgentExecutor(Generic[ContextT]):
         tool_set = self.request.tool_set if self.request is not None else None
         tool_set = ToolSet(tool_set.tools.copy()) if tool_set is not None else None
         return _AgentRunState(
-            config=config, model_group=self.model_group.copy(),
+            config=config,
+            model_group=self.model_group.copy(),
             request=self._build_request(tool_set),
             accepting_steering=config.max_steps != 0,
         )
@@ -203,7 +208,9 @@ class BaseAgentExecutor(Generic[ContextT]):
             self._state = "done"
 
     def _background_done(
-        self, run_state: _AgentRunState, task: Task[AgentStepResult | None],
+        self,
+        run_state: _AgentRunState,
+        task: Task[AgentStepResult | None],
     ) -> None:
         # Cancellation before coroutine startup still needs to release its slot.
         self._release_run(run_state)
@@ -218,7 +225,9 @@ class BaseAgentExecutor(Generic[ContextT]):
                 )
 
     async def _run_background(
-        self, ctx: ContextT, run_state: _AgentRunState,
+        self,
+        ctx: ContextT,
+        run_state: _AgentRunState,
     ) -> AgentStepResult | None:
         iterator = self._iterate_run(ctx, run_state)
         last_step = None
@@ -234,7 +243,9 @@ class BaseAgentExecutor(Generic[ContextT]):
             finally:
                 self._release_run(run_state)
 
-    def queue(self, message: str | OpenAIMessage) -> Task[AgentStepResult | None] | None:
+    def queue(
+        self, message: str | OpenAIMessage
+    ) -> Task[AgentStepResult | None] | None:
         """Queue a follow-up turn using the context supplied at initialization.
 
         Both drivers consume queued messages with fresh model/tool/config snapshots
@@ -278,7 +289,9 @@ class BaseAgentExecutor(Generic[ContextT]):
             raise TypeError("message must be a string or OpenAIMessage")
         if message.role != "user":
             raise ValueError("message must have the user role")
-        if not message.content or (isinstance(message.content, str) and not message.content.strip()):
+        if not message.content or (
+            isinstance(message.content, str) and not message.content.strip()
+        ):
             raise ValueError("message content must not be empty")
         return deepcopy(message)
 
@@ -297,7 +310,9 @@ class BaseAgentExecutor(Generic[ContextT]):
         return True
 
     @staticmethod
-    def _append_messages(ctx: ContextT, run_state: _AgentRunState, *messages: OpenAIMessage) -> None:
+    def _append_messages(
+        ctx: ContextT, run_state: _AgentRunState, *messages: OpenAIMessage
+    ) -> None:
         ctx.append_messages(*messages)
         run_state.request.messages.extend(messages)
 
@@ -308,17 +323,25 @@ class BaseAgentExecutor(Generic[ContextT]):
             self._append_messages(ctx, run_state, *messages)
 
     async def _execute_tools(
-        self, ctx: ContextT, response: LLMResponse, run_state: _AgentRunState,
+        self,
+        ctx: ContextT,
+        response: LLMResponse,
+        run_state: _AgentRunState,
     ) -> None:
         await self.tool_executor.execute_tools(
-            response, tool_set=run_state.request.tool_set, config=run_state.config.tool_config,
+            response,
+            tool_set=run_state.request.tool_set,
+            config=run_state.config.tool_config,
             on_tool_call=partial(self._await_tool_call_hook, ctx, run_state),
             on_tool_result=partial(self.hooks.on_tool_result, ctx),
             should_stop=run_state.abort_requested.is_set,
         )
 
     async def _await_tool_call_hook(
-        self, ctx: ContextT, run_state: _AgentRunState, call_ctx: ToolCallContext,
+        self,
+        ctx: ContextT,
+        run_state: _AgentRunState,
+        call_ctx: ToolCallContext,
     ) -> None:
         """Let abort cancel an approval wait before any tool starts executing."""
         call_ctx.agent_context = ctx
@@ -351,11 +374,15 @@ class BaseAgentExecutor(Generic[ContextT]):
             content = result.get("content")
             if isinstance(content, list):
                 text_parts = [
-                    part for part in content
-                    if not (isinstance(part, dict) and part.get("type") == MEDIA_REF_TYPE)
+                    part
+                    for part in content
+                    if not (
+                        isinstance(part, dict) and part.get("type") == MEDIA_REF_TYPE
+                    )
                 ]
                 refs = [
-                    part for part in content
+                    part
+                    for part in content
                     if isinstance(part, dict) and part.get("type") == MEDIA_REF_TYPE
                 ]
                 if refs:
@@ -369,24 +396,31 @@ class BaseAgentExecutor(Generic[ContextT]):
                         part.get("text", "") if isinstance(part, dict) else str(part)
                         for part in text_parts
                     )
-                    messages.append(OpenAIMessage(
-                        role="tool",
-                        tool_call_id=result.get("tool_call_id"),
-                        name=result.get("name"),
-                        content=tool_content,
-                    ))
+                    messages.append(
+                        OpenAIMessage(
+                            role="tool",
+                            tool_call_id=result.get("tool_call_id"),
+                            name=result.get("name"),
+                            content=tool_content,
+                        )
+                    )
                     continue
             messages.append(OpenAIMessage(**result))
 
         if media_parts:
             joined_names = ", ".join(media_tool_names)
-            messages.append(OpenAIMessage(
-                role="user",
-                content=[
-                    {"type": "text", "text": f"Media returned by tool call(s): {joined_names}"},
-                    *media_parts,
-                ],
-            ))
+            messages.append(
+                OpenAIMessage(
+                    role="user",
+                    content=[
+                        {
+                            "type": "text",
+                            "text": f"Media returned by tool call(s): {joined_names}",
+                        },
+                        *media_parts,
+                    ],
+                )
+            )
         return messages
 
     async def run(self) -> AsyncIterator[AgentStepResult]:
@@ -409,12 +443,14 @@ class BaseAgentExecutor(Generic[ContextT]):
                 self._release_run(run_state)
 
     async def _iterate_run(
-        self, ctx: ContextT, run_state: _AgentRunState,
+        self,
+        ctx: ContextT,
+        run_state: _AgentRunState,
     ) -> AsyncIterator[AgentStepResult]:
         iterator = None
         if ctx.new_messages is self._last_turn_messages:
             # Keep caller-added inputs while leaving previous results intact.
-            ctx.new_messages = ctx.new_messages[self._last_turn_message_count:]
+            ctx.new_messages = ctx.new_messages[self._last_turn_message_count :]
         try:
             while True:
                 iterator = self._run(ctx, run_state)
@@ -425,15 +461,25 @@ class BaseAgentExecutor(Generic[ContextT]):
                         run_state.accepting_steering = False
                     yield result
                 if run_state.abort_requested.is_set():
-                    model = run_state.model or (run_state.model_group[0].model if run_state.model_group else None)
+                    model = run_state.model or (
+                        run_state.model_group[0].model
+                        if run_state.model_group
+                        else None
+                    )
                     if model is not None:
                         yield AgentStepResult(
-                            state="stopped", step_index=run_state.step_index,
-                            llm_response=None, new_messages=ctx.new_messages,
-                            is_final=True, has_tool_calls=False, model=model,
+                            state="stopped",
+                            step_index=run_state.step_index,
+                            llm_response=None,
+                            new_messages=ctx.new_messages,
+                            is_final=True,
+                            has_tool_calls=False,
+                            model=model,
                         )
                     return
-                if (last_step is not None and last_step.state == "stopped") or not self._queued_messages:
+                if (
+                    last_step is not None and last_step.state == "stopped"
+                ) or not self._queued_messages:
                     return
                 message = self._queued_messages.popleft()
                 run_state = self._create_run_state()
@@ -451,7 +497,9 @@ class BaseAgentExecutor(Generic[ContextT]):
                 self._release_run(run_state)
 
     async def _run(
-        self, ctx: ContextT, run_state: _AgentRunState,
+        self,
+        ctx: ContextT,
+        run_state: _AgentRunState,
     ) -> AsyncIterator[AgentStepResult]:
         request = run_state.request
         model_group = run_state.model_group
@@ -473,7 +521,7 @@ class BaseAgentExecutor(Generic[ContextT]):
         if run_state.abort_requested.is_set():
             return
         self._apply_steering(ctx, run_state)
-        for step in (count() if max_steps == -1 else range(max_steps)):
+        for step in count() if max_steps == -1 else range(max_steps):
             if run_state.abort_requested.is_set():
                 return
             step_index = step + 1
@@ -493,7 +541,9 @@ class BaseAgentExecutor(Generic[ContextT]):
                     persist=False,
                     content=config.final_step_hint,
                 )
-                hint_message = OpenAIMessage(role="user", content=final_step_prompt.to_string())
+                hint_message = OpenAIMessage(
+                    role="user", content=final_step_prompt.to_string()
+                )
                 request.messages.append(hint_message)
 
             # Try models in order, failover to next on provider/API errors.
@@ -514,16 +564,27 @@ class BaseAgentExecutor(Generic[ContextT]):
                         return
                     llm_resp = await model.chat(request)
                     if model_idx > 0:
-                        llm_logger.info(f"[{sid}] Successfully switched to model: {model_name} ({provider_name})")
+                        llm_logger.info(
+                            f"[{sid}] Successfully switched to model: {model_name} ({provider_name})"
+                        )
                     break
-                except (APIStatusError, APITimeoutError, APIConnectionError, ProviderAPIError) as e:
+                except (
+                    APIStatusError,
+                    APITimeoutError,
+                    APIConnectionError,
+                    ProviderAPIError,
+                ) as e:
                     last_exc = e
-                    logger.error(f"[{sid}] Model {model.model.model_name} failed: {type(e).__name__}: {e}")
+                    logger.error(
+                        f"[{sid}] Model {model.model.model_name} failed: {type(e).__name__}: {e}"
+                    )
                     if run_state.abort_requested.is_set():
                         return
                     if model_idx < len(model_group) - 1:
                         next_model = model_group[model_idx + 1]
-                        llm_logger.warning(f"[{sid}] Falling back to next model: {next_model.model.model_name} ({next_model.model.provider_name})")
+                        llm_logger.warning(
+                            f"[{sid}] Falling back to next model: {next_model.model.model_name} ({next_model.model.provider_name})"
+                        )
                         continue
                     else:
                         err = (
@@ -534,7 +595,10 @@ class BaseAgentExecutor(Generic[ContextT]):
                         state = "error"
                         is_final = True
                         await self.hooks.on_exception(
-                            ctx, last_exc, source="provider", comp_id=model.model.provider_name,
+                            ctx,
+                            last_exc,
+                            source="provider",
+                            comp_id=model.model.provider_name,
                         )
 
             if run_state.abort_requested.is_set():
@@ -551,7 +615,9 @@ class BaseAgentExecutor(Generic[ContextT]):
             if llm_resp.cached_tokens is not None:
                 cached_tokens_info = f", Cached tokens: {llm_resp.cached_tokens}"
                 if llm_resp.input_tokens:
-                    cache_hit_rate = llm_resp.cached_tokens / llm_resp.input_tokens * 100
+                    cache_hit_rate = (
+                        llm_resp.cached_tokens / llm_resp.input_tokens * 100
+                    )
                     cached_tokens_info += f" (Cache hit rate: {cache_hit_rate:.1f}%)"
 
             llm_logger.info(
@@ -574,13 +640,15 @@ class BaseAgentExecutor(Generic[ContextT]):
                 return
 
             if not has_tool_calls:
-                is_final = is_final or state == "error" or not run_state.pending_messages
+                is_final = (
+                    is_final or state == "error" or not run_state.pending_messages
+                )
                 assistant_content = llm_resp.text_response or ""
                 reasoning = llm_resp.reasoning_content or ""
                 msg = OpenAIMessage(
                     role="assistant",
                     content=assistant_content,
-                    reasoning_content=reasoning
+                    reasoning_content=reasoning,
                 )
                 self._append_messages(ctx, run_state, msg)
                 yield AgentStepResult(
@@ -619,7 +687,7 @@ class BaseAgentExecutor(Generic[ContextT]):
                 role="assistant",
                 content=assistant_content,
                 tool_calls=answered_tool_calls,
-                reasoning_content=reasoning
+                reasoning_content=reasoning,
             )
             tool_msgs = self._build_tool_messages(llm_resp.tool_results)
             self._append_messages(ctx, run_state, msg, *tool_msgs)

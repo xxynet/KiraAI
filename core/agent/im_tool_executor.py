@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 class IMToolExecutor(ToolExecutor):
     """Execute IM tools with the event bound to this executor."""
 
-    def __init__(self, event: KiraMessageBatchEvent):
+    def __init__(self, event: KiraMessageBatchEvent) -> None:
         self.event = event
 
     async def invoke_tool(self, tool: BaseTool, args: dict) -> object:

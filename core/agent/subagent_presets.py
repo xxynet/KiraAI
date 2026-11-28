@@ -20,7 +20,6 @@ from core.utils.tool_utils import BaseTool
 
 from .config import AgentExecutionConfig, SubAgentConfig, ToolExecutionConfig
 
-
 _PresetScopes = dict[str, dict[str, list[str]]]
 
 
@@ -121,7 +120,9 @@ class SubAgentPreset(BaseModel):
                 max_steps=self.max_steps,
                 tool_config=tool_config,
             ),
-            instruction=self.instruction if self.instruction_source != "persona" else "",
+            instruction=self.instruction
+            if self.instruction_source != "persona"
+            else "",
             instruction_source=self.instruction_source,
             persona_id=self.persona_id if self.instruction_source != "custom" else None,
             tool_mode=self.tool_mode,
@@ -152,7 +153,9 @@ class PluginSubAgentRegistration:
 
 class SubAgentPresetStore:
     def __init__(self, path: Path | None = None):
-        self.path = path if path is not None else get_config_path() / "subagent_presets.json"
+        self.path = (
+            path if path is not None else get_config_path() / "subagent_presets.json"
+        )
         self._items: dict[str, SubAgentPreset] = {}
         self._plugin_items: dict[str, PluginSubAgentRegistration] = {}
         self._scopes: _PresetScopes = {}
@@ -160,6 +163,7 @@ class SubAgentPresetStore:
 
     async def initialize(self) -> None:
         async with self._lock:
+
             def read():
                 if not self.path.exists():
                     return {}
@@ -169,7 +173,10 @@ class SubAgentPresetStore:
             if not isinstance(raw, dict):
                 raise TypeError("Subagent presets must be an object")
             scopes = raw.pop("_scope", {})
-            items = {identity: SubAgentPreset.model_validate(item) for identity, item in raw.items()}
+            items = {
+                identity: SubAgentPreset.model_validate(item)
+                for identity, item in raw.items()
+            }
             self._scopes = self._validate_scopes(scopes, items)
             self._items = items
 
@@ -185,24 +192,35 @@ class SubAgentPresetStore:
         ]
 
     def _all_items(self) -> dict[str, SubAgentPreset]:
-        return {**self._items, **{identity: item.preset for identity, item in self._plugin_items.items()}}
+        return {
+            **self._items,
+            **{identity: item.preset for identity, item in self._plugin_items.items()},
+        }
 
     def get(self, identity: str) -> SubAgentPreset:
         return self._all_items()[identity].model_copy(deep=True)
 
-    def get_enabled_by_name(self, name: str, *, session_id: str) -> tuple[str, SubAgentPreset]:
+    def get_enabled_by_name(
+        self, name: str, *, session_id: str
+    ) -> tuple[str, SubAgentPreset]:
         for identity, preset in self._all_items().items():
             if preset.name == name:
                 if not preset.enabled:
                     raise ValueError(f"Subagent preset is disabled: {name}")
                 if not self.is_preset_allowed(identity, session_id):
-                    raise PermissionError(f"Subagent preset is not allowed for the calling session: {name}")
+                    raise PermissionError(
+                        f"Subagent preset is not allowed for the calling session: {name}"
+                    )
                 return identity, self.get(identity)
         raise ValueError(f"Unknown subagent preset: {name}")
 
     def is_preset_allowed(self, identity: str, session_id: str | None) -> bool:
         registration = self._plugin_items.get(identity)
-        scope = registration.scope if registration is not None else self._scopes.get(identity)
+        scope = (
+            registration.scope
+            if registration is not None
+            else self._scopes.get(identity)
+        )
         if scope is None:
             return True
         if session_id is None:
@@ -213,7 +231,8 @@ class SubAgentPresetStore:
 
     def _available_presets(self, session_id: str) -> Iterator[SubAgentPreset]:
         return (
-            preset for identity, preset in self._all_items().items()
+            preset
+            for identity, preset in self._all_items().items()
             if preset.enabled and self.is_preset_allowed(identity, session_id)
         )
 
@@ -263,7 +282,9 @@ class SubAgentPresetStore:
         }
 
     @staticmethod
-    def _validate_scopes(scopes: object, items: dict[str, SubAgentPreset]) -> _PresetScopes:
+    def _validate_scopes(
+        scopes: object, items: dict[str, SubAgentPreset]
+    ) -> _PresetScopes:
         if not isinstance(scopes, dict):
             raise ValueError("Subagent scopes must be an object")
         validated = {}
@@ -284,7 +305,10 @@ class SubAgentPresetStore:
     async def remove_session_from_scopes(self, session_id: str) -> None:
         async with self._lock:
             scopes = {
-                identity: {mode: [sid for sid in sessions if sid != session_id] for mode, sessions in scope.items()}
+                identity: {
+                    mode: [sid for sid in sessions if sid != session_id]
+                    for mode, sessions in scope.items()
+                }
                 for identity, scope in self._scopes.items()
             }
             if scopes != self._scopes:
@@ -311,7 +335,9 @@ class SubAgentPresetStore:
             if temporary is not None and os.path.exists(temporary):
                 os.unlink(temporary)
 
-    async def _commit(self, items: dict[str, SubAgentPreset], scopes: _PresetScopes) -> None:
+    async def _commit(
+        self, items: dict[str, SubAgentPreset], scopes: _PresetScopes
+    ) -> None:
         write = asyncio.create_task(asyncio.to_thread(self._write, items, scopes))
         try:
             await asyncio.shield(write)
@@ -336,7 +362,9 @@ class SubAgentPresetStore:
         registration = self._plugin_items.get(identity)
         return list(registration.tools) if registration is not None else []
 
-    async def register_plugin(self, identity: str, registration: PluginSubAgentRegistration) -> dict:
+    async def register_plugin(
+        self, identity: str, registration: PluginSubAgentRegistration
+    ) -> dict:
         """Index the same runtime registration owned by PluginComponents."""
         async with self._lock:
             if identity in self._items:
@@ -354,8 +382,13 @@ class SubAgentPresetStore:
         return identity in self._plugin_items
 
     def _check_name(self, preset: SubAgentPreset, identity: str) -> None:
-        if any(other_id != identity and other.name == preset.name for other_id, other in self._all_items().items()):
-            raise DuplicatePresetNameError(f"A subagent preset named {preset.name!r} already exists")
+        if any(
+            other_id != identity and other.name == preset.name
+            for other_id, other in self._all_items().items()
+        ):
+            raise DuplicatePresetNameError(
+                f"A subagent preset named {preset.name!r} already exists"
+            )
 
     async def _save(self, preset: SubAgentPreset, identity: str) -> dict:
         # Callers must hold the store lock through the commit.

@@ -83,8 +83,14 @@ class ImageCacheMixin:
         async with self.db.get_session() as session:
             stmt = delete(ImageDescCache).where(
                 or_(
-                    and_(ImageDescCache.last_seen < now - fifteen_days, ImageDescCache.count < 2),
-                    and_(ImageDescCache.last_seen < now - thirty_days, ImageDescCache.count < 3),
+                    and_(
+                        ImageDescCache.last_seen < now - fifteen_days,
+                        ImageDescCache.count < 2,
+                    ),
+                    and_(
+                        ImageDescCache.last_seen < now - thirty_days,
+                        ImageDescCache.count < 3,
+                    ),
                 )
             )
             result = await session.execute(stmt)
@@ -94,10 +100,21 @@ class ImageCacheMixin:
     async def get_image_desc_cache_usage(self) -> dict[str, int]:
         """Report description payload bytes, excluding database page overhead."""
         async with self.db.get_session() as session:
-            row = (await session.execute(select(
-                func.count(),
-                func.coalesce(func.sum(func.length(cast(ImageDescCache.description, LargeBinary))), 0),
-            ).select_from(ImageDescCache))).one()
+            row = (
+                await session.execute(
+                    select(
+                        func.count(),
+                        func.coalesce(
+                            func.sum(
+                                func.length(
+                                    cast(ImageDescCache.description, LargeBinary)
+                                )
+                            ),
+                            0,
+                        ),
+                    ).select_from(ImageDescCache)
+                )
+            ).one()
             return {"item_count": row[0], "size_bytes": row[1]}
 
     async def clear_image_desc_cache(self) -> int:

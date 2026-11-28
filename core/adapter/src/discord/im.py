@@ -5,7 +5,7 @@ import base64
 import io
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import discord
 
@@ -42,19 +42,22 @@ _msg_sender_logger = get_logger("discord.send", "blue")
 class MessageSender:
     """Concurrency control & retry for Discord sends."""
 
-    def __init__(self, max_concurrent: int = 5, max_retries: int = 3, retry_delay: float = 1.0):
+    def __init__(
+        self, max_concurrent: int = 5, max_retries: int = 3, retry_delay: float = 1.0
+    ) -> None:
         self.semaphore = asyncio.Semaphore(max_concurrent)
         self.max_retries = max_retries
         self.retry_delay = retry_delay
 
     @staticmethod
-    def _refresh_discord_files(kwargs: dict):
+    def _refresh_discord_files(kwargs: dict) -> None:
         """Recreate discord.File objects for retry.
 
         After a failed attempt the internal file handle may be closed or at
         EOF.  For path-backed files we reopen from ``fp.name``; for seekable
         streams (BytesIO) we just rewind.
         """
+
         def _recreate(f: discord.File) -> discord.File:
             fp = f.fp
             # path-backed file (BufferedReader with .name)
@@ -74,21 +77,27 @@ class MessageSender:
 
         files_val = kwargs.get("files")
         if files_val and isinstance(files_val, list):
-            kwargs["files"] = [_recreate(f) if isinstance(f, discord.File) else f for f in files_val]
+            kwargs["files"] = [
+                _recreate(f) if isinstance(f, discord.File) else f for f in files_val
+            ]
 
-    async def send_with_retry(self, send_func, *args, **kwargs):
+    async def send_with_retry(self, send_func, *args, **kwargs) -> Any | None:
         async with self.semaphore:
             for attempt in range(self.max_retries + 1):
                 if attempt > 0:
                     try:
                         await asyncio.to_thread(self._refresh_discord_files, kwargs)
                     except Exception as e:
-                        _msg_sender_logger.warning(f"Failed to refresh discord files for retry ({type(e).__name__})")
+                        _msg_sender_logger.warning(
+                            f"Failed to refresh discord files for retry ({type(e).__name__})"
+                        )
                 try:
-                    return await asyncio.wait_for(send_func(*args, **kwargs), timeout=30.0)
+                    return await asyncio.wait_for(
+                        send_func(*args, **kwargs), timeout=30.0
+                    )
                 except Exception:
                     if attempt < self.max_retries:
-                        await asyncio.sleep(self.retry_delay * (2 ** attempt))
+                        await asyncio.sleep(self.retry_delay * (2**attempt))
                         continue
                     raise
 
@@ -96,14 +105,24 @@ class MessageSender:
 class DiscordIMCapability(IMCapability["DiscordAdapter"]):
     """Receive, convert and send messages for one Discord account."""
 
-    _SUPPORTED_ELEMENTS = ["text", "img", "at", "reply", "record", "emoji", "sticker", "file", "video"]
+    _SUPPORTED_ELEMENTS = [
+        "text",
+        "img",
+        "at",
+        "reply",
+        "record",
+        "emoji",
+        "sticker",
+        "file",
+        "video",
+    ]
 
     async def get_message_metadata(self) -> MessageFormatMetadata:
         return MessageFormatMetadata(self._supported_elements, emojis={})
 
     # ===== Slash Commands =====
 
-    def _register_slash_commands(self):
+    def _register_slash_commands(self) -> None:
         """Register slash commands on the bot."""
         adapter = self.adapter  # capture reference for closures
 
@@ -112,7 +131,7 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
             description="Check if the bot is alive",
             guild_ids=self.adapter.slash_guild_ids or None,
         )
-        async def ping(ctx: discord.ApplicationContext):
+        async def ping(ctx: discord.ApplicationContext) -> None:
             latency_ms = round(adapter.bot.latency * 1000)
             await ctx.respond(f"🏓 Pong! Latency: {latency_ms}ms", ephemeral=True)
 
@@ -121,7 +140,7 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
             description="Show bot help information",
             guild_ids=self.adapter.slash_guild_ids or None,
         )
-        async def help_cmd(ctx: discord.ApplicationContext):
+        async def help_cmd(ctx: discord.ApplicationContext) -> None:
             embed = discord.Embed(
                 title="KiraAI Help",
                 description="I'm a cross-platform AI digital life with agent capabilities.",
@@ -136,10 +155,14 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
 
     # ===== Bot event handling =====
 
-    async def _handle_message(self, message: discord.Message):
+    async def _handle_message(self, message: discord.Message) -> None:
         """Handle incoming Discord messages (called by on_message event)."""
         # Ignore bot's own messages
-        if self.adapter.bot.user is None or message.author.id is None or message.author.id == self.adapter.bot.user.id:
+        if (
+            self.adapter.bot.user is None
+            or message.author.id is None
+            or message.author.id == self.adapter.bot.user.id
+        ):
             return
 
         is_group = message.guild is not None
@@ -150,7 +173,9 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
         else:
             await self._handle_dm_message(message, user_id)
 
-    async def _handle_group_message(self, message: discord.Message, user_id: str):
+    async def _handle_group_message(
+        self, message: discord.Message, user_id: str
+    ) -> None:
         """Handle incoming group/server messages."""
         channel_id = str(message.channel.id)
 
@@ -185,7 +210,10 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
         # 4) Check if message is a reply to bot
         if not is_mentioned and message.reference and message.reference.resolved:
             ref_msg = message.reference.resolved
-            if isinstance(ref_msg, discord.Message) and ref_msg.author.id == self.adapter.bot.user.id:
+            if (
+                isinstance(ref_msg, discord.Message)
+                and ref_msg.author.id == self.adapter.bot.user.id
+            ):
                 is_mentioned = True
 
         message_chain = await self._process_incoming_message(message)
@@ -197,11 +225,15 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
             channel_name = channel.name
 
         raw_nick = getattr(message.author, "nick", None)
-        group_nickname = raw_nick.strip() if isinstance(raw_nick, str) and raw_nick.strip() else None
+        group_nickname = (
+            raw_nick.strip() if isinstance(raw_nick, str) and raw_nick.strip() else None
+        )
 
         message_obj = KiraMessageEvent(
             adapter=self.adapter.info,
-            supported_elements=list((await self.get_message_metadata()).supported_elements),
+            supported_elements=list(
+                (await self.get_message_metadata()).supported_elements
+            ),
             message=KiraIMMessage(
                 timestamp=int(message.created_at.timestamp()),
                 group=Group(
@@ -216,7 +248,9 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
                 is_mentioned=is_mentioned,
                 message_id=str(message.id),
                 self_id=str(self.adapter.bot.user.id),
-                bot=User(str(self.adapter.bot.user.id), self.adapter.bot.user.display_name),
+                bot=User(
+                    str(self.adapter.bot.user.id), self.adapter.bot.user.display_name
+                ),
                 chain=message_chain,
                 raw_message={"id": str(message.id), "content": message.content},
             ),
@@ -224,7 +258,7 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
         )
         self.publish(message_obj)
 
-    async def _handle_dm_message(self, message: discord.Message, user_id: str):
+    async def _handle_dm_message(self, message: discord.Message, user_id: str) -> None:
         """Handle incoming direct messages."""
         # permission check
         if not self.is_allowed(user_id, permission="im.direct.receive"):
@@ -241,7 +275,9 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
 
         message_obj = KiraMessageEvent(
             adapter=self.adapter.info,
-            supported_elements=list((await self.get_message_metadata()).supported_elements),
+            supported_elements=list(
+                (await self.get_message_metadata()).supported_elements
+            ),
             message=KiraIMMessage(
                 timestamp=int(message.created_at.timestamp()),
                 sender=User(
@@ -251,7 +287,9 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
                 is_mentioned=True,
                 message_id=str(message.id),
                 self_id=str(self.adapter.bot.user.id),
-                bot=User(str(self.adapter.bot.user.id), self.adapter.bot.user.display_name),
+                bot=User(
+                    str(self.adapter.bot.user.id), self.adapter.bot.user.display_name
+                ),
                 chain=message_chain,
                 raw_message={"id": str(message.id), "content": message.content},
             ),
@@ -289,7 +327,7 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
                 for m in mention_matches:
                     # Emit any plain text before this mention
                     if m.start() > pos:
-                        plain = text[pos:m.start()]
+                        plain = text[pos : m.start()]
                         if plain:
                             elements.append(Text(plain))
                     # Determine mention type and extract the id
@@ -327,9 +365,16 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
             content_type = att.content_type or ""
             if content_type.startswith("image/"):
                 # Check if it's a sticker-like image (gif with small dimensions)
-                if content_type == "image/gif" and att.width and att.width <= 200 and att.height and att.height <= 200:
+                if (
+                    content_type == "image/gif"
+                    and att.width
+                    and att.width <= 200
+                    and att.height
+                    and att.height <= 200
+                ):
                     try:
                         from core.utils.common_utils import image_to_base64
+
                         sticker_b64 = await image_to_base64(att.url)
                         elements.append(Sticker(sticker=sticker_b64))
                     except Exception:
@@ -337,36 +382,44 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
                 else:
                     elements.append(Image(att.url))
             elif content_type.startswith("video/"):
-                elements.append(Video(
-                    file=att.url,
-                    name=att.filename,
-                    size=str(att.size) if att.size else None,
-                ))
+                elements.append(
+                    Video(
+                        file=att.url,
+                        name=att.filename,
+                        size=str(att.size) if att.size else None,
+                    )
+                )
             elif content_type.startswith("audio/"):
                 try:
                     from core.utils.network import get_file_content
+
                     audio_data = await get_file_content(att.url)
                     audio_b64 = base64.b64encode(audio_data).decode("utf-8")
                     elements.append(Record(record=audio_b64))
                 except Exception:
-                    elements.append(File(
+                    elements.append(
+                        File(
+                            file=att.url,
+                            name=att.filename,
+                            size=str(att.size) if att.size else None,
+                        )
+                    )
+            else:
+                # Other attachments treated as files
+                elements.append(
+                    File(
                         file=att.url,
                         name=att.filename,
                         size=str(att.size) if att.size else None,
-                    ))
-            else:
-                # Other attachments treated as files
-                elements.append(File(
-                    file=att.url,
-                    name=att.filename,
-                    size=str(att.size) if att.size else None,
-                ))
+                    )
+                )
 
         # Discord stickers
         for sticker in message.stickers:
             try:
                 sticker_url = sticker.url
                 from core.utils.network import get_file_content
+
                 sticker_data = await get_file_content(sticker_url)
                 sticker_b64 = base64.b64encode(sticker_data).decode("utf-8")
                 mime = "image/webp"
@@ -388,7 +441,11 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
 
     async def _send_message_to_channel(
         self,
-        channel: discord.TextChannel | discord.Thread | discord.DMChannel | discord.User | discord.Member,
+        channel: discord.TextChannel
+        | discord.Thread
+        | discord.DMChannel
+        | discord.User
+        | discord.Member,
         message: MessageChain,
     ) -> str | None:
         """Core send logic: iterates over MessageChain elements and sends to a Discord channel.
@@ -417,18 +474,26 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
                     ref_msg = await channel.fetch_message(reply_to_id)
                     reply_kw["reference"] = ref_msg
                 except discord.NotFound:
-                    self.adapter.logger.warning(f"Reply target message {reply_to_id} not found")
+                    self.adapter.logger.warning(
+                        f"Reply target message {reply_to_id} not found"
+                    )
                 except discord.Forbidden:
-                    self.adapter.logger.warning(f"No permission to fetch reply target message {reply_to_id}")
+                    self.adapter.logger.warning(
+                        f"No permission to fetch reply target message {reply_to_id}"
+                    )
                 except discord.HTTPException as e:
-                    self.adapter.logger.debug(f"Failed to fetch reply target message {reply_to_id} ({type(e).__name__})")
+                    self.adapter.logger.debug(
+                        f"Failed to fetch reply target message {reply_to_id} ({type(e).__name__})"
+                    )
                 reply_to_id = None
 
             # ── Text / At / Emoji (merge contiguous run into one message) ──
             if isinstance(ele, (Text, At, Emoji)):
                 content = ""
                 files_to_send = []
-                while idx < len(message) and isinstance(message[idx], (Text, At, Emoji)):
+                while idx < len(message) and isinstance(
+                    message[idx], (Text, At, Emoji)
+                ):
                     part = message[idx]
                     if isinstance(part, Text):
                         content += part.text
@@ -450,7 +515,10 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
 
                 if content or files_to_send:
                     sent = await self.adapter.message_sender.send_with_retry(
-                        channel.send, content=content or None, files=files_to_send or None, **reply_kw
+                        channel.send,
+                        content=content or None,
+                        files=files_to_send or None,
+                        **reply_kw,
                     )
                     if sent:
                         message_id = str(sent.id)
@@ -462,28 +530,36 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
                     image_path = await ele.to_path()
                     filename = ele.name or "image.png"
                     image_bytes = await asyncio.to_thread(Path(image_path).read_bytes)
-                    discord_file = discord.File(io.BytesIO(image_bytes), filename=filename)
+                    discord_file = discord.File(
+                        io.BytesIO(image_bytes), filename=filename
+                    )
                     sent = await self.adapter.message_sender.send_with_retry(
                         channel.send, file=discord_file, **reply_kw
                     )
                     if sent:
                         message_id = str(sent.id)
                 except Exception as e:
-                    self.adapter.logger.error(f"Failed to send image ({type(e).__name__})")
+                    self.adapter.logger.error(
+                        f"Failed to send image ({type(e).__name__})"
+                    )
 
             # ── Record (voice) ──
             elif isinstance(ele, Record):
                 try:
                     record_path = await ele.to_path()
                     record_bytes = await asyncio.to_thread(Path(record_path).read_bytes)
-                    discord_file = discord.File(io.BytesIO(record_bytes), filename="voice.mp3")
+                    discord_file = discord.File(
+                        io.BytesIO(record_bytes), filename="voice.mp3"
+                    )
                     sent = await self.adapter.message_sender.send_with_retry(
                         channel.send, file=discord_file, **reply_kw
                     )
                     if sent:
                         message_id = str(sent.id)
                 except Exception as e:
-                    self.adapter.logger.error(f"Failed to send voice ({type(e).__name__})")
+                    self.adapter.logger.error(
+                        f"Failed to send voice ({type(e).__name__})"
+                    )
 
             # ── Sticker (send as image attachment) ──
             elif isinstance(ele, Sticker):
@@ -496,14 +572,18 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
                         ext = "gif"
                     elif "png" in mime:
                         ext = "png"
-                    discord_file = discord.File(io.BytesIO(sticker_bytes), filename=f"sticker.{ext}")
+                    discord_file = discord.File(
+                        io.BytesIO(sticker_bytes), filename=f"sticker.{ext}"
+                    )
                     sent = await self.adapter.message_sender.send_with_retry(
                         channel.send, file=discord_file, **reply_kw
                     )
                     if sent:
                         message_id = str(sent.id)
                 except Exception as e:
-                    self.adapter.logger.error(f"Failed to send sticker ({type(e).__name__})")
+                    self.adapter.logger.error(
+                        f"Failed to send sticker ({type(e).__name__})"
+                    )
 
             # ── File (document) ──
             elif isinstance(ele, File):
@@ -511,14 +591,18 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
                     file_path = await ele.to_path()
                     filename = ele.name or "file"
                     file_bytes = await asyncio.to_thread(Path(file_path).read_bytes)
-                    discord_file = discord.File(io.BytesIO(file_bytes), filename=filename)
+                    discord_file = discord.File(
+                        io.BytesIO(file_bytes), filename=filename
+                    )
                     sent = await self.adapter.message_sender.send_with_retry(
                         channel.send, file=discord_file, **reply_kw
                     )
                     if sent:
                         message_id = str(sent.id)
                 except Exception as e:
-                    self.adapter.logger.error(f"Failed to send file ({type(e).__name__})")
+                    self.adapter.logger.error(
+                        f"Failed to send file ({type(e).__name__})"
+                    )
 
             # ── Video ──
             elif isinstance(ele, Video):
@@ -526,19 +610,25 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
                     video_path = await ele.to_path()
                     filename = ele.name or "video.mp4"
                     video_bytes = await asyncio.to_thread(Path(video_path).read_bytes)
-                    discord_file = discord.File(io.BytesIO(video_bytes), filename=filename)
+                    discord_file = discord.File(
+                        io.BytesIO(video_bytes), filename=filename
+                    )
                     sent = await self.adapter.message_sender.send_with_retry(
                         channel.send, file=discord_file, **reply_kw
                     )
                     if sent:
                         message_id = str(sent.id)
                 except Exception as e:
-                    self.adapter.logger.error(f"Failed to send video ({type(e).__name__})")
+                    self.adapter.logger.error(
+                        f"Failed to send video ({type(e).__name__})"
+                    )
 
             # ── Fallback ──
             else:
                 sent = await self.adapter.message_sender.send_with_retry(
-                    channel.send, content=str(getattr(ele, "text", "[Message]")), **reply_kw
+                    channel.send,
+                    content=str(getattr(ele, "text", "[Message]")),
+                    **reply_kw,
                 )
                 if sent:
                     message_id = str(sent.id)
@@ -558,12 +648,16 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
                 try:
                     channel = await self.adapter.bot.fetch_channel(int(group_id))
                 except Exception:
-                    return KiraIMSentResult(None, ok=False, err=f"Channel {group_id} not found")
+                    return KiraIMSentResult(
+                        None, ok=False, err=f"Channel {group_id} not found"
+                    )
 
             msg_id = await self._send_message_to_channel(channel, message)
             return KiraIMSentResult(msg_id)
         except Exception as e:
-            return KiraIMSentResult(None, ok=False, err=f"Failed to send group message ({type(e).__name__})")
+            return KiraIMSentResult(
+                None, ok=False, err=f"Failed to send group message ({type(e).__name__})"
+            )
 
     async def send_direct_message(
         self, user_id: int | str, message: MessageChain
@@ -575,7 +669,9 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
                 try:
                     user = await self.adapter.bot.fetch_user(int(user_id))
                 except Exception:
-                    return KiraIMSentResult(None, ok=False, err=f"User {user_id} not found")
+                    return KiraIMSentResult(
+                        None, ok=False, err=f"User {user_id} not found"
+                    )
 
             # Open DM channel
             dm_channel = user.dm_channel
@@ -585,4 +681,6 @@ class DiscordIMCapability(IMCapability["DiscordAdapter"]):
             msg_id = await self._send_message_to_channel(dm_channel, message)
             return KiraIMSentResult(msg_id)
         except Exception as e:
-            return KiraIMSentResult(None, ok=False, err=f"Failed to send DM ({type(e).__name__})")
+            return KiraIMSentResult(
+                None, ok=False, err=f"Failed to send DM ({type(e).__name__})"
+            )

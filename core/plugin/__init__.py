@@ -15,19 +15,19 @@ logger = get_logger("plugin", "orange")
 
 
 __all__ = [
-    'BasePlugin',
+    "BasePlugin",
     "EventType",
-    'PageMenu',
-    'PluginAgentExecutor',
-    'PluginContext',
-    'PluginInfo',
-    'PluginManager',
-    'PluginPage',
+    "PageMenu",
+    "PluginAgentExecutor",
+    "PluginContext",
+    "PluginInfo",
+    "PluginManager",
+    "PluginPage",
     "Priority",
     "SubAgentPreset",
     "ToolCallContext",
-    'logger',
+    "logger",
     "on",
     "register",
-    "register_tool"
+    "register_tool",
 ]

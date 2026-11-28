@@ -11,7 +11,19 @@ from core.prompt_manager import Prompt
 from core.provider import LLMRequest, LLMResponse
 from core.tag import TagSet
 
-from .tags import *
+from .tags import (
+    AtTag,
+    ForwardTag,
+    ImgTag,
+    PokeTag,
+    RecordTag,
+    ReplyTag,
+    SelfieTag,
+    TextTag,
+    VideoTag,
+    build_emoji_tag,
+    build_file_tag,
+)
 
 XML_FIX_PROMPT = """\
 你是一个xml 格式检查器，请将下面解析失败的xml修改为正确的格式，但不要修改标签内的任何数据，需要符合如下xml tag结构（非标准xml，没有<root>标签）：
@@ -23,13 +35,13 @@ XML_FIX_PROMPT = """\
 
 
 class DefaultPlugin(BasePlugin):
-    def __init__(self, ctx, cfg: dict):
+    def __init__(self, ctx, cfg: dict) -> None:
         super().__init__(ctx, cfg)
-    
-    async def initialize(self):
+
+    async def initialize(self) -> None:
         pass
-    
-    async def terminate(self):
+
+    async def terminate(self) -> None:
         pass
 
     def _get_current_time_str(self, dt: datetime | None = None) -> str:
@@ -50,8 +62,14 @@ class DefaultPlugin(BasePlugin):
             if msg.is_group_message():
                 if msg.is_notice:
                     return f"[{date_str}] Notice [group_id: {msg.group.group_id}, user_id: {msg.sender.user_id}] | {msg.message_str}"
-                group_nickname = msg.sender.group_nickname.strip() if isinstance(msg.sender.group_nickname, str) else ""
-                group_nickname_part = f" group_nickname: {group_nickname}," if group_nickname else ""
+                group_nickname = (
+                    msg.sender.group_nickname.strip()
+                    if isinstance(msg.sender.group_nickname, str)
+                    else ""
+                )
+                group_nickname_part = (
+                    f" group_nickname: {group_nickname}," if group_nickname else ""
+                )
                 return (
                     f"[{date_str}] [message_id: {msg.message_id!s}] "
                     f"[group_name: {msg.group.group_name} group_id: {msg.group.group_id} "
@@ -65,7 +83,9 @@ class DefaultPlugin(BasePlugin):
             return ""
 
     @on.llm_request(priority=Priority.SYS_HIGH)
-    async def inject_builtin_tags(self, event: KiraMessageBatchEvent, _, tag_set: TagSet):
+    async def inject_builtin_tags(
+        self, event: KiraMessageBatchEvent, _, tag_set: TagSet
+    ) -> None:
         """Inject builtin tags, respecting capability toggles"""
         supported_elements = event.supported_elements
         capabilities = await self.ctx.get_session_capabilities(event.sid)
@@ -106,29 +126,30 @@ class DefaultPlugin(BasePlugin):
             tag_set.register(ForwardTag())
 
     @on.llm_request(priority=Priority.SYS_HIGH)
-    async def on_llm_req(self, event: KiraMessageBatchEvent, req: LLMRequest, *_):
+    async def on_llm_req(
+        self, event: KiraMessageBatchEvent, req: LLMRequest, *_
+    ) -> None:
         message_index = 0
-        for i, p in enumerate(req.user_prompt):
+        for _i, p in enumerate(req.user_prompt):
             if p.name == "message" and p.source == "system":
                 if message_index >= len(event.messages):
                     break
-                formatted_message = self._format_user_message(event.messages[message_index])
+                formatted_message = self._format_user_message(
+                    event.messages[message_index]
+                )
                 p.content = formatted_message
                 p.render_template = False
                 message_index += 1
 
     @on.llm_response()
-    async def on_llm_resp(self, _, resp: LLMResponse):
+    async def on_llm_resp(self, _, resp: LLMResponse) -> None:
         xml_data = resp.text_response
         if resp.status == "error" or not xml_data:
             return
 
         try:
-            root = ET.fromstring(f"<root>{xml_data}</root>")
-            for msg in root.findall("msg"):
-                for child in msg:
-                    tag = child.tag
-                    value = child.text.strip() if child.text else ""
+            # Parse only to detect malformed output; the repaired text is re-checked downstream.
+            ET.fromstring(f"<root>{xml_data}</root>")
         except ET.ParseError as e:
             logger.error(f"Error parsing message: {e!s}")
             logger.debug(f"previously wrong format: {xml_data}")
@@ -136,7 +157,7 @@ class DefaultPlugin(BasePlugin):
             try:
                 llm_req = LLMRequest(
                     system_prompt=[Prompt(XML_FIX_PROMPT.format(exc=str(e)))],
-                    user_prompt=[Prompt(xml_data)]
+                    user_prompt=[Prompt(xml_data)],
                 )
                 llm_req.assemble_prompt()
                 try:

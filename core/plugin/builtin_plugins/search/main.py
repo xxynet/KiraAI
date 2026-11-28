@@ -24,7 +24,7 @@ class SearchPlugin(BasePlugin):
     AnySearch 额外提供并行批量搜索与垂直领域目录查询（hybrid/anysearch 模式下可用）
     """
 
-    def __init__(self, ctx, cfg: dict):
+    def __init__(self, ctx, cfg: dict) -> None:
         super().__init__(ctx, cfg)
         self._tavily_key = None
         self._provider = "hybrid"
@@ -34,7 +34,7 @@ class SearchPlugin(BasePlugin):
         self.tavily_available = True
         self.anysearch_available = True
 
-    async def initialize(self):
+    async def initialize(self) -> None:
         """加载配置：Tavily Key / 搜索模式 / AnySearch 参数（section 优先，扁平兜底兼容旧配置）"""
         if self._migrate_legacy_tavily_key():
             self._persist_config()
@@ -44,15 +44,33 @@ class SearchPlugin(BasePlugin):
         # Tavily Key：section -> 扁平兜底
         self._tavily_key = src.get("tavily_key") or self.plugin_cfg.get("tavily_key")
         # 搜索模式
-        self._provider = str(src.get("search_provider") or self.plugin_cfg.get("search_provider", "hybrid") or "hybrid").strip().lower()
+        self._provider = (
+            str(
+                src.get("search_provider")
+                or self.plugin_cfg.get("search_provider", "hybrid")
+                or "hybrid"
+            )
+            .strip()
+            .lower()
+        )
         if self._provider == "auto":
             # auto 已并入 hybrid（任一源可用即自动兜底），保留旧配置兼容
             self._provider = "hybrid"
         if self._provider not in ("tavily", "anysearch", "hybrid"):
             self._provider = "hybrid"
         # AnySearch
-        anysearch_key = str(src.get("anysearch_key") or self.plugin_cfg.get("anysearch_key", "") or "").strip()
-        base = str(src.get("anysearch_base_url") or self.plugin_cfg.get("anysearch_base_url", "") or "").strip().rstrip("/")
+        anysearch_key = str(
+            src.get("anysearch_key") or self.plugin_cfg.get("anysearch_key", "") or ""
+        ).strip()
+        base = (
+            str(
+                src.get("anysearch_base_url")
+                or self.plugin_cfg.get("anysearch_base_url", "")
+                or ""
+            )
+            .strip()
+            .rstrip("/")
+        )
         anysearch_base = base or "https://api.anysearch.com"
         try:
             mr = common.get("max_results")
@@ -82,8 +100,13 @@ class SearchPlugin(BasePlugin):
         )
         await self._any_client.initialize()
 
-        logger.info("Initializing Search Plugin mode=%s tavily=%s anysearch=%s hybrid_weight=%s",
-                    self._provider, self.tavily_available, self._any_client.has_credentials, self._hybrid_weight)
+        logger.info(
+            "Initializing Search Plugin mode=%s tavily=%s anysearch=%s hybrid_weight=%s",
+            self._provider,
+            self.tavily_available,
+            self._any_client.has_credentials,
+            self._hybrid_weight,
+        )
 
     def _tool_timeout(self) -> float:
         """跟随框架全局工具调用超时（bot_config.agent.tool_call_timeout，默认 60s）"""
@@ -112,7 +135,7 @@ class SearchPlugin(BasePlugin):
         del self.plugin_cfg["tavily_key"]
         return True
 
-    def _persist_config(self):
+    def _persist_config(self) -> None:
         """Write the in-memory plugin config back to the config file.
 
         ``self.plugin_cfg`` is the same dict the registry keeps in memory, so
@@ -123,11 +146,13 @@ class SearchPlugin(BasePlugin):
             config_path.parent.mkdir(parents=True, exist_ok=True)
             with config_path.open("w", encoding="utf-8") as f:
                 json.dump(self.plugin_cfg, f, indent=4, ensure_ascii=False)
-            logger.info("Migrated legacy top-level tavily_key into section_source for search plugin")
+            logger.info(
+                "Migrated legacy top-level tavily_key into section_source for search plugin"
+            )
         except Exception as e:
             logger.error(f"Failed to persist migrated search plugin config: {e}")
 
-    async def terminate(self):
+    async def terminate(self) -> None:
         if self._any_client:
             await self._any_client.close()
 
@@ -154,21 +179,33 @@ class SearchPlugin(BasePlugin):
 
     # ---------- Tavily 内部逻辑 ----------
 
-    async def _tavily_search(self, query: str, topic: str = "general", search_depth: str = "basic") -> dict:
+    async def _tavily_search(
+        self, query: str, topic: str = "general", search_depth: str = "basic"
+    ) -> dict:
         """返回 {"results": [...], "error": None}"""
         if not self.tavily_available:
             return {"results": [], "error": "Tavily 不可用（未配置 Key）"}
         try:
             client = TavilyClient(self._tavily_key)
             res = await asyncio.to_thread(
-                client.search, query=query, topic=topic, search_depth=search_depth, max_results=self._max_results
+                client.search,
+                query=query,
+                topic=topic,
+                search_depth=search_depth,
+                max_results=self._max_results,
             )
             return {"results": res.get("results") or [], "error": None}
         except Exception as e:
             logger.warning("Tavily search failed: %s", e)
             return {"results": [], "error": f"Tavily 搜索失败：{e}"}
 
-    async def _any_search(self, query: str, sub_domain: str | None = None, params: str | None = None, topic: str = "general") -> dict:
+    async def _any_search(
+        self,
+        query: str,
+        sub_domain: str | None = None,
+        params: str | None = None,
+        topic: str = "general",
+    ) -> dict:
         """返回 {"results": [...], "error": None}，results 项含 url/title/content/score/source"""
         if not self._any_client:
             return {"results": [], "error": "AnySearch 客户端未初始化"}
@@ -203,7 +240,7 @@ class SearchPlugin(BasePlugin):
         lo, hi = min(scores), max(scores)
         if hi <= lo:
             # 无区分度（含全 0）时给中性分，避免无 score 的源被系统性拔高
-            return {i: 0.5 for i in range(len(scores))}
+            return dict.fromkeys(range(len(scores)), 0.5)
         return {i: (s - lo) / (hi - lo) for i, s in enumerate(scores)}
 
     def _fuse_results(self, lists: list) -> list:
@@ -229,10 +266,14 @@ class SearchPlugin(BasePlugin):
                     key = f"__title_{(it.get('title') or '')[:80].lower()}"
                 rrf = rrf_norm_map.get(rank - 1, 0.5)
                 nscore = norm_map.get(rank - 1, 0.0)
-                fusion = self._hybrid_weight * nscore + (1.0 - self._hybrid_weight) * rrf
+                fusion = (
+                    self._hybrid_weight * nscore + (1.0 - self._hybrid_weight) * rrf
+                )
                 if key in merged:
                     merged[key]["fusion_score"] += fusion
-                    merged[key]["sources"].add(lst.get("name") or lst.get("source") or "?")
+                    merged[key]["sources"].add(
+                        lst.get("name") or lst.get("source") or "?"
+                    )
                     if merged[key]["published_date"] in (None, ""):
                         merged[key]["published_date"] = it.get("published_date")
                 else:
@@ -269,19 +310,41 @@ class SearchPlugin(BasePlugin):
         {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "The search query to execute."},
-                "topic": {"type": "string", "enum": ["general", "news", "finance"], "description": "Optional. The category of the search. news is useful for retrieving real-time updates, general is for broader searches. Defaults to general"},
-                "search_depth": {"type": "string", "enum": ["basic", "advanced"], "description": "Optional. Controls the latency vs relevance tradeoff (Tavily only). Defaults to basic"},
-                "sub_domain": {"type": "string", "description": "AnySearch vertical sub-domain, e.g. finance.quote / code.github / legal.cn_case. When set, the query is forced to AnySearch vertical engine; query available sub-domains via get_sub_domains first"},
-                "params": {"type": "string", "description": "AnySearch structured params (JSON or key=value), e.g. {\"type\":\"stock\",\"symbol\":\"AAPL\"}. Only used when sub_domain is set"}
+                "query": {
+                    "type": "string",
+                    "description": "The search query to execute.",
+                },
+                "topic": {
+                    "type": "string",
+                    "enum": ["general", "news", "finance"],
+                    "description": "Optional. The category of the search. news is useful for retrieving real-time updates, general is for broader searches. Defaults to general",
+                },
+                "search_depth": {
+                    "type": "string",
+                    "enum": ["basic", "advanced"],
+                    "description": "Optional. Controls the latency vs relevance tradeoff (Tavily only). Defaults to basic",
+                },
+                "sub_domain": {
+                    "type": "string",
+                    "description": "AnySearch vertical sub-domain, e.g. finance.quote / code.github / legal.cn_case. When set, the query is forced to AnySearch vertical engine; query available sub-domains via get_sub_domains first",
+                },
+                "params": {
+                    "type": "string",
+                    "description": 'AnySearch structured params (JSON or key=value), e.g. {"type":"stock","symbol":"AAPL"}. Only used when sub_domain is set',
+                },
             },
-            "required": ["query"]
-        }
+            "required": ["query"],
+        },
     )
-    async def search(self, event, query: str,
-                     topic: Literal["general", "news", "finance"] = "general",
-                     search_depth: Literal["basic", "advanced"] = "basic",
-                     sub_domain: str | None = None, params: str | None = None) -> str:
+    async def search(
+        self,
+        event,
+        query: str,
+        topic: Literal["general", "news", "finance"] = "general",
+        search_depth: Literal["basic", "advanced"] = "basic",
+        sub_domain: str | None = None,
+        params: str | None = None,
+    ) -> str:
         # 垂直领域查询强制走 AnySearch（Tavily 不支持）
         if sub_domain or params:
             if not self._any_enabled():
@@ -289,7 +352,9 @@ class SearchPlugin(BasePlugin):
             res = await self._any_search(query, sub_domain, params, topic)
             if res["error"]:
                 return f"搜索失败：{res['error']}"
-            return format_search_results(res["results"], source="anysearch", timezone=self.ctx.get_timezone())
+            return format_search_results(
+                res["results"], source="anysearch", timezone=self.ctx.get_timezone()
+            )
 
         mode = self._resolve_mode()
         if mode == "hybrid":
@@ -297,10 +362,12 @@ class SearchPlugin(BasePlugin):
                 self._tavily_search(query, topic, search_depth),
                 self._any_search(query, None, None, topic),
             )
-            fused = self._fuse_results([
-                {"source": "tavily", "results": t_res["results"]},
-                {"source": "anysearch", "results": a_res["results"]},
-            ])
+            fused = self._fuse_results(
+                [
+                    {"source": "tavily", "results": t_res["results"]},
+                    {"source": "anysearch", "results": a_res["results"]},
+                ]
+            )
             if not fused:
                 errs = [e for e in (t_res["error"], a_res["error"]) if e]
                 if errs:
@@ -311,13 +378,17 @@ class SearchPlugin(BasePlugin):
             res = await self._tavily_search(query, topic, search_depth)
             if res["error"]:
                 return f"搜索失败：{res['error']}"
-            return format_search_results(res["results"], source="tavily", timezone=self.ctx.get_timezone())
+            return format_search_results(
+                res["results"], source="tavily", timezone=self.ctx.get_timezone()
+            )
 
         # anysearch 单源
         res = await self._any_search(query, None, None, topic)
         if res["error"]:
             return f"搜索失败：{res['error']}"
-        return format_search_results(res["results"], source="anysearch", timezone=self.ctx.get_timezone())
+        return format_search_results(
+            res["results"], source="anysearch", timezone=self.ctx.get_timezone()
+        )
 
     # ---------- 工具：网页内容提取 ----------
 
@@ -327,15 +398,30 @@ class SearchPlugin(BasePlugin):
         {
             "type": "object",
             "properties": {
-                "url": {"type": "string", "description": "The URL to extract content from."},
-                "query": {"type": "string", "description": "Optional. User intent for reranking extracted content chunks. When provided, chunks are reranked based on relevance to this query."},
-                "extract_depth": {"type": "string", "enum": ["basic", "advanced"], "description": "Optional. Controls the latency vs relevance tradeoff."}
+                "url": {
+                    "type": "string",
+                    "description": "The URL to extract content from.",
+                },
+                "query": {
+                    "type": "string",
+                    "description": "Optional. User intent for reranking extracted content chunks. When provided, chunks are reranked based on relevance to this query.",
+                },
+                "extract_depth": {
+                    "type": "string",
+                    "enum": ["basic", "advanced"],
+                    "description": "Optional. Controls the latency vs relevance tradeoff.",
+                },
             },
-            "required": ["url"]
-        }
+            "required": ["url"],
+        },
     )
-    async def extract_webpage(self, event, url: str, query: str | None = None,
-                              extract_depth: Literal["basic", "advanced"] = "basic") -> str:
+    async def extract_webpage(
+        self,
+        event,
+        url: str,
+        query: str | None = None,
+        extract_depth: Literal["basic", "advanced"] = "basic",
+    ) -> str:
         mode = self._resolve_mode()
         if mode == "tavily":
             # 强制单源：不可用或失败直接报错，不回退 AnySearch
@@ -385,14 +471,29 @@ class SearchPlugin(BasePlugin):
         {
             "type": "object",
             "properties": {
-                "queries": {"type": "string", "description": "JSON array string, e.g. [{\"query\":\"AAPL\"},{\"query\":\"量子计算\",\"max_results\":3}], max 5 items"},
-                "sub_domain": {"type": "string", "description": "Shared vertical sub-domain applied to queries without their own (optional)"},
-                "max_results": {"type": "integer", "description": "Shared max results 1-10 (optional)"}
+                "queries": {
+                    "type": "string",
+                    "description": 'JSON array string, e.g. [{"query":"AAPL"},{"query":"量子计算","max_results":3}], max 5 items',
+                },
+                "sub_domain": {
+                    "type": "string",
+                    "description": "Shared vertical sub-domain applied to queries without their own (optional)",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Shared max results 1-10 (optional)",
+                },
             },
-            "required": ["queries"]
-        }
+            "required": ["queries"],
+        },
     )
-    async def anysearch_batch_search(self, event, queries: str, sub_domain: str | None = None, max_results: int | None = None) -> str:
+    async def anysearch_batch_search(
+        self,
+        event,
+        queries: str,
+        sub_domain: str | None = None,
+        max_results: int | None = None,
+    ) -> str:
         if not self._any_enabled():
             return "batch_search 仅 AnySearch 引擎可用（当前为 tavily 单源模式），可切换 search_provider 或直接使用 search 工具"
         try:
@@ -438,7 +539,9 @@ class SearchPlugin(BasePlugin):
             if result["error"]:
                 output = f"Error: {result['error']}"
             else:
-                output = format_search_results(result["results"], source="anysearch", timezone=timezone)
+                output = format_search_results(
+                    result["results"], source="anysearch", timezone=timezone
+                )
             out.append(f"## Query: {q}\n\n{output}")
         return "\n\n".join(out)
 
@@ -450,10 +553,13 @@ class SearchPlugin(BasePlugin):
         {
             "type": "object",
             "properties": {
-                "domains": {"type": "string", "description": "Domain names, comma separated, max 5. e.g. finance or finance,legal,code. Available: general/resource/social_media/finance/academic/legal/health/business/security/ip/code/energy/environment/agriculture/travel/film/gaming"}
+                "domains": {
+                    "type": "string",
+                    "description": "Domain names, comma separated, max 5. e.g. finance or finance,legal,code. Available: general/resource/social_media/finance/academic/legal/health/business/security/ip/code/energy/environment/agriculture/travel/film/gaming",
+                }
             },
-            "required": ["domains"]
-        }
+            "required": ["domains"],
+        },
     )
     async def get_sub_domains(self, event, domains: str) -> str:
         if not self._any_enabled():

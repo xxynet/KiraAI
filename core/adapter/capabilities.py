@@ -4,12 +4,13 @@ from abc import abstractmethod
 from typing import TYPE_CHECKING, Any
 
 from .base import AdapterT, AdapterTargetId, BaseCapability
-from .feed import FeedItem, FeedPage, FeedPost, FeedQuery, FeedRef, FeedSearchQuery
-from .message_format_metadata import MessageFormatMetadata
 
 if TYPE_CHECKING:
     # from core.chat.message_elements import Record
     from core.chat.message_utils import KiraIMSentResult, MessageChain
+
+    from .feed import FeedItem, FeedPage, FeedPost, FeedQuery, FeedRef, FeedSearchQuery
+    from .message_format_metadata import MessageFormatMetadata
 
 
 class IMCapability(BaseCapability[AdapterT]):
@@ -30,12 +31,16 @@ class IMCapability(BaseCapability[AdapterT]):
 
     @abstractmethod
     async def send_group_message(
-        self, group_id: AdapterTargetId, message: MessageChain,
+        self,
+        group_id: AdapterTargetId,
+        message: MessageChain,
     ) -> KiraIMSentResult | None: ...
 
     @abstractmethod
     async def send_direct_message(
-        self, user_id: AdapterTargetId, message: MessageChain,
+        self,
+        user_id: AdapterTargetId,
+        message: MessageChain,
     ) -> KiraIMSentResult | None: ...
 
 

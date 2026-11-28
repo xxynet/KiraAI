@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import os
 
 from core.chat import KiraMessageBatchEvent
@@ -20,7 +21,9 @@ def build_sticker_tag(sticker_dict: dict) -> type[BaseTag]:
         sticker_prompt = ""
         try:
             for sticker_id in sticker_dict:
-                sticker_prompt += f"[{sticker_id}] {sticker_dict[sticker_id].get('desc')}\n"
+                sticker_prompt += (
+                    f"[{sticker_id}] {sticker_dict[sticker_id].get('desc')}\n"
+                )
             return sticker_prompt
         except Exception as e:
             message_logger.warning(f"Failed to load sticker prompt: {e}")
@@ -35,8 +38,12 @@ def build_sticker_tag(sticker_dict: dict) -> type[BaseTag]:
             try:
                 sticker_path = sticker_dict[sticker_id].get("path")
                 sticker_desc = sticker_dict[sticker_id].get("desc")
-                sticker_bs64 = await image_to_base64(f"{get_data_path()}/sticker/{sticker_path}")
-                sticker_obj = Sticker(sticker_id, sticker=sticker_bs64, caption=sticker_desc)
+                sticker_bs64 = await image_to_base64(
+                    f"{get_data_path()}/sticker/{sticker_path}"
+                )
+                sticker_obj = Sticker(
+                    sticker_id, sticker=sticker_bs64, caption=sticker_desc
+                )
                 return [sticker_obj]
             except Exception as e:
                 message_logger.error(f"error while parsing sticker: {e!s}")
@@ -49,10 +56,10 @@ class DefaultStickerPlugin(BasePlugin):
     """
     DefaultStickerPlugin
     """
-    
+
     DEFAULT_RECOGNITION_PROMPT = "这是一张sticker（表情包），请描述这张表情包的内容和聊天中哪些情景使用此表情包，要求描述精确，不要太长，不要使用Markdown等标记符号，如果有文字请将其输出"
 
-    def __init__(self, ctx, cfg: dict):
+    def __init__(self, ctx, cfg: dict) -> None:
         super().__init__(ctx, cfg)
         self.scan_interval = 120
         self.recognition_model = None
@@ -61,27 +68,30 @@ class DefaultStickerPlugin(BasePlugin):
         self._vlm_sem: asyncio.Semaphore | None = None
         self.sticker_mgr = self.ctx.sticker_mgr
         self._scan_task: asyncio.Task | None = None
-    
-    async def initialize(self):
+
+    async def initialize(self) -> None:
         self.scan_interval = self.plugin_cfg.get("scan_interval", 120)
         self.recognition_model = self.plugin_cfg.get("recognition_model", None)
-        self.recognition_prompt = self.plugin_cfg.get("recognition_prompt", "").strip() or self.DEFAULT_RECOGNITION_PROMPT
+        self.recognition_prompt = (
+            self.plugin_cfg.get("recognition_prompt", "").strip()
+            or self.DEFAULT_RECOGNITION_PROMPT
+        )
         self.vlm_concurrency = max(self.plugin_cfg.get("vlm_concurrency", 3), 1)
         self._vlm_sem = asyncio.Semaphore(self.vlm_concurrency)
         self.sticker_mgr.on_sticker_registered(self.on_sticker_registered)
 
         self._scan_task = asyncio.create_task(self._scan_loop())
-        logger.info(f"Default Sticker initialized (vlm_concurrency={self.vlm_concurrency})")
-    
-    async def terminate(self):
+        logger.info(
+            f"Default Sticker initialized (vlm_concurrency={self.vlm_concurrency})"
+        )
+
+    async def terminate(self) -> None:
         self.sticker_mgr.off_sticker_registered(self.on_sticker_registered)
 
         if self._scan_task:
             self._scan_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._scan_task
-            except asyncio.CancelledError:
-                pass
             self._scan_task = None
 
     async def on_sticker_registered(self, sticker_id: str, sticker_info: dict):
@@ -94,11 +104,15 @@ class DefaultStickerPlugin(BasePlugin):
             try:
                 sticker_desc = await self.get_sticker_description(path)
                 await self.sticker_mgr.update_sticker_desc(sticker_id, sticker_desc)
-                logger.info(f"Sticker {sticker_id} description updated by VLM: {sticker_desc}")
+                logger.info(
+                    f"Sticker {sticker_id} description updated by VLM: {sticker_desc}"
+                )
             except Exception as e:
-                logger.error(f"Failed to get description for sticker {sticker_id} by VLM: {e}")
+                logger.error(
+                    f"Failed to get description for sticker {sticker_id} by VLM: {e}"
+                )
 
-    async def get_sticker_description(self, sticker_file):
+    async def get_sticker_description(self, sticker_file) -> str:
         sticker_path = os.path.join(self.sticker_mgr.sticker_folder, sticker_file)
 
         from core.chat.message_elements import Image
@@ -110,27 +124,33 @@ class DefaultStickerPlugin(BasePlugin):
             try:
                 vlm_model = self.ctx.provider_mgr.get_default_vlm()
             except Exception as e:
-                logger.error(f"Failed to get default VLM model for sticker recognition: {e}")
+                logger.error(
+                    f"Failed to get default VLM model for sticker recognition: {e}"
+                )
                 return ""
-        sticker_desc = await desc_img(client=vlm_model, image=Image(image=sticker_path), prompt=self.recognition_prompt)
+        sticker_desc = await desc_img(
+            client=vlm_model,
+            image=Image(image=sticker_path),
+            prompt=self.recognition_prompt,
+        )
 
         return sticker_desc
 
-    async def _scan_once(self):
+    async def _scan_once(self) -> None:
         logger.info("Scanning unregistered stickers")
         sticker_files = await asyncio.to_thread(
             lambda: [
-                f for f in os.listdir(self.sticker_mgr.sticker_folder)
+                f
+                for f in os.listdir(self.sticker_mgr.sticker_folder)
                 if f.lower().endswith(STICKER_EXTENSIONS)
             ]
         )
-        pending = [
-            f for f in sticker_files
-            if f not in self.sticker_mgr.sticker_paths
-        ]
+        pending = [f for f in sticker_files if f not in self.sticker_mgr.sticker_paths]
 
         if pending:
-            logger.info(f"Found {len(pending)} unregistered stickers, describing (vlm_concurrency={self.vlm_concurrency})...")
+            logger.info(
+                f"Found {len(pending)} unregistered stickers, describing (vlm_concurrency={self.vlm_concurrency})..."
+            )
 
             async def _describe_one(file: str) -> tuple[str, str]:
                 async with self._vlm_sem:
@@ -153,7 +173,7 @@ class DefaultStickerPlugin(BasePlugin):
         else:
             logger.info("All stickers are already registered")
 
-    async def _scan_loop(self):
+    async def _scan_loop(self) -> None:
         try:
             while True:
                 try:
@@ -161,7 +181,9 @@ class DefaultStickerPlugin(BasePlugin):
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
-                    logger.error(f"Scan iteration failed, will retry next interval: {e}")
+                    logger.error(
+                        f"Scan iteration failed, will retry next interval: {e}"
+                    )
 
                 delay_minutes = self.scan_interval
                 delay_minutes = max(delay_minutes, 10)
@@ -171,7 +193,9 @@ class DefaultStickerPlugin(BasePlugin):
             logger.info("Scan loop cancelled")
 
     @on.llm_request(priority=Priority.SYS_HIGH - 1)
-    async def inject_sticker_tag(self, event: KiraMessageBatchEvent, _, tag_set: TagSet):
+    async def inject_sticker_tag(
+        self, event: KiraMessageBatchEvent, _, tag_set: TagSet
+    ):
         """Inject sticker tag"""
         supported_elements = event.supported_elements
         if "sticker" in supported_elements:

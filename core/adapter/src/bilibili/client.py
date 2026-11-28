@@ -30,8 +30,11 @@ def _picture_from_bytes(data: bytes) -> Picture:
     with PILImage.open(BytesIO(data)) as image:
         image.verify()
         return Picture(
-            content=data, width=image.width, height=image.height,
-            imageType=image.format.lower(), size=round(len(data) / 1024),
+            content=data,
+            width=image.width,
+            height=image.height,
+            imageType=image.format.lower(),
+            size=round(len(data) / 1024),
         )
 
 
@@ -47,7 +50,9 @@ async def load_picture(element: Image) -> Picture:
             data = await asyncio.to_thread(base64.b64decode, encoded, validate=True)
         return await asyncio.to_thread(_picture_from_bytes, data)
     except Exception as exc:
-        raise ValueError(f"Bilibili image could not be loaded: {type(exc).__name__}: {exc}") from exc
+        raise ValueError(
+            f"Bilibili image could not be loaded: {type(exc).__name__}: {exc}"
+        ) from exc
 
 
 class _BiliBiliPicture(Picture):
@@ -56,8 +61,12 @@ class _BiliBiliPicture(Picture):
     @classmethod
     def from_picture(cls, picture: Picture) -> _BiliBiliPicture:
         return cls(
-            height=picture.height, width=picture.width, imageType=picture.imageType,
-            size=picture.size, url=picture.url, content=picture.content,
+            height=picture.height,
+            width=picture.width,
+            imageType=picture.imageType,
+            size=picture.size,
+            url=picture.url,
+            content=picture.content,
         )
 
     def _prepare_upload(self) -> tuple[TemporaryDirectory, network.BiliAPIFile]:
@@ -104,12 +113,14 @@ class BiliBiliClient:
     The SDK still owns the shared transport; this object must not close it.
     """
 
-    def __init__(self, credential: Credential, *, timeout: float = 60.0):
+    def __init__(self, credential: Credential, *, timeout: float = 60.0) -> None:
         self._credential = credential
         self.timeout = timeout
 
     async def _request(
-        self, operation: str, call: Callable[[], Awaitable[dict[str, Any]]],
+        self,
+        operation: str,
+        call: Callable[[], Awaitable[dict[str, Any]]],
     ) -> dict[str, Any]:
         try:
             get_bilibili_client()
@@ -119,85 +130,139 @@ class BiliBiliClient:
 
     async def get_recommended_videos(self) -> dict[str, Any]:
         return await self._request(
-            "recommendation fetching", lambda: homepage.get_videos(credential=self._credential),
+            "recommendation fetching",
+            lambda: homepage.get_videos(credential=self._credential),
         )
 
-    async def get_dynamic_page(self, *, offset: str = "", page: int = 1) -> dict[str, Any]:
+    async def get_dynamic_page(
+        self, *, offset: str = "", page: int = 1
+    ) -> dict[str, Any]:
         return await self._request(
-            "dynamic fetching", lambda: dynamic.get_dynamic_page_info(
-                credential=self._credential, _type=dynamic.DynamicType.ALL,
-                offset=offset, pn=page,
+            "dynamic fetching",
+            lambda: dynamic.get_dynamic_page_info(
+                credential=self._credential,
+                _type=dynamic.DynamicType.ALL,
+                offset=offset,
+                pn=page,
             ),
         )
 
     async def get_user_dynamics(self, uid: int, *, offset: str = "") -> dict[str, Any]:
         return await self._request(
-            "user dynamic fetching", lambda: user.User(uid, credential=self._credential).get_dynamics_new(offset=offset),
+            "user dynamic fetching",
+            lambda: user.User(uid, credential=self._credential).get_dynamics_new(
+                offset=offset
+            ),
         )
 
     async def get_dynamic_info(self, dynamic_id: int) -> dict[str, Any]:
         return await self._request(
-            "dynamic detail fetching", lambda: dynamic.Dynamic(dynamic_id, credential=self._credential).get_info(),
+            "dynamic detail fetching",
+            lambda: dynamic.Dynamic(dynamic_id, credential=self._credential).get_info(),
         )
 
     async def search_by_type(
-        self, keyword: str, search_type: search.SearchObjectType, *, page: int = 1, page_size: int = 20,
+        self,
+        keyword: str,
+        search_type: search.SearchObjectType,
+        *,
+        page: int = 1,
+        page_size: int = 20,
     ) -> dict[str, Any]:
         # The SDK's search_by_type omits credentials; bind them at its API boundary.
         async def request() -> dict[str, Any]:
-            return await network.Api(
-                **search.API["search"]["web_search_by_type"], credential=self._credential, wbi=True,
-            ).update_params(
-                keyword=keyword, search_type=search_type.value, page=page, page_size=page_size,
-            ).result
+            return (
+                await network.Api(
+                    **search.API["search"]["web_search_by_type"],
+                    credential=self._credential,
+                    wbi=True,
+                )
+                .update_params(
+                    keyword=keyword,
+                    search_type=search_type.value,
+                    page=page,
+                    page_size=page_size,
+                )
+                .result
+            )
+
         return await self._request("content searching", request)
 
     async def send_comment(
-        self, text: str, oid: int, type_: comment.CommentResourceType,
-        *, root: int | None = None, parent: int | None = None,
+        self,
+        text: str,
+        oid: int,
+        type_: comment.CommentResourceType,
+        *,
+        root: int | None = None,
+        parent: int | None = None,
         pic: Picture | list[Picture] | None = None,
     ) -> dict[str, Any]:
         """Send a native SDK comment using this account and isolated image files."""
+
         async def request() -> dict[str, Any]:
             directories = []
             pictures = []
             try:
-                for picture in ([pic] if isinstance(pic, Picture) else pic or []):
+                for picture in [pic] if isinstance(pic, Picture) else pic or []:
                     prepared = _BiliBiliPicture.from_picture(picture)
                     directories.append(await prepared.prepare_upload())
                     pictures.append(prepared)
                 options = {"pic": pictures} if pictures else {}
                 return await comment.send_comment(
-                    text=text, oid=oid, type_=type_, root=root, parent=parent,
-                    credential=self._credential, **options,
+                    text=text,
+                    oid=oid,
+                    type_=type_,
+                    root=root,
+                    parent=parent,
+                    credential=self._credential,
+                    **options,
                 )
             finally:
                 for directory in directories:
                     await asyncio.to_thread(directory.cleanup)
+
         return await self._request("comment reply", request)
 
-    async def get_comments_lazy(self, oid: int, type_: comment.CommentResourceType) -> dict[str, Any]:
+    async def get_comments_lazy(
+        self, oid: int, type_: comment.CommentResourceType
+    ) -> dict[str, Any]:
         return await self._request(
-            "comment fetching", lambda: comment.get_comments_lazy(
-                oid=oid, type_=type_, credential=self._credential,
+            "comment fetching",
+            lambda: comment.get_comments_lazy(
+                oid=oid,
+                type_=type_,
+                credential=self._credential,
             ),
         )
 
     async def get_reply_notifications(
-        self, *, cursor_id: int | None = None, cursor_time: int | None = None,
+        self,
+        *,
+        cursor_id: int | None = None,
+        cursor_time: int | None = None,
     ) -> dict[str, Any]:
         return await self._request(
-            "reply notification fetching", lambda: session.get_replies(
-                self._credential, last_reply_id=cursor_id, reply_time=cursor_time,
+            "reply notification fetching",
+            lambda: session.get_replies(
+                self._credential,
+                last_reply_id=cursor_id,
+                reply_time=cursor_time,
             ),
         )
 
     async def get_at_notifications(
-        self, *, cursor_id: int | None = None, cursor_time: int | None = None,
+        self,
+        *,
+        cursor_id: int | None = None,
+        cursor_time: int | None = None,
     ) -> dict[str, Any]:
         return await self._request(
-            "mention notification fetching", lambda: session.get_at(
-                self._credential, last_uid=cursor_id, at_time=cursor_time,
+            "mention notification fetching",
+            lambda: session.get_at(
+                self._credential,
+                last_uid=cursor_id,
+                at_time=cursor_time,
             ),
         )
 
@@ -214,5 +279,6 @@ class BiliBiliClient:
             # SDK 17.x replaces scheduling options when comment options exist.
             draft.options["timer_pub_time"] = int(draft.time.timestamp())
         return await self._request(
-            "dynamic publishing", lambda: dynamic.send_dynamic(info=draft, credential=self._credential),
+            "dynamic publishing",
+            lambda: dynamic.send_dynamic(info=draft, credential=self._credential),
         )

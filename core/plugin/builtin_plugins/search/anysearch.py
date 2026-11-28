@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -17,7 +18,7 @@ class AnySearchClient:
         timeout: float = 60.0,
         auto_key_path: Path | None = None,
         http_client: httpx.AsyncClient | None = None,
-    ):
+    ) -> None:
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
         self._auto_key_path = auto_key_path
@@ -80,10 +81,8 @@ class AnySearchClient:
             return
         self._auto_key_path.parent.mkdir(parents=True, exist_ok=True)
         self._auto_key_path.write_text(key, encoding="utf-8")
-        try:
+        with contextlib.suppress(OSError):
             self._auto_key_path.chmod(0o600)
-        except OSError:
-            pass
 
     @staticmethod
     def _extract_auto_key(message: str) -> str:
@@ -127,9 +126,13 @@ class AnySearchClient:
         try:
             body = response.json()
         except ValueError:
-            return {"error": f"AnySearch 无效响应（HTTP {response.status_code}）：{response.text[:200]}"}
+            return {
+                "error": f"AnySearch 无效响应（HTTP {response.status_code}）：{response.text[:200]}"
+            }
         if not isinstance(body, dict):
-            return {"error": f"AnySearch 无效响应（HTTP {response.status_code}）：非 JSON 对象"}
+            return {
+                "error": f"AnySearch 无效响应（HTTP {response.status_code}）：非 JSON 对象"
+            }
 
         if response.status_code >= 400 and body.get("code", 0) != 0:
             auto_key = self._extract_auto_key(body.get("message", ""))
@@ -141,13 +144,19 @@ class AnySearchClient:
                     if response.status_code < 400 and body.get("code", 0) == 0:
                         return body
                 except Exception as exc:
-                    logger.warning("AnySearch retry after anonymous key issuance failed: %s", exc)
+                    logger.warning(
+                        "AnySearch retry after anonymous key issuance failed: %s", exc
+                    )
                 return {"error": "AnySearch 匿名开户后重试失败，请稍后重试"}
 
         if response.status_code >= 400 or body.get("code", 0) != 0:
             message = body.get("message") or f"HTTP {response.status_code}"
             request_id = body.get("request_id", "")
-            return {"error": f"{message}（request_id: {request_id}）" if request_id else message}
+            return {
+                "error": f"{message}（request_id: {request_id}）"
+                if request_id
+                else message
+            }
         return body
 
     async def search(

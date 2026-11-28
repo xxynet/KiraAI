@@ -19,12 +19,12 @@ class SiliconflowCNProvider(BaseProvider):
         ModelType.TTS: SiliconflowTTSClient,
         ModelType.STT: SiliconflowSTTClient,
         ModelType.EMBEDDING: SiliconflowEmbeddingClient,
-        ModelType.RERANK: SiliconflowRerankClient
+        ModelType.RERANK: SiliconflowRerankClient,
     }
 
-    def __init__(self, provider_id, provider_name, provider_config):
+    def __init__(self, provider_id, provider_name, provider_config) -> None:
         super().__init__(provider_id, provider_name, provider_config)
-    
+
     async def get_llm_list(self) -> list[dict]:
         """
         Fetch available models from SiliconFlow CN API.
@@ -43,9 +43,11 @@ class SiliconflowCNProvider(BaseProvider):
             model_id = item.get("id", "")
             if not model_id:
                 continue
-            models.append({
-                "id": model_id,
-                "name": item.get("name", model_id),
-                "description": item.get("description", ""),
-            })
+            models.append(
+                {
+                    "id": model_id,
+                    "name": item.get("name", model_id),
+                    "description": item.get("description", ""),
+                }
+            )
         return models

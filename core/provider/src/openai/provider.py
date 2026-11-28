@@ -16,17 +16,19 @@ class OpenAIProvider(BaseProvider):
         ModelType.TTS: OpenAICompatibleTTSClient,
         ModelType.STT: OpenAICompatibleSTTClient,
         ModelType.IMAGE: OpenAIImageClient,
-        ModelType.EMBEDDING: OpenAIEmbeddingClient
+        ModelType.EMBEDDING: OpenAIEmbeddingClient,
     }
 
-    def __init__(self, provider_id, provider_name, provider_config):
+    def __init__(self, provider_id, provider_name, provider_config) -> None:
         super().__init__(provider_id, provider_name, provider_config)
 
     async def get_llm_list(self) -> list[dict]:
         """
         Fetch available models from OpenAI-compatible API (GET /v1/models).
         """
-        base_url = self.provider_config.get("base_url", "https://api.openai.com/v1").rstrip("/")
+        base_url = self.provider_config.get(
+            "base_url", "https://api.openai.com/v1"
+        ).rstrip("/")
         api_key = self.provider_config.get("api_key", "")
         headers = {"Authorization": f"Bearer {api_key}"}
         async with httpx.AsyncClient(timeout=10) as client:
@@ -39,9 +41,11 @@ class OpenAIProvider(BaseProvider):
             model_id = item.get("id", "")
             if not model_id:
                 continue
-            models.append({
-                "id": model_id,
-                "name": item.get("name", model_id),
-                "description": item.get("description", ""),
-            })
+            models.append(
+                {
+                    "id": model_id,
+                    "name": item.get("name", model_id),
+                    "description": item.get("description", ""),
+                }
+            )
         return models

@@ -24,7 +24,10 @@ class MessageFormatMetadata:
         self.supported_elements = supported_elements
         if self.emojis is not None:
             emojis = dict(self.emojis)
-            if not all(isinstance(key, str) and isinstance(value, str) for key, value in emojis.items()):
+            if not all(
+                isinstance(key, str) and isinstance(value, str)
+                for key, value in emojis.items()
+            ):
                 raise TypeError("Emoji metadata must map string IDs to string values")
             self.emojis = emojis
 

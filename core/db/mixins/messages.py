@@ -22,15 +22,22 @@ def _message_chain_matches(chain: list[dict], keyword: str, *, depth: int = 0) -
     if depth > 2 or not isinstance(chain, list):
         return False
     text_fields = {
-        "notice": ("text",), "at": ("nickname",),
-        "emoji": ("emoji_desc",), "reply": ("message_content",),
-        **{kind: ("name", "caption", "description", "transcript")
-           for kind in ("image", "sticker", "record", "video", "file")},
+        "notice": ("text",),
+        "at": ("nickname",),
+        "emoji": ("emoji_desc",),
+        "reply": ("message_content",),
+        **dict.fromkeys(
+            ("image", "sticker", "record", "video", "file"),
+            ("name", "caption", "description", "transcript"),
+        ),
     }
     text_run = []
     for element in chain:
-        if (isinstance(element, dict) and element.get("type") == "text"
-                and isinstance(element.get("text"), str)):
+        if (
+            isinstance(element, dict)
+            and element.get("type") == "text"
+            and isinstance(element.get("text"), str)
+        ):
             text_run.append(element["text"])
             continue
         if text_run:
@@ -46,21 +53,37 @@ def _message_chain_matches(chain: list[dict], keyword: str, *, depth: int = 0) -
             value = element.get(key)
             if isinstance(value, str) and keyword in value.casefold():
                 return True
-        if kind == "json" and keyword in json.dumps(element.get("data", {}), ensure_ascii=False).casefold():
+        if (
+            kind == "json"
+            and keyword
+            in json.dumps(element.get("data", {}), ensure_ascii=False).casefold()
+        ):
             return True
-        if kind == "reply" and _message_chain_matches(element.get("chain") or [], keyword, depth=depth + 1):
+        if kind == "reply" and _message_chain_matches(
+            element.get("chain") or [], keyword, depth=depth + 1
+        ):
             return True
     return bool(text_run) and keyword in "".join(text_run).casefold()
 
 
 async def _matching_message_records(
-    records: list[MessageRecord], keyword: str, terms: list[str] | None = None,
+    records: list[MessageRecord],
+    keyword: str,
+    terms: list[str] | None = None,
 ) -> list[MessageRecord]:
     """Finish in-flight matching before a cancelled search releases its shared slot."""
-    task = asyncio.create_task(asyncio.to_thread(
-        lambda: [record for record in records
-                 if all(_message_chain_matches(record.chain, term) for term in (terms or [keyword]))],
-    ))
+    task = asyncio.create_task(
+        asyncio.to_thread(
+            lambda: [
+                record
+                for record in records
+                if all(
+                    _message_chain_matches(record.chain, term)
+                    for term in (terms or [keyword])
+                )
+            ],
+        )
+    )
     try:
         return await asyncio.shield(task)
     except asyncio.CancelledError:
@@ -80,11 +103,18 @@ class MessageHistoryMixin:
 
     @staticmethod
     def _message_record(row: MessageRecord) -> dict:
-        return {column.name: copy.deepcopy(getattr(row, column.name))
-                for column in MessageRecord.__table__.columns if column.name != "dedup_key"}
+        return {
+            column.name: copy.deepcopy(getattr(row, column.name))
+            for column in MessageRecord.__table__.columns
+            if column.name != "dedup_key"
+        }
 
     async def add_message_record(self, **values) -> str:
-        values.update(id=uuid.uuid4().hex, created_at=time.time_ns() // 1_000_000, schema_version=1)
+        values.update(
+            id=uuid.uuid4().hex,
+            created_at=time.time_ns() // 1_000_000,
+            schema_version=1,
+        )
         try:
             async with self.db.transaction() as session:
                 session.add(MessageRecord(**values))
@@ -92,32 +122,54 @@ class MessageHistoryMixin:
             if not values.get("dedup_key"):
                 raise
             async with self.db.get_session() as session:
-                identity = await session.scalar(select(MessageRecord.id).where(
-                    MessageRecord.dedup_key == values["dedup_key"]))
+                identity = await session.scalar(
+                    select(MessageRecord.id).where(
+                        MessageRecord.dedup_key == values["dedup_key"]
+                    )
+                )
             if identity is None:
                 raise
             return identity
         return values["id"]
 
-    async def update_message_delivery(self, record_id: str, *, status: str,
-                                      platform_message_id: str | None = None, error_type: str | None = None) -> None:
+    async def update_message_delivery(
+        self,
+        record_id: str,
+        *,
+        status: str,
+        platform_message_id: str | None = None,
+        error_type: str | None = None,
+    ) -> None:
         async with self.db.transaction() as session:
-            await session.execute(update(MessageRecord).where(MessageRecord.id == record_id).values(
-                status=status, platform_message_id=platform_message_id, error_type=error_type))
+            await session.execute(
+                update(MessageRecord)
+                .where(MessageRecord.id == record_id)
+                .values(
+                    status=status,
+                    platform_message_id=platform_message_id,
+                    error_type=error_type,
+                )
+            )
 
     @staticmethod
     def _message_record_conditions(
-        *, internal_message_id: str | None = None, session_id: str | None = None,
-        platform_message_id: str | int | None = None, self_id: str | None = None,
-        direction: str | None = None, llm_message_id: str | None = None,
+        *,
+        internal_message_id: str | None = None,
+        session_id: str | None = None,
+        platform_message_id: str | int | None = None,
+        self_id: str | None = None,
+        direction: str | None = None,
+        llm_message_id: str | None = None,
     ) -> list:
         if direction not in {None, "incoming", "outgoing"}:
             raise ValueError("direction must be incoming or outgoing")
         filters = (
             (MessageRecord.id, internal_message_id),
             (MessageRecord.session_id, session_id),
-            (MessageRecord.platform_message_id,
-             str(platform_message_id) if platform_message_id is not None else None),
+            (
+                MessageRecord.platform_message_id,
+                str(platform_message_id) if platform_message_id is not None else None,
+            ),
             (MessageRecord.self_id, self_id),
             (MessageRecord.direction, direction),
             (MessageRecord.llm_message_id, llm_message_id),
@@ -128,43 +180,75 @@ class MessageHistoryMixin:
         return conditions
 
     async def get_message_record(
-        self, internal_message_id: str | None = None, *, session_id: str | None = None,
-        platform_message_id: str | int | None = None, self_id: str | None = None,
+        self,
+        internal_message_id: str | None = None,
+        *,
+        session_id: str | None = None,
+        platform_message_id: str | int | None = None,
+        self_id: str | None = None,
         direction: str | None = None,
     ) -> dict | None:
         """Return the most recently archived record matching all supplied filters."""
         conditions = self._message_record_conditions(
-            internal_message_id=internal_message_id, session_id=session_id,
-            platform_message_id=platform_message_id, self_id=self_id, direction=direction,
+            internal_message_id=internal_message_id,
+            session_id=session_id,
+            platform_message_id=platform_message_id,
+            self_id=self_id,
+            direction=direction,
         )
-        query = select(MessageRecord).where(*conditions).order_by(
-            MessageRecord.created_at.desc(), MessageRecord.id.desc(),
-        ).limit(1)
+        query = (
+            select(MessageRecord)
+            .where(*conditions)
+            .order_by(
+                MessageRecord.created_at.desc(),
+                MessageRecord.id.desc(),
+            )
+            .limit(1)
+        )
         async with self.db.get_session() as session:
             row = await session.scalar(query)
             return self._message_record(row) if row else None
 
     async def list_message_records(
-        self, session_id: str | None = None, *, cursor: str | None = None,
-        limit: int = 50, llm_message_id: str | None = None, internal_message_id: str | None = None,
-        platform_message_id: str | int | None = None, self_id: str | None = None,
-        direction: str | None = None, keyword: str | None = None,
-        match_all: bool = False, author: str | None = None,
-        sent_after: int | None = None, sent_before: int | None = None,
+        self,
+        session_id: str | None = None,
+        *,
+        cursor: str | None = None,
+        limit: int = 50,
+        llm_message_id: str | None = None,
+        internal_message_id: str | None = None,
+        platform_message_id: str | int | None = None,
+        self_id: str | None = None,
+        direction: str | None = None,
+        keyword: str | None = None,
+        match_all: bool = False,
+        author: str | None = None,
+        sent_after: int | None = None,
+        sent_before: int | None = None,
     ) -> dict:
         """Search visible text before pagination, sharing two scan slots across callers.
 
         Acquire a search slot before opening a database session. Unfiltered reads do
         not wait for a slot; cancellation waits for in-flight text matching to finish.
         """
-        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or not 1 <= limit <= 200
+        ):
             raise ValueError("limit must be an integer between 1 and 200")
         if keyword is not None and (not isinstance(keyword, str) or len(keyword) > 200):
             raise ValueError("keyword must be a string of at most 200 characters")
         for name, value in (("sent_after", sent_after), ("sent_before", sent_before)):
-            if value is not None and (isinstance(value, bool) or not isinstance(value, int)):
+            if value is not None and (
+                isinstance(value, bool) or not isinstance(value, int)
+            ):
                 raise ValueError(f"{name} must be an integer Unix timestamp in seconds")
-        if sent_after is not None and sent_before is not None and sent_after >= sent_before:
+        if (
+            sent_after is not None
+            and sent_before is not None
+            and sent_after >= sent_before
+        ):
             raise ValueError("sent_after must be earlier than sent_before")
         if author is not None and (not isinstance(author, str) or not author):
             raise ValueError("author must be a non-empty sender ID")
@@ -173,8 +257,11 @@ class MessageHistoryMixin:
         if match_all and not terms:
             keyword = None
         conditions = self._message_record_conditions(
-            internal_message_id=internal_message_id, session_id=session_id,
-            platform_message_id=platform_message_id, self_id=self_id, direction=direction,
+            internal_message_id=internal_message_id,
+            session_id=session_id,
+            platform_message_id=platform_message_id,
+            self_id=self_id,
+            direction=direction,
             llm_message_id=llm_message_id or None,
         )
         if author is not None:
@@ -190,58 +277,126 @@ class MessageHistoryMixin:
             session = await resources.enter_async_context(self.db.get_session())
             if cursor:
                 previous = await session.scalar(query.where(MessageRecord.id == cursor))
-                if previous is None or (keyword and not await _matching_message_records([previous], keyword, terms)):
+                if previous is None or (
+                    keyword
+                    and not await _matching_message_records([previous], keyword, terms)
+                ):
                     raise ValueError("Invalid message cursor")
-                query = query.where(or_(
-                    MessageRecord.created_at < previous.created_at,
-                    and_(MessageRecord.created_at == previous.created_at, MessageRecord.id < previous.id)))
-            query = query.order_by(MessageRecord.created_at.desc(), MessageRecord.id.desc())
+                query = query.where(
+                    or_(
+                        MessageRecord.created_at < previous.created_at,
+                        and_(
+                            MessageRecord.created_at == previous.created_at,
+                            MessageRecord.id < previous.id,
+                        ),
+                    )
+                )
+            query = query.order_by(
+                MessageRecord.created_at.desc(), MessageRecord.id.desc()
+            )
             if keyword:
                 # Stream bounded batches so text search does not load an entire session.
-                stream = await session.stream_scalars(query.execution_options(yield_per=100))
+                stream = await session.stream_scalars(
+                    query.execution_options(yield_per=100)
+                )
                 rows = []
                 try:
                     async for batch in stream.partitions(100):
                         matches = await _matching_message_records(batch, keyword, terms)
-                        rows.extend(matches[:limit + 1 - len(rows)])
+                        rows.extend(matches[: limit + 1 - len(rows)])
                         if len(rows) > limit:
                             break
                 finally:
                     await stream.close()
             else:
                 rows = list((await session.scalars(query.limit(limit + 1))).all())
-        return {"messages": [self._message_record(row) for row in rows[:limit]],
-                "next_cursor": rows[limit - 1].id if len(rows) > limit else None}
+        return {
+            "messages": [self._message_record(row) for row in rows[:limit]],
+            "next_cursor": rows[limit - 1].id if len(rows) > limit else None,
+        }
 
     async def read_message_records(
-        self, session_id: str, *, message_id: str | None = None,
-        before: int = 10, after: int = 10,
+        self,
+        session_id: str,
+        *,
+        message_id: str | None = None,
+        before: int = 10,
+        after: int = 10,
     ) -> dict:
         """Read an anchor and its neighbors in stable archive order within one session."""
         for name, count in (("before", before), ("after", after)):
-            if isinstance(count, bool) or not isinstance(count, int) or not 0 <= count <= 50:
+            if (
+                isinstance(count, bool)
+                or not isinstance(count, int)
+                or not 0 <= count <= 50
+            ):
                 raise ValueError(f"{name} must be an integer between 0 and 50")
-        if message_id is not None and (not isinstance(message_id, str) or not message_id):
+        if message_id is not None and (
+            not isinstance(message_id, str) or not message_id
+        ):
             raise ValueError("message_id must be a non-empty internal archive ID")
         query = select(MessageRecord).where(MessageRecord.session_id == session_id)
         async with self.db.get_session() as session:
-            anchor_query = query if message_id is None else query.where(MessageRecord.id == message_id)
-            anchor = await session.scalar(anchor_query.order_by(
-                MessageRecord.created_at.desc(), MessageRecord.id.desc()).limit(1))
+            anchor_query = (
+                query
+                if message_id is None
+                else query.where(MessageRecord.id == message_id)
+            )
+            anchor = await session.scalar(
+                anchor_query.order_by(
+                    MessageRecord.created_at.desc(), MessageRecord.id.desc()
+                ).limit(1)
+            )
             if anchor is None:
                 if message_id is not None:
                     raise ValueError("Message not found in target session")
-                return {"messages": [], "anchor_id": None, "has_more_before": False, "has_more_after": False}
-            older = list((await session.scalars(query.where(or_(
-                MessageRecord.created_at < anchor.created_at,
-                and_(MessageRecord.created_at == anchor.created_at, MessageRecord.id < anchor.id),
-            )).order_by(MessageRecord.created_at.desc(), MessageRecord.id.desc()).limit(before + 1))).all())
-            newer = list((await session.scalars(query.where(or_(
-                MessageRecord.created_at > anchor.created_at,
-                and_(MessageRecord.created_at == anchor.created_at, MessageRecord.id > anchor.id),
-            )).order_by(MessageRecord.created_at, MessageRecord.id).limit(after + 1))).all())
+                return {
+                    "messages": [],
+                    "anchor_id": None,
+                    "has_more_before": False,
+                    "has_more_after": False,
+                }
+            older = list(
+                (
+                    await session.scalars(
+                        query.where(
+                            or_(
+                                MessageRecord.created_at < anchor.created_at,
+                                and_(
+                                    MessageRecord.created_at == anchor.created_at,
+                                    MessageRecord.id < anchor.id,
+                                ),
+                            )
+                        )
+                        .order_by(
+                            MessageRecord.created_at.desc(), MessageRecord.id.desc()
+                        )
+                        .limit(before + 1)
+                    )
+                ).all()
+            )
+            newer = list(
+                (
+                    await session.scalars(
+                        query.where(
+                            or_(
+                                MessageRecord.created_at > anchor.created_at,
+                                and_(
+                                    MessageRecord.created_at == anchor.created_at,
+                                    MessageRecord.id > anchor.id,
+                                ),
+                            )
+                        )
+                        .order_by(MessageRecord.created_at, MessageRecord.id)
+                        .limit(after + 1)
+                    )
+                ).all()
+            )
             return {
-                "messages": [self._message_record(row) for row in [*reversed(older[:before]), anchor, *newer[:after]]],
+                "messages": [
+                    self._message_record(row)
+                    for row in [*reversed(older[:before]), anchor, *newer[:after]]
+                ],
                 "anchor_id": anchor.id,
                 "has_more_before": len(older) > before,
                 "has_more_after": len(newer) > after,
@@ -253,30 +408,45 @@ class MessageHistoryMixin:
         if session_id is not None:
             query = query.where(MessageRecord.session_id == session_id)
         async with self.db.get_session() as session:
-            rows = (await session.execute(query.group_by(MessageRecord.session_id))).all()
-        return [{"session_id": row.session_id, "message_count": row.message_count} for row in rows]
+            rows = (
+                await session.execute(query.group_by(MessageRecord.session_id))
+            ).all()
+        return [
+            {"session_id": row.session_id, "message_count": row.message_count}
+            for row in rows
+        ]
 
-    async def link_message_records(self, session_id: str, llm_message_id: str,
-                                   message_ids: list[str]) -> None:
+    async def link_message_records(
+        self, session_id: str, llm_message_id: str, message_ids: list[str]
+    ) -> None:
         """Persist source links in the database without adding reverse links to memory."""
         if not message_ids:
             return
         async with self.db.transaction() as session:
-            await session.execute(update(MessageRecord).where(
-                MessageRecord.session_id == session_id,
-                MessageRecord.direction == "incoming",
-                MessageRecord.id.in_(message_ids),
-            ).values(llm_message_id=llm_message_id))
+            await session.execute(
+                update(MessageRecord)
+                .where(
+                    MessageRecord.session_id == session_id,
+                    MessageRecord.direction == "incoming",
+                    MessageRecord.id.in_(message_ids),
+                )
+                .values(llm_message_id=llm_message_id)
+            )
 
     async def mark_pending_messages_unknown(self) -> None:
         # A process crash after sending leaves delivery ambiguous; never resend automatically.
         async with self.db.transaction() as session:
-            await session.execute(update(MessageRecord).where(
-                MessageRecord.status == "pending").values(status="unknown"))
+            await session.execute(
+                update(MessageRecord)
+                .where(MessageRecord.status == "pending")
+                .values(status="unknown")
+            )
 
     async def delete_session_message_records(self, session_id: str) -> None:
         async with self.db.transaction() as session:
-            await session.execute(delete(MessageRecord).where(MessageRecord.session_id == session_id))
+            await session.execute(
+                delete(MessageRecord).where(MessageRecord.session_id == session_id)
+            )
 
     @asynccontextmanager
     async def stream_message_chains(self) -> AsyncIterator[AsyncIterator[list[dict]]]:
@@ -291,30 +461,47 @@ class MessageHistoryMixin:
                 await chains.close()
 
     async def prune_message_records(
-        self, *, cutoff: int | None, max_messages_per_session: int, protected: set[str],
+        self,
+        *,
+        cutoff: int | None,
+        max_messages_per_session: int,
+        protected: set[str],
     ) -> int:
         """Delete at most 5000 records, preserving pending and in-flight messages."""
         if max_messages_per_session < 0:
             raise ValueError("max_messages_per_session must not be negative")
         total = 0
         async with self.db.get_session() as session:
-            sessions = (await session.scalars(select(MessageRecord.session_id).distinct())).all()
+            sessions = (
+                await session.scalars(select(MessageRecord.session_id).distinct())
+            ).all()
         for session_id in sessions:
             conditions = []
             if cutoff is not None:
                 conditions.append(MessageRecord.created_at < cutoff)
             if max_messages_per_session:
                 async with self.db.get_session() as session:
-                    boundary = (await session.execute(select(MessageRecord.created_at, MessageRecord.id).where(
-                        MessageRecord.session_id == session_id
-                    ).order_by(MessageRecord.created_at.desc(), MessageRecord.id.desc()).offset(
-                        max_messages_per_session
-                    ).limit(1))).first()
+                    boundary = (
+                        await session.execute(
+                            select(MessageRecord.created_at, MessageRecord.id)
+                            .where(MessageRecord.session_id == session_id)
+                            .order_by(
+                                MessageRecord.created_at.desc(), MessageRecord.id.desc()
+                            )
+                            .offset(max_messages_per_session)
+                            .limit(1)
+                        )
+                    ).first()
                 if boundary:
-                    conditions.append(or_(
-                        MessageRecord.created_at < boundary.created_at,
-                        and_(MessageRecord.created_at == boundary.created_at, MessageRecord.id <= boundary.id),
-                    ))
+                    conditions.append(
+                        or_(
+                            MessageRecord.created_at < boundary.created_at,
+                            and_(
+                                MessageRecord.created_at == boundary.created_at,
+                                MessageRecord.id <= boundary.id,
+                            ),
+                        )
+                    )
             if not conditions:
                 continue
             cursor = None
@@ -325,19 +512,30 @@ class MessageHistoryMixin:
                     or_(*conditions),
                 )
                 if cursor:
-                    query = query.where(or_(
-                        MessageRecord.created_at > cursor.created_at,
-                        and_(MessageRecord.created_at == cursor.created_at, MessageRecord.id > cursor.id),
-                    ))
+                    query = query.where(
+                        or_(
+                            MessageRecord.created_at > cursor.created_at,
+                            and_(
+                                MessageRecord.created_at == cursor.created_at,
+                                MessageRecord.id > cursor.id,
+                            ),
+                        )
+                    )
                 async with self.db.transaction() as session:
-                    rows = (await session.execute(query.order_by(
-                        MessageRecord.created_at, MessageRecord.id
-                    ).limit(min(500, 5000 - total)))).all()
+                    rows = (
+                        await session.execute(
+                            query.order_by(
+                                MessageRecord.created_at, MessageRecord.id
+                            ).limit(min(500, 5000 - total))
+                        )
+                    ).all()
                     if not rows:
                         break
                     ids = [row.id for row in rows if row.id not in protected]
                     if ids:
-                        await session.execute(delete(MessageRecord).where(MessageRecord.id.in_(ids)))
+                        await session.execute(
+                            delete(MessageRecord).where(MessageRecord.id.in_(ids))
+                        )
                         total += len(ids)
                     cursor = rows[-1]
             if total >= 5000:

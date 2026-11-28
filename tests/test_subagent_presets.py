@@ -8,7 +8,8 @@ from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 
 from core.agent.subagent_presets import SubAgentPreset, SubAgentPresetStore
-from core.plugin import PluginManager, SubAgentPreset as PluginSubAgentPreset, registry
+from core.plugin import PluginManager, registry
+from core.plugin import SubAgentPreset as PluginSubAgentPreset
 from webui.routes.auth import require_auth
 from webui.routes.scope import ScopeRoutes
 from webui.routes.subagents import SubAgentsRoutes

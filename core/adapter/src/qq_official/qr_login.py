@@ -82,7 +82,10 @@ class QQOfficialQRCodeLoginHandler(QRCodeLoginHandler):
             "app_secret": app_secret,
         }
         scanner_openid = str(result.get("user_openid", "")).strip()
-        if scanner_openid and self.config.get("permission_mode", "allow_list") == "allow_list":
+        if (
+            scanner_openid
+            and self.config.get("permission_mode", "allow_list") == "allow_list"
+        ):
             user_allow_list = list(self.config.get("user_allow_list") or [])
             if scanner_openid not in {str(entry) for entry in user_allow_list}:
                 user_allow_list.append(scanner_openid)

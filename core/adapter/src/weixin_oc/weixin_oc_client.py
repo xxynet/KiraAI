@@ -141,7 +141,9 @@ class WeixinOCClient:
         encrypted = await asyncio.to_thread(self._encrypt_media, raw_data, aes_key_hex)
         logger.debug(
             "weixin_oc(%s): encrypt done plain_size=%s cipher_size=%s",
-            self.adapter_id, len(raw_data), len(encrypted),
+            self.adapter_id,
+            len(raw_data),
+            len(encrypted),
         )
 
         await self.ensure_http_client()
@@ -155,15 +157,14 @@ class WeixinOCClient:
         )
         logger.debug(
             "weixin_oc(%s): CDN upload response status=%s",
-            self.adapter_id, resp.status_code,
+            self.adapter_id,
+            resp.status_code,
         )
         if resp.status_code != 200:
             raise RuntimeError(f"upload media to cdn failed: {resp.status_code}")
         download_param = resp.headers.get("x-encrypted-param")
         if not download_param:
-            raise RuntimeError(
-                "upload media to cdn failed: missing x-encrypted-param"
-            )
+            raise RuntimeError("upload media to cdn failed: missing x-encrypted-param")
         return download_param
 
     async def download_cdn_bytes(self, encrypted_query_param: str) -> bytes:
@@ -174,9 +175,7 @@ class WeixinOCClient:
             timeout=self.api_timeout_ms / 1000,
         )
         if resp.status_code >= 400:
-            raise RuntimeError(
-                f"download media from cdn failed: {resp.status_code}"
-            )
+            raise RuntimeError(f"download media from cdn failed: {resp.status_code}")
         return resp.content
 
     async def download_and_decrypt_media(
@@ -201,7 +200,9 @@ class WeixinOCClient:
     ) -> dict[str, Any]:
         await self.ensure_http_client()
         assert self._http_client is not None
-        req_timeout = (timeout_ms if timeout_ms is not None else self.api_timeout_ms) / 1000
+        req_timeout = (
+            timeout_ms if timeout_ms is not None else self.api_timeout_ms
+        ) / 1000
         merged_headers = self._build_base_headers(token_required=token_required)
         if headers:
             merged_headers.update(headers)
@@ -219,7 +220,7 @@ class WeixinOCClient:
             raise RuntimeError(f"{method} {endpoint} failed: {resp.status_code}")
         if not text:
             return {}
-        return cast(dict[str, Any], json.loads(text))
+        return cast("dict[str, Any]", json.loads(text))
 
     async def get_typing_config(
         self,

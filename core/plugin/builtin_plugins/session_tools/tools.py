@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 READ_TARGET_PARAM = {
     "type": "string",
     "description": "完整会话标识 adapter_name:session_type:session_id，省略时查询当前会话。"
-                   "查询其他会话时，必须从会话列表逐字复制标识，并且来源与目标会话都需要通过跨会话读取授权。",
+    "查询其他会话时，必须从会话列表逐字复制标识，并且来源与目标会话都需要通过跨会话读取授权。",
 }
 
 
@@ -36,7 +36,9 @@ class SessionViewTool(BaseTool):
         super().__init__(ctx=plugin.ctx)
         self.plugin = plugin
 
-    async def execute(self, event: KiraMessageBatchEvent, target: str | None = None) -> str:
+    async def execute(
+        self, event: KiraMessageBatchEvent, target: str | None = None
+    ) -> str:
         return await self.plugin.session_view(event, target=target)
 
 
@@ -54,9 +56,13 @@ class SearchMessagesTool(BaseTool):
         "properties": {
             "target": READ_TARGET_PARAM,
             "query": {"type": "string", "minLength": 1, "maxLength": 200},
-            "author": {"type": "string", "description": "精确发送者 ID（群聊可指定成员）；不按昵称匹配。"},
+            "author": {
+                "type": "string",
+                "description": "精确发送者 ID（群聊可指定成员）；不按昵称匹配。",
+            },
             "direction": {
-                "type": "string", "enum": ["incoming", "outgoing"],
+                "type": "string",
+                "enum": ["incoming", "outgoing"],
                 "description": (
                     "可选收发方向，始终以你为参照：incoming=你收到的用户或群成员消息；"
                     "outgoing=你发出的消息。查询用户发给你的消息用 incoming，"
@@ -74,12 +80,15 @@ class SearchMessagesTool(BaseTool):
                 "description": "发送时间上界，不含边界；格式与 sent_after 相同，如 2026-11-25 00:00:00+08:00。未带时区时使用配置时区，未配置时使用本地时区。",
             },
             "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 20},
-            "cursor": {"type": "string", "description": "上次返回的 next_cursor，继续搜索须保持其余条件不变。"},
+            "cursor": {
+                "type": "string",
+                "description": "上次返回的 next_cursor，继续搜索须保持其余条件不变。",
+            },
         },
         "required": ["query"],
     }
 
-    def __init__(self, plugin: SessionPlugin):
+    def __init__(self, plugin: SessionPlugin) -> None:
         super().__init__(ctx=plugin.ctx)
         self.plugin = plugin
 
@@ -107,7 +116,7 @@ class ReadMessagesTool(BaseTool):
         "required": [],
     }
 
-    def __init__(self, plugin: SessionPlugin):
+    def __init__(self, plugin: SessionPlugin) -> None:
         super().__init__(ctx=plugin.ctx)
         self.plugin = plugin
 

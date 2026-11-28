@@ -87,15 +87,15 @@ DESC_PROMPT = """\
 
 
 class SessionPlugin(BasePlugin):
-    def __init__(self, ctx, cfg: dict):
+    def __init__(self, ctx, cfg: dict) -> None:
         super().__init__(ctx, cfg)
         self.session_events: dict[str, asyncio.Event] = {}
         self.session_tasks: dict[str, asyncio.Task] = {}
-    
-    async def initialize(self):
+
+    async def initialize(self) -> None:
         pass
-    
-    async def terminate(self):
+
+    async def terminate(self) -> None:
         """
         Cleanup when plugin is terminated
         """
@@ -112,7 +112,11 @@ class SessionPlugin(BasePlugin):
         if not isinstance(target, str):
             raise TypeError("target must be a session routing identifier")
         parts = target.split(":", 2)
-        if len(parts) != 3 or any(not part for part in parts) or parts[1] not in {"dm", "gm"}:
+        if (
+            len(parts) != 3
+            or any(not part for part in parts)
+            or parts[1] not in {"dm", "gm"}
+        ):
             raise ValueError("target must use adapter_name:dm/gm:session_id")
         if target == event.sid:
             return target
@@ -124,19 +128,30 @@ class SessionPlugin(BasePlugin):
         sessions = access.get("session_list", [])
         if not isinstance(sessions, list) or mode not in {"allow_list", "deny_list"}:
             raise ValueError("Cross-session read permission denied")
-        caller_policy = ListAccessPolicy.from_lists(mode, allow_list=sessions, deny_list=sessions)
+        caller_policy = ListAccessPolicy.from_lists(
+            mode, allow_list=sessions, deny_list=sessions
+        )
         if not caller_policy.allows(event.sid):
-            raise ValueError("Cross-session read permission denied; configure cross_session_read for the calling session")
+            raise ValueError(
+                "Cross-session read permission denied; configure cross_session_read for the calling session"
+            )
 
         target_mode = access.get("target_permission_mode", "deny_list")
         target_sessions = access.get("target_session_list", [])
-        if not isinstance(target_sessions, list) or target_mode not in ("allow_list", "deny_list"):
+        if not isinstance(target_sessions, list) or target_mode not in (
+            "allow_list",
+            "deny_list",
+        ):
             raise ValueError("Cross-session read target permission denied")
         target_policy = ListAccessPolicy.from_lists(
-            target_mode, allow_list=target_sessions, deny_list=target_sessions,
+            target_mode,
+            allow_list=target_sessions,
+            deny_list=target_sessions,
         )
         if not target_policy.allows(target):
-            raise ValueError("Cross-session read target permission denied; configure cross_session_read for the target session")
+            raise ValueError(
+                "Cross-session read target permission denied; configure cross_session_read for the target session"
+            )
 
         adapter = self.ctx.adapter_mgr.get_adapter(parts[0])
         if adapter is None:
@@ -150,21 +165,35 @@ class SessionPlugin(BasePlugin):
             raise ValueError("Target session is not allowed by its adapter")
         return target
 
-    async def session_view(self, event: KiraMessageBatchEvent, target: str | None = None):
+    async def session_view(
+        self, event: KiraMessageBatchEvent, target: str | None = None
+    ):
         """Return session metadata and counts without loading conversation bodies."""
         if not self._tool_enabled("session_view"):
             return "Error: session_view is disabled"
         try:
             target = self._read_target(event, target)
-            session = await self.ctx.session_mgr.get_session(target, include_content=False)
-            history_sessions = await self.ctx.message_history.list_sessions(session_id=target)
+            session = await self.ctx.session_mgr.get_session(
+                target, include_content=False
+            )
+            history_sessions = await self.ctx.message_history.list_sessions(
+                session_id=target
+            )
             history_count = history_sessions[0].message_count if history_sessions else 0
             if session is None and not history_count:
                 return "Error: Session not found"
-            counts = await self.ctx.session_mgr.get_session_message_counts(target) if session is not None else {}
+            counts = (
+                await self.ctx.session_mgr.get_session_message_counts(target)
+                if session is not None
+                else {}
+            )
             timezone = self.ctx.get_timezone()
-            title = str(session.session_title if session else None).replace("\n", "\n  ")
-            description = str(session.session_description if session else None).replace("\n", "\n  ")
+            title = str(session.session_title if session else None).replace(
+                "\n", "\n  "
+            )
+            description = str(session.session_description if session else None).replace(
+                "\n", "\n  "
+            )
             created_at = session.created_at if session else None
             updated_at = session.updated_at if session else None
             return (
@@ -185,9 +214,17 @@ class SessionPlugin(BasePlugin):
         if depth > 2 or not isinstance(chain, list):
             return "[无法解析的消息]"
         parts = []
-        media_labels = {"image": "Image", "record": "Record", "video": "Video", "file": "File", "sticker": "Sticker"}
+        media_labels = {
+            "image": "Image",
+            "record": "Record",
+            "video": "Video",
+            "file": "File",
+            "sticker": "Sticker",
+        }
         for element in chain:
-            if not isinstance(element, dict) or not isinstance(element.get("type"), str):
+            if not isinstance(element, dict) or not isinstance(
+                element.get("type"), str
+            ):
                 parts.append("[无法解析的消息]")
                 continue
             kind = element["type"]
@@ -197,22 +234,44 @@ class SessionPlugin(BasePlugin):
             elif kind == "at":
                 identity = element.get("pid") or "未知"
                 nickname = element.get("nickname")
-                parts.append(f"[At {identity}(nickname: {nickname})]" if nickname else f"[At {identity}]")
+                parts.append(
+                    f"[At {identity}(nickname: {nickname})]"
+                    if nickname
+                    else f"[At {identity}]"
+                )
             elif kind == "reply":
-                content = (SessionPlugin._history_chain_text(element["chain"], depth=depth + 1)
-                           if "chain" in element else element.get("message_content") or "")
+                content = (
+                    SessionPlugin._history_chain_text(element["chain"], depth=depth + 1)
+                    if "chain" in element
+                    else element.get("message_content") or ""
+                )
                 reference = element.get("message_id") or "无"
-                parts.append(f"[Reply ID: {reference} content: {content}]" if content else f"[Reply ID: {reference}]")
+                parts.append(
+                    f"[Reply ID: {reference} content: {content}]"
+                    if content
+                    else f"[Reply ID: {reference}]"
+                )
             elif kind == "json":
-                parts.append(f"[Json card {json.dumps(element.get('data'), ensure_ascii=False)}]")
+                parts.append(
+                    f"[Json card {json.dumps(element.get('data'), ensure_ascii=False)}]"
+                )
             elif kind in media_labels:
-                details = "；".join(str(element[key]) for key in ("name", "caption", "description", "transcript")
-                                   if element.get(key))
-                parts.append(f"[{media_labels[kind]}{' ' + details if details else ''}]")
+                details = "；".join(
+                    str(element[key])
+                    for key in ("name", "caption", "description", "transcript")
+                    if element.get(key)
+                )
+                parts.append(
+                    f"[{media_labels[kind]}{' ' + details if details else ''}]"
+                )
             elif kind == "emoji":
                 identity = element.get("emoji_id") or "未知"
                 description = element.get("emoji_desc")
-                parts.append(f"[Emoji {description} (ID: {identity})]" if description else f"[Emoji {identity}]")
+                parts.append(
+                    f"[Emoji {description} (ID: {identity})]"
+                    if description
+                    else f"[Emoji {identity}]"
+                )
             elif kind == "poke":
                 parts.append(f"[Poke {element.get('pid') or '未知'}]")
             elif kind == "forward":
@@ -228,14 +287,20 @@ class SessionPlugin(BasePlugin):
             timestamp = date.strftime("%b %d %Y %H:%M %a")
         except (ValueError, OverflowError, OSError):
             timestamp = "未知时间"
-        nickname = message.sender_name or ("你" if message.direction == "outgoing" else "未知")
+        nickname = message.sender_name or (
+            "你" if message.direction == "outgoing" else "未知"
+        )
         user_id = message.sender_id or "未知"
         content = self._history_chain_text(message.to_dict()["chain"])
         if message.direction == "outgoing" and message.status != "sent":
             content = f"[发送状态:{message.status}] " + content
         _, session_type, session_id = message.session_id.split(":", 2)
         if message.is_notice:
-            identity = f"group_id: {session_id}, user_id: {user_id}" if session_type == "gm" else f"user_id: {user_id}"
+            identity = (
+                f"group_id: {session_id}, user_id: {user_id}"
+                if session_type == "gm"
+                else f"user_id: {user_id}"
+            )
             line = f"[{timestamp}] Notice [{identity}] | {content}"
         else:
             identity = f"user_nickname: {nickname}, user_id: {user_id}"
@@ -246,8 +311,12 @@ class SessionPlugin(BasePlugin):
         return line.replace("\r", "\\r").replace("\n", "\\n")
 
     async def get_message_history(
-        self, event: KiraMessageBatchEvent, target: str | None = None,
-        keyword: str | None = None, limit: int = 20, cursor: str | None = None,
+        self,
+        event: KiraMessageBatchEvent,
+        target: str | None = None,
+        keyword: str | None = None,
+        limit: int = 20,
+        cursor: str | None = None,
         direction: str | None = None,
     ):
         """Retrieve an authorized page of retained messages with optional text search."""
@@ -258,11 +327,18 @@ class SessionPlugin(BasePlugin):
             if cursor is not None and (not isinstance(cursor, str) or not cursor):
                 raise ValueError("cursor must be a non-empty string")
             page = await self.ctx.message_history.get_messages(
-                session_id=target, keyword=keyword, limit=limit, cursor=cursor, direction=direction,
+                session_id=target,
+                keyword=keyword,
+                limit=limit,
+                cursor=cursor,
+                direction=direction,
             )
             timezone = self.ctx.get_timezone()
             header = f"session_id: {target}\nnext_cursor: {page.next_cursor}"
-            messages = "\n".join(self._history_message_line(message, timezone) for message in page.messages)
+            messages = "\n".join(
+                self._history_message_line(message, timezone)
+                for message in page.messages
+            )
             return f"{header}\n\n{messages or 'No matching messages.'}"
         except (TypeError, ValueError) as exc:
             return f"Error: {exc}"
@@ -286,9 +362,15 @@ class SessionPlugin(BasePlugin):
         if value is None:
             return None
         try:
-            if not isinstance(value, str) or len(value) < 19 or value[10] not in {" ", "T"}:
+            if (
+                not isinstance(value, str)
+                or len(value) < 19
+                or value[10] not in {" ", "T"}
+            ):
                 raise ValueError("A full date and time is required")
-            date = datetime.fromisoformat(value[:-1] + "+00:00" if value.endswith("Z") else value)
+            date = datetime.fromisoformat(
+                value[:-1] + "+00:00" if value.endswith("Z") else value
+            )
             if date.microsecond:
                 raise ValueError("Fractional seconds are not supported")
             if date.tzinfo is None:
@@ -302,9 +384,16 @@ class SessionPlugin(BasePlugin):
             ) from exc
 
     async def search_messages(
-        self, event: KiraMessageBatchEvent, query: str, target: str | None = None,
-        author: str | None = None, sent_after: str | None = None, sent_before: str | None = None,
-        direction: str | None = None, limit: int = 20, cursor: str | None = None,
+        self,
+        event: KiraMessageBatchEvent,
+        query: str,
+        target: str | None = None,
+        author: str | None = None,
+        sent_after: str | None = None,
+        sent_before: str | None = None,
+        direction: str | None = None,
+        limit: int = 20,
+        cursor: str | None = None,
     ) -> str:
         """Search one authorized archive and return stable context anchors."""
         if not self._tool_enabled("search_messages"):
@@ -314,21 +403,36 @@ class SessionPlugin(BasePlugin):
             if cursor is not None and (not isinstance(cursor, str) or not cursor):
                 raise ValueError("cursor must be a non-empty string")
             page = await self.ctx.message_history.search_messages(
-                target, query=query, author=author,
+                target,
+                query=query,
+                author=author,
                 sent_after=self._search_timestamp(sent_after, "sent_after"),
                 sent_before=self._search_timestamp(sent_before, "sent_before"),
-                direction=direction, limit=limit, cursor=cursor,
+                direction=direction,
+                limit=limit,
+                cursor=cursor,
             )
-            return json.dumps({
-                "session_id": target, "next_cursor": page.next_cursor,
-                "messages": [self._message_data(message.to_dict()) for message in page.messages],
-            }, ensure_ascii=False)
+            return json.dumps(
+                {
+                    "session_id": target,
+                    "next_cursor": page.next_cursor,
+                    "messages": [
+                        self._message_data(message.to_dict())
+                        for message in page.messages
+                    ],
+                },
+                ensure_ascii=False,
+            )
         except (TypeError, ValueError) as exc:
             return f"Error: {exc}"
 
     async def read_messages(
-        self, event: KiraMessageBatchEvent, target: str | None = None,
-        message_id: str | None = None, before: int = 10, after: int = 10,
+        self,
+        event: KiraMessageBatchEvent,
+        target: str | None = None,
+        message_id: str | None = None,
+        before: int = 10,
+        after: int = 10,
     ) -> str:
         """Read neighbors only after authorizing the requested target session."""
         if not self._tool_enabled("read_messages"):
@@ -336,9 +440,14 @@ class SessionPlugin(BasePlugin):
         try:
             target = self._read_target(event, target)
             window = await self.ctx.message_history.read_messages(
-                target, message_id=message_id, before=before, after=after,
+                target,
+                message_id=message_id,
+                before=before,
+                after=after,
             )
-            window["messages"] = [self._message_data(record) for record in window["messages"]]
+            window["messages"] = [
+                self._message_data(record) for record in window["messages"]
+            ]
             return json.dumps({"session_id": target, **window}, ensure_ascii=False)
         except (TypeError, ValueError) as exc:
             return f"Error: {exc}"
@@ -352,22 +461,29 @@ class SessionPlugin(BasePlugin):
         params={
             "type": "object",
             "properties": {
-                "target": {"type": "string", "description": (
-                    "目标会话标识，格式为 adapter_name:session_type:session_id。"
-                    "可使用会话列表、记忆中的记录或用户提供的信息"
-                    "adapter_name 是用户配置的"
-                    "实例名，可能与实际平台名称不同，示例：qq:dm:123456（私聊）、ada:gm:789012（群聊）"
-                )},
-                "description": {"type": "string", "description": DESC_PROMPT}
+                "target": {
+                    "type": "string",
+                    "description": (
+                        "目标会话标识，格式为 adapter_name:session_type:session_id。"
+                        "可使用会话列表、记忆中的记录或用户提供的信息"
+                        "adapter_name 是用户配置的"
+                        "实例名，可能与实际平台名称不同，示例：qq:dm:123456（私聊）、ada:gm:789012（群聊）"
+                    ),
+                },
+                "description": {"type": "string", "description": DESC_PROMPT},
             },
-            "required": ["target", "description"]
-        }
+            "required": ["target", "description"],
+        },
     )
-    async def session_send(self, event: KiraMessageBatchEvent, target: str, description: str):
+    async def session_send(
+        self, event: KiraMessageBatchEvent, target: str, description: str
+    ):
         handoff = SessionHandoff.for_event(event)
         record = handoff.new_record(event.sid, target, description)
         try:
-            result = await self._send_session_handoff(event, target, description, handoff, record)
+            result = await self._send_session_handoff(
+                event, target, description, handoff, record
+            )
             if result == "message sent":
                 record["status"] = "sent"
             elif result.startswith("Cross-session transfer blocked:"):
@@ -403,7 +519,11 @@ class SessionPlugin(BasePlugin):
             except ValueError:
                 is_allowed = False
             else:
-                permission = "im.direct.receive" if session.session_type == "dm" else "im.group.receive"
+                permission = (
+                    "im.direct.receive"
+                    if session.session_type == "dm"
+                    else "im.group.receive"
+                )
                 is_allowed = capability.is_allowed(
                     session.session_id,
                     permission=permission,
@@ -413,16 +533,24 @@ class SessionPlugin(BasePlugin):
             policy = self.plugin_cfg.get("cross_session_send", {})
             max_transfers = policy.get("max_transfers", 8)
             repeat_window = policy.get("repeat_window_seconds", 300)
-            for name, value in (("max_transfers", max_transfers), ("repeat_window_seconds", repeat_window)):
+            for name, value in (
+                ("max_transfers", max_transfers),
+                ("repeat_window_seconds", repeat_window),
+            ):
                 if type(value) is not int or value < 1:
-                    raise ValueError(f"cross_session_send.{name} must be a positive integer")
+                    raise ValueError(
+                        f"cross_session_send.{name} must be a positive integer"
+                    )
             blocked = handoff.reserve(record, max_transfers, repeat_window)
             if blocked:
                 return blocked
-            cross_session_prompt = CROSS_SESSION_PROMPT.format(session_id=event.sid, description=description)
+            cross_session_prompt = CROSS_SESSION_PROMPT.format(
+                session_id=event.sid, description=description
+            )
 
             await self.ctx.publish_notice(
-                session, MessageChain([Text(cross_session_prompt)]),
+                session,
+                MessageChain([Text(cross_session_prompt)]),
                 extra={HANDOFF_KEY: handoff.next(record)},
             )
             return "message sent"
@@ -431,10 +559,13 @@ class SessionPlugin(BasePlugin):
 
     async def get_session_list_prompt(self) -> str:
         """List stored IM sessions for the cross-session tools."""
-        sessions = await self.ctx.session_mgr.get_sessions(include_content=False, kind="im")
+        sessions = await self.ctx.session_mgr.get_sessions(
+            include_content=False, kind="im"
+        )
         session_list = "\n".join(
             f"{session.sid}(title: {session.session_title})"
-            for session in sessions if isinstance(session.data, dict)
+            for session in sessions
+            if isinstance(session.data, dict)
         )
         return (
             "以下列出已记录会话的完整标识。session_send 也可使用记忆中的记录或用户提供的信息。"

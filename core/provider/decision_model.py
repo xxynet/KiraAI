@@ -9,7 +9,9 @@ Probability = Annotated[float, Field(strict=True, ge=0, le=1)]
 
 
 class DecisionModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", allow_inf_nan=False, hide_input_in_errors=True)
+    model_config = ConfigDict(
+        extra="forbid", allow_inf_nan=False, hide_input_in_errors=True
+    )
 
 
 class DecisionUsage(DecisionModel):

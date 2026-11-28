@@ -1,6 +1,7 @@
 """Language-neutral N-gram preprocessing for SQLite FTS5 retrieval."""
 
 import unicodedata
+from typing import Any
 
 # Cover the largest supported result page: offset 10000 plus 50 records.
 MAX_CANDIDATES = 10050
@@ -28,7 +29,7 @@ def _tokens(text: str, *, query: bool = False):
             yield "w:" + word
         for size in (2, 3):
             for i in range(len(word) - size + 1):
-                yield f"g{size}:" + word[i:i + size]
+                yield f"g{size}:" + word[i : i + size]
         if not query or len(word) == 1:
             for char in word:
                 yield "g1:" + char
@@ -58,13 +59,20 @@ def indexed_term_count(text: str) -> int:
     return len(set(_tokens(text)))
 
 
-def fuse(lexical, semantic):
+def fuse(lexical, semantic) -> list[Any]:
     """Fuse incomparable lexical and cosine scores by reciprocal rank."""
     records, scores = {}, {}
     for channel in (lexical, semantic):
         for rank, row in enumerate(channel):
             records.setdefault(row["id"], row)
             scores[row["id"]] = scores.get(row["id"], 0.0) + 1.0 / (60 + rank + 1)
-    return sorted(records.values(), key=lambda row: (
-        scores[row["id"]], row["importance"], row["updated_at"], row["id"],
-    ), reverse=True)
+    return sorted(
+        records.values(),
+        key=lambda row: (
+            scores[row["id"]],
+            row["importance"],
+            row["updated_at"],
+            row["id"],
+        ),
+        reverse=True,
+    )

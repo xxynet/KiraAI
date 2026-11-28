@@ -4,6 +4,7 @@ import asyncio
 import json
 import time
 from functools import partial, wraps
+from typing import Any
 
 from core.plugin import BasePlugin, PageMenu, PluginPage, logger, on, register
 from core.provider import LLMRequest
@@ -21,7 +22,7 @@ from .vector import VectorMemory
 
 def guarded(func):
     @wraps(func)
-    async def call(self, *args, **kwargs):
+    async def call(self, *args, **kwargs) -> Any:
         try:
             return await func(self, *args, **kwargs)
         except MemoryInputError as exc:
@@ -31,29 +32,43 @@ def guarded(func):
         except Exception as exc:
             logger.warning("Memory operation failed (%s)", type(exc).__name__)
             return self.result(False, "unavailable")
+
     return call
 
 
 TEXT = {"type": "string", "minLength": 1, "maxLength": 4000}
-ID = {"type": "string", "description": "Stable memory ID returned by memory_search; never a line number."}
+ID = {
+    "type": "string",
+    "description": "Stable memory ID returned by memory_search; never a line number.",
+}
 REVISION = {"type": "integer", "minimum": 1}
-SOURCE = {"type": "string", "description": "Source message ID from this batch; required when multiple users speak."}
+SOURCE = {
+    "type": "string",
+    "description": "Source message ID from this batch; required when multiple users speak.",
+}
 KIND = {"type": "string", "enum": ["semantic", "episodic", "procedural"]}
 OWNER = {"type": "string", "enum": ["user", "group", "self"]}
 STATUS = {"type": "string", "enum": ["active", "completed", "cancelled", "superseded"]}
 PRIORITY = {"type": "integer", "minimum": 1, "maximum": 5}
 
 
-def schema(properties, required=()):
-    return {"type": "object", "properties": properties, "required": list(required), "additionalProperties": False}
+def schema(properties, required=()) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": list(required),
+        "additionalProperties": False,
+    }
 
 
-def escape_prompt_text(value):
-    return str(value).replace("<", "\\u003c").replace(">", "\\u003e").replace("\r", "\\r")
+def escape_prompt_text(value) -> str:
+    return (
+        str(value).replace("<", "\\u003c").replace(">", "\\u003e").replace("\r", "\\r")
+    )
 
 
 class MemoryPlugin(BasePlugin):
-    def __init__(self, ctx, cfg: dict):
+    def __init__(self, ctx, cfg: dict) -> None:
         super().__init__(ctx, cfg)
         self.store = MemoryStore(get_data_path() / "memory" / "memories.db")
         self._ready = False
@@ -61,8 +76,10 @@ class MemoryPlugin(BasePlugin):
         self.reranker = MemoryReranker(ctx, cfg.get("rerank", {}))
 
     @property
-    def messages(self):
-        return MESSAGES["zh" if (self.ctx.get_lang() or "en").startswith("zh") else "en"]
+    def messages(self) -> dict[str, str]:
+        return MESSAGES[
+            "zh" if (self.ctx.get_lang() or "en").startswith("zh") else "en"
+        ]
 
     def result(self, success, code="ok", *, memory_id=None, revision=None):
         message = self.messages[code]
@@ -73,29 +90,32 @@ class MemoryPlugin(BasePlugin):
             lines.append(f"revision: {revision}")
         return "\n".join(lines)
 
-    def setting(self, key, default, minimum, maximum):
+    def setting(self, key, default, minimum, maximum) -> Any | int:
         value = self.plugin_cfg.get(key, default)
         if type(value) is not int:
             return default
         return max(minimum, min(maximum, value))
 
     @property
-    def recall_query_char_limit(self):
+    def recall_query_char_limit(self) -> int:
         value = self.plugin_cfg.get("recall_query_char_limit", 0)
         return max(0, value) if type(value) is int else 0
 
-    async def initialize(self):
+    async def initialize(self) -> None:
         count = await self.store.initialize(get_data_path() / "memory" / "core.txt")
         self._ready = True
         self.vectors.start()
         if count:
-            logger.info("Imported %d legacy memories with shared visibility; original and backup retained", count)
+            logger.info(
+                "Imported %d legacy memories with shared visibility; original and backup retained",
+                count,
+            )
 
-    async def terminate(self):
+    async def terminate(self) -> None:
         self._ready = False
         await self.vectors.close()
 
-    async def scope(self, event, persona_id=None):
+    async def scope(self, event, persona_id=None) -> MemoryScope:
         if not self._ready:
             raise MemoryInputError("unavailable")
         extra = getattr(event, "extra", None)
@@ -138,15 +158,37 @@ class MemoryPlugin(BasePlugin):
         ),
     )
     @guarded
-    async def memory_add(self, event, text, owner_type="user", user_id=None, source_message_id=None,
-                         kind="semantic", importance=3, core=False, expires_at=None):
+    async def memory_add(
+        self,
+        event,
+        text,
+        owner_type="user",
+        user_id=None,
+        source_message_id=None,
+        kind="semantic",
+        importance=3,
+        core=False,
+        expires_at=None,
+    ) -> str:
         row, added = await self.store.add(
-            await self.scope(event), text=text, owner_type=owner_type, user_id=user_id,
-            source_message_id=source_message_id, kind=kind, importance=importance, core=core, expires_at=expires_at,
+            await self.scope(event),
+            text=text,
+            owner_type=owner_type,
+            user_id=user_id,
+            source_message_id=source_message_id,
+            kind=kind,
+            importance=importance,
+            core=core,
+            expires_at=expires_at,
         )
         if added:
             self.vectors.changed()
-        return self.result(True, "ok" if added else "duplicate", memory_id=row["id"], revision=row["revision"])
+        return self.result(
+            True,
+            "ok" if added else "duplicate",
+            memory_id=row["id"],
+            revision=row["revision"],
+        )
 
     @register.tool(
         name="memory_search",
@@ -187,8 +229,17 @@ class MemoryPlugin(BasePlugin):
         ),
     )
     @guarded
-    async def memory_search(self, event, query="", memory_id=None, kind=None, owner_type=None,
-                            limit=8, offset=0, include_inactive=False):
+    async def memory_search(
+        self,
+        event,
+        query="",
+        memory_id=None,
+        kind=None,
+        owner_type=None,
+        limit=8,
+        offset=0,
+        include_inactive=False,
+    ) -> str:
         scope = await self.scope(event)
         if type(include_inactive) is not bool:
             raise MemoryInputError("invalid_arguments")
@@ -198,10 +249,19 @@ class MemoryPlugin(BasePlugin):
                 raise MemoryInputError("not_found")
             rows = [row]
         else:
-            rows = await self.search(scope, query, limit=limit, kind=kind, owner_type=owner_type,
-                                     include_inactive=include_inactive, offset=offset)
+            rows = await self.search(
+                scope,
+                query,
+                limit=limit,
+                kind=kind,
+                owner_type=owner_type,
+                include_inactive=include_inactive,
+                offset=offset,
+            )
         timezone = self.ctx.get_timezone()
-        records = self.pack(rows, self.setting("search_char_budget", 12000, 5000, 30000), timezone)
+        records = self.pack(
+            rows, self.setting("search_char_budget", 12000, 5000, 30000), timezone
+        )
         if not records:
             return self.messages["no_results"]
         header = self.messages["found"].format(count=len(records))
@@ -239,13 +299,33 @@ class MemoryPlugin(BasePlugin):
         ),
     )
     @guarded
-    async def memory_update(self, event, memory_id, revision, text, kind=None, importance=None,
-                            core=None, status=None, expires_at=None, clear_expiry=False, source_message_id=None):
+    async def memory_update(
+        self,
+        event,
+        memory_id,
+        revision,
+        text,
+        kind=None,
+        importance=None,
+        core=None,
+        status=None,
+        expires_at=None,
+        clear_expiry=False,
+        source_message_id=None,
+    ) -> str:
         if type(clear_expiry) is not bool:
             raise MemoryInputError("invalid_arguments")
         version = await self.store.update(
-            await self.scope(event), memory_id, revision, text=text, kind=kind, importance=importance,
-            core=core, status=status, expires_at=expires_at, clear_expiry=clear_expiry,
+            await self.scope(event),
+            memory_id,
+            revision,
+            text=text,
+            kind=kind,
+            importance=importance,
+            core=core,
+            status=status,
+            expires_at=expires_at,
+            clear_expiry=clear_expiry,
             source_message_id=source_message_id,
         )
         await self.vectors.updated(memory_id)
@@ -267,13 +347,17 @@ class MemoryPlugin(BasePlugin):
         ),
     )
     @guarded
-    async def memory_remove(self, event, memory_id, revision, source_message_id=None):
-        await self.store.remove(await self.scope(event), memory_id, revision, source_message_id)
+    async def memory_remove(
+        self, event, memory_id, revision, source_message_id=None
+    ) -> str:
+        await self.store.remove(
+            await self.scope(event), memory_id, revision, source_message_id
+        )
         self.vectors.changed()
         return self.result(True, memory_id=memory_id)
 
     @staticmethod
-    def render_record(record, timezone):
+    def render_record(record, timezone) -> str:
         owner = record["owner_id"]
         if record["owner_type"] in {"user", "group"}:
             adapter, owner = json.loads(owner)
@@ -288,37 +372,58 @@ class MemoryPlugin(BasePlugin):
         ]
         if adapter is not None:
             lines.append(f"adapter: {adapter}")
-        lines.extend((
-            f"status: {record['status']}",
-            f"core: {'yes' if record['core'] else 'no'}",
-        ))
+        lines.extend(
+            (
+                f"status: {record['status']}",
+                f"core: {'yes' if record['core'] else 'no'}",
+            )
+        )
         if record["source_message_id"] is not None:
             lines.append(f"source_message_id: {record['source_message_id']}")
-        lines.extend((
-            f"created_at: {format_timestamp(record['created_at'], timezone)}",
-            f"updated_at: {format_timestamp(record['updated_at'], timezone)}",
-        ))
+        lines.extend(
+            (
+                f"created_at: {format_timestamp(record['created_at'], timezone)}",
+                f"updated_at: {format_timestamp(record['updated_at'], timezone)}",
+            )
+        )
         if record["expires_at"] is not None:
-            lines.append(f"expires_at: {format_timestamp(record['expires_at'], timezone)}")
+            lines.append(
+                f"expires_at: {format_timestamp(record['expires_at'], timezone)}"
+            )
         if record.get("truncated"):
             lines.append("truncated: yes")
         lines = [escape_prompt_text(line).replace("\n", "\\n") for line in lines]
-        lines.extend(f"> {line}" for line in escape_prompt_text(record["text"]).split("\n"))
+        lines.extend(
+            f"> {line}" for line in escape_prompt_text(record["text"]).split("\n")
+        )
         return "\n".join(lines)
 
     @classmethod
-    def render_records(cls, records, timezone):
+    def render_records(cls, records, timezone) -> str:
         return "\n\n".join(cls.render_record(record, timezone) for record in records)
 
     @classmethod
-    def pack(cls, rows, budget, timezone):
+    def pack(cls, rows, budget, timezone) -> list[Any]:
         records = []
         used = 0
         for row in rows:
-            record = {key: row[key] for key in (
-                "id", "revision", "text", "kind", "owner_type", "owner_id", "status", "core",
-                "source_message_id", "created_at", "updated_at", "expires_at",
-            )}
+            record = {
+                key: row[key]
+                for key in (
+                    "id",
+                    "revision",
+                    "text",
+                    "kind",
+                    "owner_type",
+                    "owner_id",
+                    "status",
+                    "core",
+                    "source_message_id",
+                    "created_at",
+                    "updated_at",
+                    "expires_at",
+                )
+            }
             length = len(cls.render_record(record, timezone))
             separator = 2 if records else 0
             if used + separator + length > budget:
@@ -346,10 +451,15 @@ class MemoryPlugin(BasePlugin):
         return records
 
     @classmethod
-    def pack_recall(cls, core, recalled, budget, timezone):
+    def pack_recall(
+        cls, core, recalled, budget, timezone
+    ) -> tuple[list[Any], list[Any]]:
         """Reserve space for both groups and share unused space within one prompt budget."""
-        def remaining(records):
-            return budget - (len(cls.render_records(records, timezone)) + 2 if records else 0)
+
+        def remaining(records) -> Any:
+            return budget - (
+                len(cls.render_records(records, timezone)) + 2 if records else 0
+            )
 
         core_records = cls.pack(core, budget // 2, timezone)
         recalled_records = cls.pack(recalled, remaining(core_records), timezone)
@@ -357,30 +467,63 @@ class MemoryPlugin(BasePlugin):
         recalled_records = cls.pack(recalled, remaining(core_records), timezone)
         return core_records, recalled_records
 
-    async def search(self, scope, query="", **options):
-        return await self._hybrid_search(*self.store._visible(scope), query=query, **options)
-
-    async def search_preview(self, query="", *, persona_id=None, session_id=None, **options):
+    async def search(
+        self, scope, query="", **options
+    ) -> list[Any] | list[dict[str, Any]] | Any:
         return await self._hybrid_search(
-            *self.store.preview_predicate(persona_id, session_id), query=query, **options,
+            *self.store._visible(scope), query=query, **options
         )
 
-    async def _hybrid_search(self, predicate, params, query="", *, limit=8, offset=0,
-                             rerank_report=None, automatic=False, recall_state=None, exclude_ids=(), **options):
+    async def search_preview(
+        self, query="", *, persona_id=None, session_id=None, **options
+    ) -> list[Any] | list[dict[str, Any]] | Any:
+        return await self._hybrid_search(
+            *self.store.preview_predicate(persona_id, session_id),
+            query=query,
+            **options,
+        )
+
+    async def _hybrid_search(
+        self,
+        predicate,
+        params,
+        query="",
+        *,
+        limit=8,
+        offset=0,
+        rerank_report=None,
+        automatic=False,
+        recall_state=None,
+        exclude_ids=(),
+        **options,
+    ) -> list[Any] | list[dict[str, Any]] | Any:
         if exclude_ids:
             placeholders = ",".join("?" for _ in exclude_ids)
             predicate = f"({predicate}) AND m.id NOT IN ({placeholders})"
             params = [*params, *exclude_ids]
-        use_pool = automatic and isinstance(query, str) and bool(query.strip()) and not options.get("core_only")
+        use_pool = (
+            automatic
+            and isinstance(query, str)
+            and bool(query.strip())
+            and not options.get("core_only")
+        )
         lexical = await self.store._search(
-            predicate, params, query,
+            predicate,
+            params,
+            query,
             limit=self.setting("bm25_candidates", 50, 1, 1000) if use_pool else limit,
-            offset=0 if use_pool else offset, candidate_pool=bool(use_pool), **options,
+            offset=0 if use_pool else offset,
+            candidate_pool=bool(use_pool),
+            **options,
         )
         if recall_state is not None:
             recall_state.update(rows=lexical[:limit], stage="keyword")
         if rerank_report is not None:
-            rerank_report.update(self.reranker.report("disabled" if not self.reranker.enabled else "skipped"))
+            rerank_report.update(
+                self.reranker.report(
+                    "disabled" if not self.reranker.enabled else "skipped"
+                )
+            )
         if not query.strip() or options.get("core_only"):
             return lexical
         combined = lexical if use_pool else None
@@ -389,13 +532,24 @@ class MemoryPlugin(BasePlugin):
             if recall_state is not None:
                 recall_state["stage"] = "vector"
             semantic = await self.vectors.search(
-                query, filtered, values,
+                query,
+                filtered,
+                values,
                 limit=self.vectors.candidate_limit if use_pool else MAX_CANDIDATES,
             )
             if semantic:
                 # Tool pagination uses a fixed full pool; automatic recall has independent bounds.
-                candidates = lexical if use_pool else await self.store._search(
-                    predicate, params, query, limit=MAX_CANDIDATES, candidate_pool=True, **options,
+                candidates = (
+                    lexical
+                    if use_pool
+                    else await self.store._search(
+                        predicate,
+                        params,
+                        query,
+                        limit=MAX_CANDIDATES,
+                        candidate_pool=True,
+                        **options,
+                    )
                 )
                 combined = await asyncio.to_thread(fuse, candidates, semantic)
                 if recall_state is not None:
@@ -404,22 +558,29 @@ class MemoryPlugin(BasePlugin):
         if self.reranker.enabled and offset < self.reranker.candidate_limit:
             if combined is None:
                 combined = await self.store._search(
-                    predicate, params, query, limit=max(self.reranker.candidate_limit, offset + limit),
-                    candidate_pool=True, **options,
+                    predicate,
+                    params,
+                    query,
+                    limit=max(self.reranker.candidate_limit, offset + limit),
+                    candidate_pool=True,
+                    **options,
                 )
             if recall_state is not None:
-                recall_state.update(stage="rerank", rerank_started=time.monotonic(),
-                                    rerank_candidates=min(len(combined), self.reranker.candidate_limit))
+                recall_state.update(
+                    stage="rerank",
+                    rerank_started=time.monotonic(),
+                    rerank_candidates=min(len(combined), self.reranker.candidate_limit),
+                )
             combined, report = await self.reranker.rank(query, combined)
             if rerank_report is not None:
                 rerank_report.update(report)
-        return combined[offset:offset + limit] if combined is not None else lexical
+        return combined[offset : offset + limit] if combined is not None else lexical
 
-    async def recall(self, scope, messages):
+    async def recall(self, scope, messages) -> dict[str, Any]:
         """Build the scoped memory payload used by actual conversations."""
         return await self._recall(partial(self.search, scope), messages)
 
-    async def _recall(self, search, messages):
+    async def _recall(self, search, messages) -> dict[str, Any]:
         """Share ranking, deduplication and budgets across recall entry points."""
         started = asyncio.get_running_loop().time()
         timeout = self.setting("recall_timeout", 5, 1, 30)
@@ -428,19 +589,26 @@ class MemoryPlugin(BasePlugin):
         budget = self.setting("prompt_char_budget", 6000, 1500, 20000)
         query = " ".join(str(message or "") for message in messages[-3:])
         if self.recall_query_char_limit:
-            query = query[:self.recall_query_char_limit]
-        rerank_report = self.reranker.report("disabled" if not self.reranker.enabled else "skipped")
+            query = query[: self.recall_query_char_limit]
+        rerank_report = self.reranker.report(
+            "disabled" if not self.reranker.enabled else "skipped"
+        )
         core, recalled = [], []
         checkpoint = {}
         timed_out = False
 
-        async def retrieve():
+        async def retrieve() -> None:
             nonlocal core, recalled
             core = await search(core_only=True, limit=core_limit)
             if query.strip():
-                recalled = await search(query, limit=recall_limit, rerank_report=rerank_report,
-                                        automatic=True, recall_state=checkpoint,
-                                        exclude_ids=tuple(row["id"] for row in core))
+                recalled = await search(
+                    query,
+                    limit=recall_limit,
+                    rerank_report=rerank_report,
+                    automatic=True,
+                    recall_state=checkpoint,
+                    exclude_ids=tuple(row["id"] for row in core),
+                )
 
         try:
             remaining = max(0, started + timeout - asyncio.get_running_loop().time())
@@ -449,45 +617,82 @@ class MemoryPlugin(BasePlugin):
             timed_out = True
             recalled = checkpoint.get("rows", [])
             if checkpoint.get("stage") == "rerank":
-                rerank_report.update(self.reranker.report(
-                    "fallback", "recall_timeout", started=checkpoint["rerank_started"],
-                    candidates=checkpoint["rerank_candidates"],
-                ))
+                rerank_report.update(
+                    self.reranker.report(
+                        "fallback",
+                        "recall_timeout",
+                        started=checkpoint["rerank_started"],
+                        candidates=checkpoint["rerank_candidates"],
+                    )
+                )
         timezone = self.ctx.get_timezone()
-        core_records, recalled_records = self.pack_recall(core, recalled, budget, timezone)
+        core_records, recalled_records = self.pack_recall(
+            core, recalled, budget, timezone
+        )
         return {
             "query": query,
-            "retrieval": {"mode": "hybrid" if self.vectors.enabled and self.vectors.ready else "keyword",
-                          "phase": self.vectors.phase, "reason": self.vectors.reason, "rerank": rerank_report,
-                          "timed_out": timed_out, "timeout_seconds": timeout},
+            "retrieval": {
+                "mode": "hybrid"
+                if self.vectors.enabled and self.vectors.ready
+                else "keyword",
+                "phase": self.vectors.phase,
+                "reason": self.vectors.reason,
+                "rerank": rerank_report,
+                "timed_out": timed_out,
+                "timeout_seconds": timeout,
+            },
             "core": core_records,
             "recalled": recalled_records,
-            "prompt_chars": len(self.render_records(core_records + recalled_records, timezone)),
-            "limits": {"core": core_limit, "recall": recall_limit, "prompt_chars": budget},
+            "prompt_chars": len(
+                self.render_records(core_records + recalled_records, timezone)
+            ),
+            "limits": {
+                "core": core_limit,
+                "recall": recall_limit,
+                "prompt_chars": budget,
+            },
         }
 
     @on.llm_request()
-    async def inject_memory(self, event, req: LLMRequest, *_):
+    async def inject_memory(self, event, req: LLMRequest, *_) -> None:
         try:
-            persona_id = next((p.kwargs.get("persona_id") for p in req.system_prompt if p.name == "memory"), None)
+            persona_id = next(
+                (
+                    p.kwargs.get("persona_id")
+                    for p in req.system_prompt
+                    if p.name == "memory"
+                ),
+                None,
+            )
             scope = await self.scope(event, persona_id)
-            recalled = await self.recall(scope, [
-                getattr(message, "message_str", "")
-                for message in event.messages[-3:] if not getattr(message, "is_notice", False)
-            ])
+            recalled = await self.recall(
+                scope,
+                [
+                    getattr(message, "message_str", "")
+                    for message in event.messages[-3:]
+                    if not getattr(message, "is_notice", False)
+                ],
+            )
             records = recalled["core"] + recalled["recalled"]
             context = [
                 f"persona_id: {scope.persona_id}",
                 f"session_id: {scope.session_id}",
                 "Current message sources:",
             ]
-            context.extend(f"- source_message_id: {mid}, user_id: {uid}" for mid, uid in scope.sources[-30:])
+            context.extend(
+                f"- source_message_id: {mid}, user_id: {uid}"
+                for mid, uid in scope.sources[-30:]
+            )
             for prompt in req.system_prompt:
                 if prompt.name == "memory":
                     payload = self.render_records(records, self.ctx.get_timezone())
                     prompt.content += self.messages["rules"] + "\n" + payload
                 elif prompt.name == "tools":
-                    prompt.content += self.messages["tools"] + "\n" + escape_prompt_text("\n".join(context))
+                    prompt.content += (
+                        self.messages["tools"]
+                        + "\n"
+                        + escape_prompt_text("\n".join(context))
+                    )
         except MemoryInputError:
             return
         except Exception as exc:
@@ -510,10 +715,10 @@ class MemoryPlugin(BasePlugin):
             order=85,
         ),
     )
-    def memory_page(self):
+    def memory_page(self) -> PluginPage:
         return PluginPage.from_folder("./web")
 
-    async def _admin(self, call):
+    async def _admin(self, call) -> Any:
         """Run a store call, mapping typed input failures onto HTTP 400.
 
         The error code is a stable identifier the page translates; no memory
@@ -529,8 +734,8 @@ class MemoryPlugin(BasePlugin):
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @register.api(method="GET", path="/memory/overview")
-    async def api_overview(self):
-        async def load():
+    async def api_overview(self) -> Any:
+        async def load() -> dict[Any, Any]:
             data = await self.store.overview()
             return webui.overview_payload(
                 data,
@@ -541,16 +746,33 @@ class MemoryPlugin(BasePlugin):
         return await self._admin(load)
 
     @register.api(method="GET", path="/memory/records")
-    async def api_records(self, q: str = "", kind: str = "", status: str = "", owner_type: str = "",
-                          origin: str = "", core: str = "", page: str = "", size: str = ""):
-        async def load():
-            filters = webui.parse_filters({
-                "q": q, "kind": kind, "status": status, "owner_type": owner_type,
-                "origin": origin, "core": core,
-            })
+    async def api_records(
+        self,
+        q: str = "",
+        kind: str = "",
+        status: str = "",
+        owner_type: str = "",
+        origin: str = "",
+        core: str = "",
+        page: str = "",
+        size: str = "",
+    ) -> Any:
+        async def load() -> dict[str, Any]:
+            filters = webui.parse_filters(
+                {
+                    "q": q,
+                    "kind": kind,
+                    "status": status,
+                    "owner_type": owner_type,
+                    "origin": origin,
+                    "core": core,
+                }
+            )
             page_number = webui.parse_page(page, 1, 1, 100000)
             page_size = webui.parse_page(size, 20, 1, 100)
-            result = await self.store.admin_list(page=page_number, size=page_size, **filters)
+            result = await self.store.admin_list(
+                page=page_number, size=page_size, **filters
+            )
             return {
                 "items": [webui.serialize(row) for row in result["items"]],
                 "total": result["total"],
@@ -561,8 +783,8 @@ class MemoryPlugin(BasePlugin):
         return await self._admin(load)
 
     @register.api(method="GET", path="/memory/records/{memory_id}")
-    async def api_record_detail(self, memory_id: str):
-        async def load():
+    async def api_record_detail(self, memory_id: str) -> Any:
+        async def load() -> dict[Any | str, Any]:
             row = await self.store.admin_get(memory_id)
             if row is None:
                 raise MemoryInputError("not_found")
@@ -571,17 +793,19 @@ class MemoryPlugin(BasePlugin):
         return await self._admin(load)
 
     @register.api(method="POST", path="/memory/records/{memory_id}")
-    async def api_record_update(self, memory_id: str, payload: dict):
-        async def save():
-            row = await self.store.admin_update(memory_id, **webui.parse_update(payload))
+    async def api_record_update(self, memory_id: str, payload: dict) -> Any:
+        async def save() -> dict[Any | str, Any | bytes]:
+            row = await self.store.admin_update(
+                memory_id, **webui.parse_update(payload)
+            )
             await self.vectors.updated(memory_id)
             return webui.serialize(row) | {"terms": row["terms"]}
 
         return await self._admin(save)
 
     @register.api(method="DELETE", path="/memory/records/{memory_id}")
-    async def api_record_remove(self, memory_id: str, revision: int):
-        async def remove():
+    async def api_record_remove(self, memory_id: str, revision: int) -> Any:
+        async def remove() -> dict[str, Any]:
             await self.store.admin_remove(memory_id, revision)
             self.vectors.changed()
             return {"ok": True, "memory_id": memory_id}
@@ -589,60 +813,90 @@ class MemoryPlugin(BasePlugin):
         return await self._admin(remove)
 
     @register.api(method="GET", path="/memory/facets")
-    async def api_facets(self):
+    async def api_facets(self) -> Any:
         return await self._admin(self.store.facets)
 
     @register.api(method="GET", path="/memory/recall-options")
-    async def api_recall_options(self):
-        async def load():
+    async def api_recall_options(self) -> Any:
+        async def load() -> dict[str, Any]:
             stored = await self.store.facets()
-            personas = {item.id: {"id": item.id, "name": item.name or item.id}
-                        for item in await self.ctx.persona_mgr.list_personas()}
+            personas = {
+                item.id: {"id": item.id, "name": item.name or item.id}
+                for item in await self.ctx.persona_mgr.list_personas()
+            }
             for persona_id in stored["personas"]:
                 personas.setdefault(persona_id, {"id": persona_id, "name": persona_id})
             active = await self.ctx.persona_mgr.get_persona()
             if active:
-                personas.setdefault(active.id, {"id": active.id, "name": active.name or active.id})
-            sessions = {item.sid: {"id": item.sid, "name": item.session_title or item.sid}
-                        for item in await self.ctx.session_mgr.get_sessions(include_content=False)}
+                personas.setdefault(
+                    active.id, {"id": active.id, "name": active.name or active.id}
+                )
+            sessions = {
+                item.sid: {"id": item.sid, "name": item.session_title or item.sid}
+                for item in await self.ctx.session_mgr.get_sessions(
+                    include_content=False
+                )
+            }
             for item in await self.ctx.message_history.list_sessions():
-                sessions.setdefault(item.session_id, {"id": item.session_id, "name": item.session_id})
+                sessions.setdefault(
+                    item.session_id, {"id": item.session_id, "name": item.session_id}
+                )
             for item in stored["contexts"]:
                 sid = item["session_id"]
                 sessions.setdefault(sid, {"id": sid, "name": sid})
             return {
                 "personas": list(personas.values()),
                 "active_persona": active.id if active else None,
-                "sessions": [item for sid, item in sessions.items()
-                             if len(sid.split(":", 2)) == 3 and sid.split(":", 2)[1] in {"dm", "gm"}],
+                "sessions": [
+                    item
+                    for sid, item in sessions.items()
+                    if len(sid.split(":", 2)) == 3
+                    and sid.split(":", 2)[1] in {"dm", "gm"}
+                ],
             }
+
         return await self._admin(load)
 
     @register.api(method="GET", path="/memory/recall-context")
-    async def api_recall_context(self, session_id: str):
-        async def load():
+    async def api_recall_context(self, session_id: str) -> Any:
+        async def load() -> dict[str, Any]:
             parts = session_id.split(":", 2)
-            if len(session_id) > 512 or len(parts) != 3 or parts[1] not in {"dm", "gm"} or not parts[0] or not parts[2]:
+            if (
+                len(session_id) > 512
+                or len(parts) != 3
+                or parts[1] not in {"dm", "gm"}
+                or not parts[0]
+                or not parts[2]
+            ):
                 raise MemoryInputError("invalid_recall")
-            page = await self.ctx.message_history.get_messages(session_id=session_id, direction="incoming", limit=50)
+            page = await self.ctx.message_history.get_messages(
+                session_id=session_id, direction="incoming", limit=50
+            )
             messages = [message for message in page.messages if not message.is_notice]
             speakers = {}
             for message in messages:
                 if message.sender_id and message.sender_id != "unknown":
                     uid = str(message.sender_id)
-                    speakers.setdefault(uid, {"id": uid, "name": message.sender_name or uid})
+                    speakers.setdefault(
+                        uid, {"id": uid, "name": message.sender_name or uid}
+                    )
             for uid in await self.store.recall_users(session_id):
                 speakers.setdefault(uid, {"id": uid, "name": uid})
             return {
-                "session_id": session_id, "adapter": parts[0], "group": parts[1] == "gm",
+                "session_id": session_id,
+                "adapter": parts[0],
+                "group": parts[1] == "gm",
                 "speakers": list(speakers.values()) if parts[1] == "gm" else [],
-                "default_user_ids": ([parts[2]] if parts[1] == "dm" else list(speakers)[:1]),
+                "default_user_ids": (
+                    [parts[2]] if parts[1] == "dm" else list(speakers)[:1]
+                ),
             }
+
         return await self._admin(load)
 
     @register.api(method="POST", path="/memory/recall")
-    async def api_recall(self, payload: dict):
-        async def load():
+    async def api_recall(self, payload: dict) -> Any:
+        async def load() -> dict[str, Any]:
             if "adapter" in payload:
                 scope, messages = webui.parse_recall(payload)
                 return await self.recall(scope, messages)
@@ -652,19 +906,19 @@ class MemoryPlugin(BasePlugin):
         return await self._admin(load)
 
     @register.api(method="GET", path="/memory/vector/status")
-    async def api_vector_status(self):
+    async def api_vector_status(self) -> Any:
         return await self._admin(self.vectors.status)
 
     @register.api(method="POST", path="/memory/vector/install")
-    async def api_vector_install(self):
+    async def api_vector_install(self) -> Any:
         return await self._admin(self.vectors.install)
 
     @register.api(method="POST", path="/memory/vector/rebuild")
-    async def api_vector_rebuild(self):
+    async def api_vector_rebuild(self) -> Any:
         return await self._admin(self.vectors.rebuild)
 
     @register.api(method="GET", path="/memory/config")
-    async def api_config(self):
+    async def api_config(self) -> dict[str, Any]:
         """Effective settings for the page.
 
         The editable fields themselves are rendered by the host plugin
@@ -675,8 +929,12 @@ class MemoryPlugin(BasePlugin):
             "values": {
                 "core_limit": self.setting("core_limit", 10, 1, 20),
                 "recall_limit": self.setting("recall_limit", 6, 1, 20),
-                "prompt_char_budget": self.setting("prompt_char_budget", 6000, 1500, 20000),
-                "search_char_budget": self.setting("search_char_budget", 12000, 5000, 30000),
+                "prompt_char_budget": self.setting(
+                    "prompt_char_budget", 6000, 1500, 20000
+                ),
+                "search_char_budget": self.setting(
+                    "search_char_budget", 12000, 5000, 30000
+                ),
                 "recall_query_char_limit": self.recall_query_char_limit,
                 "recall_timeout": self.setting("recall_timeout", 5, 1, 30),
                 "bm25_candidates": self.setting("bm25_candidates", 50, 1, 1000),

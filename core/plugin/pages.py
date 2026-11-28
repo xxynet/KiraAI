@@ -15,8 +15,9 @@ class PageMenu:
         order: Sort order in the sidebar (lower = higher, default 100).
     """
 
-    def __init__(self, label: str | dict[str, str], icon: str | None = None,
-                 order: int = 100):
+    def __init__(
+        self, label: str | dict[str, str], icon: str | None = None, order: int = 100
+    ):
         if not isinstance(label, (str, dict)):
             raise TypeError(f"label must be a str or dict, got {type(label).__name__}")
         if isinstance(label, str) and not label.strip():
@@ -24,12 +25,18 @@ class PageMenu:
         if isinstance(label, dict):
             for k, v in label.items():
                 if not isinstance(k, str) or not isinstance(v, str):
-                    raise TypeError(f"label dict keys and values must be strings, "
-                                    f"got {type(k).__name__}: {type(v).__name__}")
+                    raise TypeError(
+                        f"label dict keys and values must be strings, "
+                        f"got {type(k).__name__}: {type(v).__name__}"
+                    )
                 if not v.strip():
-                    raise ValueError(f"label dict value for '{k}' must not be empty or whitespace")
+                    raise ValueError(
+                        f"label dict value for '{k}' must not be empty or whitespace"
+                    )
         if icon is not None and not isinstance(icon, str):
-            raise TypeError(f"icon must be a string if provided, got {type(icon).__name__}")
+            raise TypeError(
+                f"icon must be a string if provided, got {type(icon).__name__}"
+            )
         if not isinstance(order, int) or isinstance(order, bool):
             raise TypeError(f"order must be an integer, got {type(order).__name__}")
         self.label: str | dict[str, str] = label
