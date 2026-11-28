@@ -575,8 +575,12 @@ class BaseAgentExecutor(Generic[ContextT]):
                     ProviderAPIError,
                 ) as e:
                     last_exc = e
-                    logger.error(
-                        f"[{sid}] Model {model.model.model_name} failed: {type(e).__name__}: {e}"
+                    logger.exception(
+                        "[%s] Model %s failed: %s: %s",
+                        sid,
+                        model.model.model_name,
+                        type(e).__name__,
+                        e,
                     )
                     if run_state.abort_requested.is_set():
                         return
@@ -672,7 +676,7 @@ class BaseAgentExecutor(Generic[ContextT]):
             try:
                 await self._execute_tools(ctx, llm_resp, run_state)
             except Exception as e:
-                logger.error(f"[{sid}] Tool execution failed: {e}")
+                logger.exception("[%s] Tool execution failed: %s", sid, e)
                 await self.hooks.on_exception(ctx, e, source="tool", comp_id=None)
                 raise
             # An integration may stop tool execution with partial results. Keep the

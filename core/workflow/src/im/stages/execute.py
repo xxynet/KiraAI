@@ -80,7 +80,7 @@ class ExecuteAgentStage(BaseStage[IMBatchContext]):
                                 )
                                 return False
                     except Exception as e:
-                        logger.error(f"Error parsing message: {e!s}")
+                        logger.exception("Error parsing message: %s", e)
                         actions = []
 
                     for action in actions:
@@ -130,8 +130,11 @@ class ExecuteAgentStage(BaseStage[IMBatchContext]):
                             try:
                                 await action.tag.handle(action.value, **action.attrs)
                             except Exception as e:
-                                logger.error(
-                                    f"Error executing root tag <{action.tag.name}>{action.value}: {e}"
+                                logger.exception(
+                                    "Error executing root tag <%s>%s: %s",
+                                    action.tag.name,
+                                    action.value,
+                                    e,
                                 )
                     raw_output = services.message_delivery.add_message_ids(
                         text, message_results

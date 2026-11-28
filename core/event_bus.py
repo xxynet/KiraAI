@@ -215,7 +215,11 @@ class EventBus:
                     if exc:
                         self.event_bus_stats["errors"] += 1
                         self.stats.set_stats("event_bus", self.event_bus_stats)
-                        self.logger.error(f"Error in event dispatch task: {exc}")
+                        self.logger.error(
+                            "Error in event dispatch task: %s",
+                            exc,
+                            exc_info=(type(exc), exc, exc.__traceback__),
+                        )
                 except asyncio.CancelledError:
                     return
 
