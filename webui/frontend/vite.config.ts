@@ -31,6 +31,15 @@ export default defineConfig({
         target: 'http://localhost:5267',
         changeOrigin: true,
       },
+      '/static/': {
+        target: 'http://localhost:5267',
+        changeOrigin: true,
+      },
+      '/ws': {
+        target: 'http://localhost:5267',
+        changeOrigin: true,
+        ws: true,
+      },
     },
   },
   build: {

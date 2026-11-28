@@ -32,6 +32,8 @@ OBJECT_HTML = register.page("/object-html", auth=False)(PluginPage.from_html("ob
 OBJECT_URL = register.page("/object-url", auth=False)(PluginPage.from_url("/object-target"))
 OBJECT_ESCAPE = register.page("/object-escape", auth=False)(PluginPage.from_folder("../outside"))
 OBJECT_SECURE = register.page("/object-secure", auth=True)(PluginPage.from_folder("web"))
+OBJECT_FOLDER_SLASH = register.page("/object-folder-slash/", auth=False)(PluginPage.from_folder("web"))
+OBJECT_PARAM_FOLDER = register.page("/object-param/{version:int}", auth=False)(PluginPage.from_folder("web"))
 
 
 class WebPlugin(BasePlugin):
@@ -129,6 +131,8 @@ def load_plugin(tmp_path, monkeypatch):
     web = root / "web"
     web.mkdir(parents=True)
     (web / "index.html").write_text("folder content", encoding="utf-8")
+    (web / "docs").mkdir()
+    (web / "docs" / "index.html").write_text("docs content", encoding="utf-8")
     (root / "manifest.json").write_text(json.dumps({"plugin_id": PLUGIN_ID}), encoding="utf-8")
     (root / "main.py").write_text(PLUGIN_SOURCE, encoding="utf-8")
     outside = tmp_path / "outside"
@@ -201,6 +205,39 @@ def test_plugin_imports_mutable_tags_and_all_web_bindings(load_plugin, app_first
     with client.websocket_connect(f"/ws/plugin/{PLUGIN_ID}/stream") as ws:
         assert ws.receive_text() == "replacement"
     assert manager.get_all_widgets()[0].content == "replacement"
+
+
+@pytest.mark.parametrize("page_route", ["object-folder", "method-folder", "object-folder-slash"])
+def test_folder_page_slash_redirect_stays_on_request_origin(load_plugin, page_route):
+    manager, client = load_plugin()
+    path = f"/page/plugin/{PLUGIN_ID}/{page_route}"
+    response = client.get(path + "?theme=dark", follow_redirects=False)
+    assert response.status_code == 307
+    # A relative Location keeps the browser on the origin it opened the page from.
+    assert response.headers["location"] == f"{path}/?theme=dark"
+    assert client.head(path, follow_redirects=False).status_code == 307
+    assert path not in client.app.openapi()["paths"]
+    assert client.get(path + "/").text == "folder content"
+
+    # Directory URLs below the page root must stay relative too.
+    response = client.get(path + "/docs", follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"] == f"{path}/docs/"
+    assert client.get(path + "/docs/").text == "docs content"
+
+    manager.plugin_enabled[PLUGIN_ID] = False
+    assert client.get(path, follow_redirects=False).status_code == 404
+
+
+def test_folder_page_redirect_keeps_path_parameter_values(load_plugin):
+    _, client = load_plugin()
+    path = f"/page/plugin/{PLUGIN_ID}/object-param/7"
+    response = client.get(path + "?theme=dark", follow_redirects=False)
+    assert response.status_code == 307
+    # The declared template must not leak into the Location; the concrete
+    # parameter value is what the mounted route can match.
+    assert response.headers["location"] == f"{path}/?theme=dark"
+    assert client.get(path + "/").text == "folder content"
 
 
 def test_auth_dependencies_and_folder_auth_survive_extraction(load_plugin, monkeypatch):
